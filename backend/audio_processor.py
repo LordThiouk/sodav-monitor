@@ -54,13 +54,17 @@ class AudioProcessor:
                 # Create or update track record
                 track = self._get_or_create_track(result)
                 
+                # Get actual duration from recognition result or default to 15 seconds
+                duration_minutes = result.get('duration_minutes', 0.25)  # 0.25 minutes = 15 seconds
+                play_duration = timedelta(minutes=duration_minutes)
+                
                 # Create detection record with station_id
                 detection = TrackDetection(
                     station_id=station_id,
                     track_id=track.id,
                     confidence=result.get('confidence', 0),
                     detected_at=datetime.now(),
-                    play_duration=timedelta(seconds=15)  # Duration of our sample
+                    play_duration=play_duration  # Use actual duration
                 )
                 
                 self.db_session.add(detection)
@@ -76,7 +80,7 @@ class AudioProcessor:
                     },
                     'confidence': detection.confidence,
                     'detected_at': detection.detected_at.isoformat(),
-                    'play_duration': str(detection.play_duration),
+                    'play_duration': str(play_duration),
                     'station_id': station_id
                 }
             
@@ -110,6 +114,7 @@ class AudioProcessor:
         
         if not track:
             # Create new track if not found
+            duration_minutes = track_info.get('duration_minutes', 0.25)  # 0.25 minutes = 15 seconds
             track = Track(
                 title=track_info.get('title'),
                 artist=track_info.get('artist'),
@@ -119,7 +124,7 @@ class AudioProcessor:
                 release_date=track_info.get('release_date'),
                 external_ids=track_info.get('external_metadata', {}),
                 play_count=1,
-                total_play_time=timedelta(seconds=15),  # Duration of our sample
+                total_play_time=timedelta(minutes=duration_minutes),  # Use actual duration
                 last_played=datetime.now()
             )
             self.db_session.add(track)
@@ -183,6 +188,7 @@ class AudioProcessor:
         title = recognition_result.get('title', '')
         artist = recognition_result.get('artist', '')
         isrc = recognition_result.get('isrc', '')
+        duration_minutes = recognition_result.get('duration_minutes', 0.25)  # 0.25 minutes = 15 seconds
         
         logger.debug(f"Checking if track exists: {title} by {artist}")
         
@@ -201,15 +207,20 @@ class AudioProcessor:
                 isrc=isrc,
                 external_ids=recognition_result.get('external_metadata', {}),
                 play_count=1,
-                total_play_time=timedelta(seconds=0),
+                total_play_time=timedelta(minutes=duration_minutes),  # Use actual duration
                 last_played=datetime.now()
             )
             self.db_session.add(track)
             self.db_session.commit()
             logger.debug(f"New track saved with ID: {track.id}")
         else:
-            # Update last played time
+            # Update last played time and total play time
             track.last_played = datetime.now()
+            track.play_count += 1
+            if track.total_play_time:
+                track.total_play_time += timedelta(minutes=duration_minutes)
+            else:
+                track.total_play_time = timedelta(minutes=duration_minutes)
             if isrc and not track.isrc:
                 track.isrc = isrc
             self.db_session.commit()

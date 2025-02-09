@@ -1,54 +1,47 @@
-from sqlalchemy import create_engine
-from models import Base, RadioStation
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from datetime import datetime
-import os
-import sys
 
-# Add the backend directory to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from database import SessionLocal, engine
+from models import Base, RadioStation, Track, TrackDetection, User, Report
+from models import DetectionHourly, ArtistStats, TrackStats, AnalyticsData
 
 def init_database():
-    # Create database engine
-    engine = create_engine("sqlite:///./sodav_monitor.db", connect_args={"check_same_thread": False})
+    print("Creating database tables...")
+    Base.metadata.create_all(bind=engine)
     
-    # Create all tables
-    Base.metadata.drop_all(engine)  # Drop existing tables
-    Base.metadata.create_all(engine)
-    
-    # Create session
+    print("Initializing database with default data...")
     Session = sessionmaker(bind=engine)
     session = Session()
     
-    # Add default radio stations
-    stations = [
-        RadioStation(
-            name="Sene Multimedia",
-            stream_url="http://listen.senemultimedia.net:8090/stream",
-            country="Senegal",
-            language="French/Wolof",
-            is_active=1,
-            last_checked=datetime.now()
-        ),
-        RadioStation(
-            name="Sud FM",
-            stream_url="https://stream.zeno.fm/d970hwkm1f8uv",
-            country="Senegal",
-            language="French/Wolof",
-            is_active=1,
-            last_checked=datetime.now()
+    try:
+        # Initialize empty analytics tables
+        now = datetime.utcnow()
+        
+        # Create initial analytics data
+        analytics = AnalyticsData(
+            timestamp=now,
+            detection_count=0,
+            detection_rate=0.0,
+            active_stations=0,
+            average_confidence=0.0
         )
-    ]
-    
-    for station in stations:
-        session.add(station)
-    
-    session.commit()
-    
-    print("Database initialized successfully!")
-    print(f"Added {len(stations)} radio stations")
-    
-    session.close()
+        session.add(analytics)
+        
+        # Create initial hourly detection record
+        hourly = DetectionHourly(
+            hour=now.replace(minute=0, second=0, microsecond=0),
+            count=0
+        )
+        session.add(hourly)
+        
+        session.commit()
+        print("Database initialized successfully!")
+        
+    except Exception as e:
+        print(f"Error initializing database: {e}")
+        session.rollback()
+    finally:
+        session.close()
 
 if __name__ == "__main__":
-    init_database() 
+    init_database()

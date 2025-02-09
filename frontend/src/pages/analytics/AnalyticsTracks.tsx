@@ -7,43 +7,42 @@ import {
   Tr,
   Th,
   Td,
-  Text,
   Select,
   Flex,
   Spinner,
-  useColorModeValue,
+  Text,
+  Alert,
+  AlertIcon,
+  AlertTitle,
+  AlertDescription,
+  useColorModeValue
 } from '@chakra-ui/react';
 import { getTracksAnalytics } from '../../services/api';
-import { formatDuration } from '../../utils/format';
+import { TrackAnalytics } from '../../types';
 
-interface Track {
-  id: number;
-  title: string;
-  artist: string;
-  album?: string;
-  label?: string;
-  duration?: number;
-  play_count: number;
-  total_play_time: number;
-  last_played?: string;
-}
+interface AnalyticsTracksProps {}
 
-const AnalyticsTracks: React.FC = () => {
-  const [tracks, setTracks] = useState<Track[]>([]);
+const AnalyticsTracks: React.FC<AnalyticsTracksProps> = () => {
+  const [tracks, setTracks] = useState<TrackAnalytics[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState('7d');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+      setError(null);
       try {
         const data = await getTracksAnalytics(timeRange);
         setTracks(data);
       } catch (error) {
         console.error('Error fetching tracks analytics:', error);
+        setError(error instanceof Error ? error.message : 'Failed to fetch tracks');
+        setTracks([]);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchData();
@@ -55,14 +54,25 @@ const AnalyticsTracks: React.FC = () => {
 
   if (loading) {
     return (
-      <Flex justify="center" align="center" h="200px">
-        <Spinner size="xl" />
-      </Flex>
+      <Box textAlign="center" py={10}>
+        <Spinner size="xl" color="blue.500" />
+        <Text mt={4}>Loading tracks data...</Text>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Alert status="error" borderRadius="lg" m={4}>
+        <AlertIcon />
+        <AlertTitle mr={2}>Error loading tracks:</AlertTitle>
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
     );
   }
 
   return (
-    <Box>
+    <Box p={4}>
       <Flex justify="flex-end" mb={6}>
         <Select
           value={timeRange}
@@ -74,7 +84,6 @@ const AnalyticsTracks: React.FC = () => {
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>
           <option value="90d">Last 90 days</option>
-          <option value="1y">Last year</option>
         </Select>
       </Flex>
 
@@ -82,38 +91,33 @@ const AnalyticsTracks: React.FC = () => {
         <Table variant="simple" borderWidth="1px" borderColor={borderColor}>
           <Thead>
             <Tr>
-              <Th>Rank</Th>
               <Th>Title</Th>
               <Th>Artist</Th>
               <Th>Album</Th>
               <Th>Label</Th>
-              <Th isNumeric>Duration</Th>
+              <Th>ISRC</Th>
               <Th isNumeric>Plays</Th>
-              <Th isNumeric>Total Play Time</Th>
-              <Th>Last Played</Th>
+              <Th>Total Play Time</Th>
+              <Th isNumeric>Unique Stations</Th>
             </Tr>
           </Thead>
           <Tbody>
-            {tracks.map((track, index) => (
-              <Tr key={track.id}>
-                <Td>{index + 1}</Td>
-                <Td>{track.title}</Td>
-                <Td>{track.artist}</Td>
-                <Td>{track.album || '-'}</Td>
-                <Td>{track.label || '-'}</Td>
-                <Td isNumeric>{track.duration ? formatDuration(track.duration) : '-'}</Td>
-                <Td isNumeric>{track.play_count}</Td>
-                <Td isNumeric>{formatDuration(track.total_play_time)}</Td>
-                <Td>
-                  {track.last_played
-                    ? new Date(track.last_played).toLocaleString()
-                    : '-'}
-                </Td>
-              </Tr>
-            ))}
-            {tracks.length === 0 && (
+            {tracks.length > 0 ? (
+              tracks.map((track) => (
+                <Tr key={track.id}>
+                  <Td>{track.title}</Td>
+                  <Td>{track.artist}</Td>
+                  <Td>{track.album || '-'}</Td>
+                  <Td>{track.label || '-'}</Td>
+                  <Td>{track.isrc || '-'}</Td>
+                  <Td isNumeric>{track.detection_count}</Td>
+                  <Td>{track.total_play_time}</Td>
+                  <Td isNumeric>{track.unique_stations}</Td>
+                </Tr>
+              ))
+            ) : (
               <Tr>
-                <Td colSpan={9} textAlign="center" py={8}>
+                <Td colSpan={8} textAlign="center" py={8}>
                   <Text>No tracks found for the selected time range</Text>
                 </Td>
               </Tr>
@@ -125,4 +129,4 @@ const AnalyticsTracks: React.FC = () => {
   );
 };
 
-export default AnalyticsTracks; 
+export default AnalyticsTracks;

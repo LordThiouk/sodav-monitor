@@ -7,33 +7,32 @@ import {
   Tr,
   Th,
   Td,
-  Icon,
-  Select,
   Flex,
   useColorModeValue,
-  InputGroup,
-  InputLeftElement,
-  Input,
-  Spinner,
+  Select,
   Text,
+  Spinner,
 } from '@chakra-ui/react';
-import { FaSearch } from 'react-icons/fa';
 import { getLabelsAnalytics } from '../../services/api';
-import { formatDuration } from '../../utils/format';
 
 interface Label {
-  name: string;
-  play_count: number;
-  total_play_time: number;
-  track_count: number;
-  artist_count: number;
+  label: string;
+  detection_count: number;
+  total_play_time: string;
+  unique_tracks: number;
+  tracks: string[];
+  unique_artists: number;
+  artists: string[];
+  unique_albums: number;
+  albums: string[];
+  unique_stations: number;
+  stations: string[];
 }
 
 const AnalyticsLabels: React.FC = () => {
   const [labels, setLabels] = useState<Label[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState('7d');
-  const [searchQuery, setSearchQuery] = useState('');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
 
   useEffect(() => {
@@ -51,74 +50,60 @@ const AnalyticsLabels: React.FC = () => {
     fetchData();
   }, [timeRange]);
 
-  const filteredLabels = labels.filter(label =>
-    label.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   if (loading) {
     return (
-      <Flex justify="center" align="center" h="200px">
-        <Spinner size="xl" />
-      </Flex>
+      <Box p={4} display="flex" justifyContent="center">
+        <Spinner />
+      </Box>
     );
   }
 
   return (
-    <Box>
-      <Flex gap={4} mb={6} direction={{ base: 'column', md: 'row' }}>
-        <InputGroup maxW={{ base: "100%", md: "400px" }}>
-          <InputLeftElement pointerEvents="none">
-            <Icon as={FaSearch} color="gray.400" />
-          </InputLeftElement>
-          <Input
-            placeholder="Search labels..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </InputGroup>
-
+    <Box p={4}>
+      <Flex justify="space-between" align="center" mb={4}>
+        <Text fontSize="2xl" fontWeight="bold">
+          Label Analytics
+        </Text>
         <Select
           value={timeRange}
           onChange={(e) => setTimeRange(e.target.value)}
-          maxW={{ base: "100%", md: "200px" }}
-          aria-label="Select time range"
-          title="Time range filter"
+          maxW="200px"
         >
-          <option value="24h">Last 24 hours</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-          <option value="90d">Last 90 days</option>
-          <option value="1y">Last year</option>
+          <option value="24h">Last 24 Hours</option>
+          <option value="7d">Last 7 Days</option>
+          <option value="30d">Last 30 Days</option>
         </Select>
       </Flex>
 
       <Box overflowX="auto">
-        <Table variant="simple" borderWidth="1px" borderColor={borderColor}>
+        <Table variant="simple" borderWidth={1} borderColor={borderColor}>
           <Thead>
             <Tr>
-              <Th>Rank</Th>
               <Th>Label</Th>
-              <Th isNumeric>Total Plays</Th>
-              <Th isNumeric>Total Play Time</Th>
-              <Th isNumeric>Unique Tracks</Th>
-              <Th isNumeric>Unique Artists</Th>
+              <Th isNumeric>Detections</Th>
+              <Th>Total Play Time</Th>
+              <Th isNumeric>Artists</Th>
+              <Th isNumeric>Tracks</Th>
+              <Th isNumeric>Albums</Th>
+              <Th isNumeric>Stations</Th>
             </Tr>
           </Thead>
           <Tbody>
-            {filteredLabels.map((label, index) => (
-              <Tr key={label.name}>
-                <Td>{index + 1}</Td>
-                <Td>{label.name}</Td>
-                <Td isNumeric>{label.play_count}</Td>
-                <Td isNumeric>{formatDuration(label.total_play_time)}</Td>
-                <Td isNumeric>{label.track_count}</Td>
-                <Td isNumeric>{label.artist_count}</Td>
+            {labels.map((label) => (
+              <Tr key={label.label}>
+                <Td>{label.label}</Td>
+                <Td isNumeric>{label.detection_count}</Td>
+                <Td>{label.total_play_time}</Td>
+                <Td isNumeric>{label.unique_artists}</Td>
+                <Td isNumeric>{label.unique_tracks}</Td>
+                <Td isNumeric>{label.unique_albums}</Td>
+                <Td isNumeric>{label.unique_stations}</Td>
               </Tr>
             ))}
-            {filteredLabels.length === 0 && (
+            {labels.length === 0 && (
               <Tr>
-                <Td colSpan={6} textAlign="center" py={8}>
-                  <Text>No labels found for the selected time range</Text>
+                <Td colSpan={7} textAlign="center" py={4}>
+                  No label data available for this time range
                 </Td>
               </Tr>
             )}
@@ -129,4 +114,4 @@ const AnalyticsLabels: React.FC = () => {
   );
 };
 
-export default AnalyticsLabels; 
+export default AnalyticsLabels;

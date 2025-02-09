@@ -1,1 +1,1 @@
-export const WS_URL = 'ws://localhost:8002/ws'; 
+export const WS_URL = 'ws://localhost:8000/ws'; 

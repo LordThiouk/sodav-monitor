@@ -2,30 +2,29 @@ from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks, UploadFi
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
 import uvicorn
 import json
-import asyncio
-import logging
-import requests
-import librosa
 import os
-import pandas as pd
-from pathlib import Path
+import logging
+from logging.handlers import RotatingFileHandler
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from dotenv import load_dotenv
-from sqlalchemy.orm import Session
-
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, distinct, case, and_, text
+import librosa
 from models import Base, RadioStation, Track, TrackDetection, User, Report
-from database import SessionLocal, engine, Base
+from database import SessionLocal, engine
 from audio_processor import AudioProcessor
 from fingerprint import AudioProcessor as FingerprintProcessor
 from radio_manager import RadioManager
 from fingerprint_generator import generate_fingerprint
 from music_recognition import MusicRecognizer
+from routers.analytics import router as analytics_router
+from routers.channels import router as channels_router
 
 # Load environment variables
 load_dotenv()
@@ -49,7 +48,7 @@ app = FastAPI(title="SODAV Media Monitor", version="1.0.0")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8001"],
+    allow_origins=["http://localhost:3001", "http://localhost:8000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -87,6 +86,25 @@ class DetectionResponse(BaseModel):
 
 class StreamRequest(BaseModel):
     stream_url: str
+
+class ChartData(BaseModel):
+    hour: int
+    count: int
+
+class SystemHealth(BaseModel):
+    status: str
+    uptime: int
+    lastError: Optional[str] = None
+
+class AnalyticsResponse(BaseModel):
+    totalDetections: int
+    detectionRate: float
+    activeStations: int
+    totalStations: int
+    averageConfidence: float
+    detectionsByHour: List[ChartData]
+    topArtists: List[Dict[str, Union[str, int]]]
+    systemHealth: SystemHealth
 
 # Dependency
 def get_db():
@@ -369,33 +387,62 @@ async def get_stations_status_summary():
 async def get_detections(
     station_id: Optional[int] = None,
     start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None,
+    db: Session = Depends(get_db)
 ):
-    """Get track detections with optional filters."""
-    db = SessionLocal()
-    query = db.query(TrackDetection)
-    
-    if station_id:
-        query = query.filter(TrackDetection.station_id == station_id)
-    if start_date:
-        query = query.filter(TrackDetection.detected_at >= start_date)
-    if end_date:
-        query = query.filter(TrackDetection.detected_at <= end_date)
-    
-    detections = query.order_by(TrackDetection.detected_at.desc()).all()
-    db.close()
-    
-    return {
-        "detections": [
-            DetectionResponse(
-                station_name=d.station.name,
-                track_title=d.track.title,
-                artist=d.track.artist,
-                detected_at=d.detected_at,
-                confidence=d.confidence
-            ) for d in detections
-        ]
-    }
+    """Get track detections, optionally filtered by station and date range"""
+    try:
+        # Start with base query
+        query = db.query(TrackDetection).options(
+            joinedload(TrackDetection.station),
+            joinedload(TrackDetection.track)
+        )
+        
+        # Apply filters
+        if station_id:
+            query = query.filter(TrackDetection.station_id == station_id)
+        if start_date:
+            query = query.filter(TrackDetection.detected_at >= start_date)
+        if end_date:
+            query = query.filter(TrackDetection.detected_at <= end_date)
+        
+        # Get detections ordered by most recent first
+        detections = query.order_by(TrackDetection.detected_at.desc()).all()
+        
+        # Format response
+        return {
+            "detections": [
+                {
+                    "id": d.id,
+                    "station_id": d.station_id,
+                    "track_id": d.track_id,
+                    "station_name": d.station.name if d.station else None,
+                    "track_title": d.track.title if d.track else None,
+                    "artist": d.track.artist if d.track else None,
+                    "detected_at": d.detected_at.isoformat(),
+                    "confidence": d.confidence,
+                    "play_duration": str(d.play_duration) if d.play_duration else "0",
+                    "track": {
+                        "id": d.track.id if d.track else None,
+                        "title": d.track.title if d.track else None,
+                        "artist": d.track.artist if d.track else None,
+                        "isrc": d.track.isrc if d.track else None,
+                        "label": d.track.label if d.track else None,
+                        "album": d.track.album if d.track else None,
+                        "release_date": d.track.release_date.isoformat() if d.track and d.track.release_date else None,
+                        "play_count": d.track.play_count if d.track else 0,
+                        "total_play_time": str(d.track.total_play_time) if d.track and d.track.total_play_time else "0",
+                        "last_played": d.track.last_played.isoformat() if d.track and d.track.last_played else None,
+                        "external_ids": d.track.external_ids if d.track else {},
+                        "created_at": d.track.created_at.isoformat() if d.track and d.track.created_at else None
+                    }
+                }
+                for d in detections
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting detections: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/reports")
 async def get_reports(db: Session = Depends(get_db)):
@@ -440,56 +487,138 @@ async def get_reports(db: Session = Depends(get_db)):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time updates"""
+    from utils.websocket import active_connections
+    
+    await websocket.accept()
+    active_connections.append(websocket)
+    
     try:
-        await websocket.accept()
-        active_connections.append(websocket)
-        logger.info(f"New WebSocket connection. Total: {len(active_connections)}")
-
+        # Send initial data
+        from models import TrackDetection, RadioStation
+        from sqlalchemy import desc
+        
+        # Get database session
+        db = SessionLocal()
         try:
+            # Get all stations
+            stations = db.query(RadioStation).all()
+            active_station_count = len([s for s in stations if s.is_active])
+            
+            # Get recent detections
+            recent_detections = (
+                db.query(TrackDetection)
+                .order_by(desc(TrackDetection.detected_at))
+                .limit(50)
+                .all()
+            )
+            
+            # Convert to dict
+            detections = []
+            for detection in recent_detections:
+                track = {
+                    "id": detection.track.id if detection.track else None,
+                    "title": detection.track.title if detection.track else None,
+                    "artist": detection.track.artist if detection.track else None,
+                    "isrc": detection.track.isrc if detection.track else None,
+                    "label": detection.track.label if detection.track else None,
+                    "album": detection.track.album if detection.track else None,
+                    "release_date": detection.track.release_date.isoformat() if detection.track and detection.track.release_date else None,
+                    "play_count": detection.track.play_count if detection.track else 0,
+                    "total_play_time": str(detection.track.total_play_time) if detection.track and detection.track.total_play_time else "0:00:00",
+                    "last_played": detection.track.last_played.isoformat() if detection.track and detection.track.last_played else None,
+                    "external_ids": detection.track.external_ids if detection.track else {},
+                    "created_at": detection.track.created_at.isoformat() if detection.track and detection.track.created_at else None
+                }
+                
+                detections.append({
+                    "id": detection.id,
+                    "station_id": detection.station_id,
+                    "track_id": detection.track_id,
+                    "station_name": detection.station.name if detection.station else None,
+                    "track_title": detection.track.title if detection.track else None,
+                    "artist": detection.track.artist if detection.track else None,
+                    "detected_at": detection.detected_at.isoformat(),
+                    "confidence": detection.confidence,
+                    "play_duration": str(detection.play_duration) if detection.play_duration else "0:00:15",  # Default to 15 seconds if not set
+                    "track": track
+                })
+            
             # Send initial data
             await websocket.send_json({
-                "type": "stats_update",
+                "type": "initial_data",
                 "timestamp": datetime.now().isoformat(),
-                "active_streams": 1,
-                "total_streams": 1,
-                "total_tracks": 0
+                "data": {
+                    "active_stations": active_station_count,
+                    "recent_detections": detections
+                }
             })
-
-            # Keep connection alive
-            while True:
-                try:
-                    # Wait for client messages
-                    data = await websocket.receive_text()
-                    # Send pong response
-                    await websocket.send_json({
-                        "type": "pong",
-                        "timestamp": datetime.now().isoformat()
-                    })
-                except WebSocketDisconnect:
-                    break
-
-        except Exception as e:
-            logger.error(f"Error in WebSocket loop: {e}")
-
+        finally:
+            db.close()
+            
+        # Keep connection alive and handle pings
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_json({
+                    "type": "pong",
+                    "timestamp": datetime.now().isoformat()
+                })
+                
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-
+        logger.error(f"WebSocket error: {str(e)}")
     finally:
         if websocket in active_connections:
             active_connections.remove(websocket)
-            logger.info(f"WebSocket disconnected. Total: {len(active_connections)}")
 
-def test_music_detection():
-    stream_url = "http://listen.senemultimedia.net:8090/stream"
-    try:
-        response = requests.get(stream_url, stream=True)
-        audio_data = response.content  # Get the audio data from the stream
-        detection_result = processor.detect_track(audio_data)  # Use the processor to detect music
-        print(detection_result)
-    except Exception as e:
-        print(f"Error detecting music: {e}")
-
-# test_music_detection()  # Call the function to test music detection
+async def broadcast_track_detection(track_data: Dict):
+    """Broadcast track detection to all connected clients"""
+    from utils.websocket import active_connections
+    
+    # Format the track data for frontend
+    track = {
+        "id": track_data.get("track_id"),
+        "title": track_data.get("title"),
+        "artist": track_data.get("artist"),
+        "isrc": track_data.get("isrc"),
+        "label": track_data.get("label"),
+        "album": track_data.get("album"),
+        "release_date": track_data.get("release_date"),
+        "play_count": track_data.get("play_count", 0),
+        "total_play_time": str(track_data.get("total_play_time", timedelta(seconds=15))),
+        "last_played": track_data.get("last_played"),
+        "external_ids": track_data.get("external_ids", {}),
+        "created_at": track_data.get("created_at")
+    }
+    
+    # Ensure play_duration is never 0
+    play_duration = track_data.get("play_duration")
+    if not play_duration or str(play_duration) == "0":
+        play_duration = timedelta(seconds=15)  # Default to 15 seconds
+    
+    detection_data = {
+        "type": "track_detection",
+        "timestamp": datetime.now().isoformat(),
+        "data": {
+            "id": track_data.get("id"),
+            "station_id": track_data.get("station_id"),
+            "track_id": track_data.get("track_id"),
+            "station_name": track_data.get("station_name"),
+            "track_title": track_data.get("title"),
+            "artist": track_data.get("artist"),
+            "detected_at": track_data.get("detected_at", datetime.now().isoformat()),
+            "confidence": track_data.get("confidence"),
+            "play_duration": str(play_duration),
+            "track": track
+        }
+    }
+    
+    # Send to all connected clients
+    for connection in active_connections:
+        try:
+            await connection.send_json(detection_data)
+        except Exception as e:
+            logger.error(f"Error sending detection to client: {e}")
+            active_connections.remove(connection)
 
 @app.post("/api/detect")
 async def detect_music(request: StreamRequest):
@@ -717,6 +846,513 @@ async def generate_report(report_id: int, db: Session):
     
     finally:
         db.commit()
+
+from datetime import timedelta
+from typing import Optional, List
+from fastapi import Query
+
+@app.get("/api/analytics/tracks")
+async def get_tracks_analytics(
+    time_range: str = Query("24h", description="Time range for analytics (e.g., '7d' for 7 days)"),
+    db: Session = Depends(get_db)
+):
+    """Get detailed track analytics for a specific time range"""
+    try:
+        # Parse time range
+        unit = time_range[-1].lower()
+        value = int(time_range[:-1])
+        
+        if unit == 'd':
+            delta = timedelta(days=value)
+        elif unit == 'h':
+            delta = timedelta(hours=value)
+        else:
+            raise ValueError(f"Invalid time range format: {time_range}. Use format like '7d' or '24h'")
+        
+        start_time = datetime.now() - delta
+        
+        # Get track analytics with all required information
+        tracks = (
+            db.query(
+                Track.id,
+                Track.title,
+                Track.artist,
+                Track.album,
+                Track.isrc,
+                Track.label,
+                func.count(TrackDetection.id).label('detection_count'),
+                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
+                func.count(distinct(TrackDetection.station_id)).label('unique_stations'),
+                func.group_concat(distinct(RadioStation.name)).label('stations')
+            )
+            .join(TrackDetection, Track.id == TrackDetection.track_id)
+            .join(RadioStation, TrackDetection.station_id == RadioStation.id)
+            .filter(TrackDetection.detected_at >= start_time)
+            .group_by(Track.id)
+            .order_by(func.count(TrackDetection.id).desc())
+            .all()
+        )
+        
+        # Format response
+        return [
+            {
+                "id": id,
+                "title": title,
+                "artist": artist,
+                "album": album,
+                "isrc": isrc,
+                "label": label,
+                "detection_count": detection_count or 0,
+                "total_play_time": str(timedelta(seconds=int(total_play_time))) if total_play_time else "0:00:00",
+                "unique_stations": unique_stations or 0,
+                "stations": stations.split(',') if stations else []
+            }
+            for id, title, artist, album, isrc, label, detection_count, total_play_time, unique_stations, stations in tracks
+        ]
+        
+    except Exception as e:
+        logger.error(f"Error getting tracks analytics: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting tracks analytics: {str(e)}"
+        )
+
+@app.get("/api/analytics/artists")
+async def get_artist_analytics(
+    time_range: str = Query(..., description="Time range for analytics (e.g., '7d' for 7 days)"),
+    db: Session = Depends(get_db)
+):
+    """Get artist analytics for a specific time range"""
+    try:
+        # Parse time range
+        unit = time_range[-1].lower()
+        value = int(time_range[:-1])
+        
+        if unit == 'd':
+            delta = timedelta(days=value)
+        elif unit == 'h':
+            delta = timedelta(hours=value)
+        else:
+            raise ValueError(f"Invalid time range format: {time_range}. Use format like '7d' or '24h'")
+        
+        start_time = datetime.now() - delta
+        
+        # Get artist detections in the time range
+        detections = (
+            db.query(
+                Track.artist,
+                func.count(TrackDetection.id).label('detection_count'),
+                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
+                func.count(distinct(Track.id)).label('unique_tracks'),
+                func.group_concat(distinct(Track.title)).label('tracks'),
+                func.group_concat(distinct(Track.album)).label('albums'),
+                func.group_concat(distinct(Track.label)).label('labels'),
+                func.group_concat(distinct(RadioStation.name)).label('stations')
+            )
+            .join(TrackDetection, Track.id == TrackDetection.track_id)
+            .join(RadioStation, TrackDetection.station_id == RadioStation.id)
+            .filter(TrackDetection.detected_at >= start_time)
+            .group_by(Track.artist)
+            .order_by(func.count(TrackDetection.id).desc())
+            .all()
+        )
+        
+        # Format response
+        results = []
+        for (artist, detection_count, total_play_time, unique_tracks, tracks, albums, labels, stations) in detections:
+            # Split concatenated strings into lists
+            track_list = tracks.split(',') if tracks else []
+            album_list = list(set(albums.split(',') if albums else []))
+            label_list = list(set(labels.split(',') if labels else []))
+            station_list = list(set(stations.split(',') if stations else []))
+            
+            results.append({
+                "artist": artist,
+                "detection_count": detection_count,
+                "total_play_time": str(timedelta(seconds=int(total_play_time))) if total_play_time else "0:00:00",
+                "unique_tracks": unique_tracks,
+                "tracks": track_list,
+                "unique_albums": len(album_list),
+                "albums": album_list,
+                "unique_labels": len(label_list),
+                "labels": label_list,
+                "unique_stations": len(station_list),
+                "stations": station_list
+            })
+        
+        return {
+            "time_range": time_range,
+            "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "end_time": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "total_artists": len(results),
+            "artists": results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting artist analytics: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting artist analytics: {str(e)}"
+        )
+
+@app.get("/api/analytics/labels")
+async def get_label_analytics(
+    time_range: str = Query(..., description="Time range for analytics (e.g., '7d' for 7 days)"),
+    db: Session = Depends(get_db)
+):
+    """Get label analytics for a specific time range"""
+    try:
+        # Parse time range
+        unit = time_range[-1].lower()
+        value = int(time_range[:-1])
+        
+        if unit == 'd':
+            delta = timedelta(days=value)
+        elif unit == 'h':
+            delta = timedelta(hours=value)
+        else:
+            raise ValueError(f"Invalid time range format: {time_range}. Use format like '7d' or '24h'")
+        
+        start_time = datetime.now() - delta
+        
+        # Get label detections in the time range
+        detections = (
+            db.query(
+                Track.label,
+                func.count(TrackDetection.id).label('detection_count'),
+                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
+                func.count(distinct(Track.id)).label('unique_tracks'),
+                func.group_concat(distinct(Track.title)).label('tracks'),
+                func.group_concat(distinct(Track.artist)).label('artists'),
+                func.group_concat(distinct(Track.album)).label('albums'),
+                func.group_concat(distinct(RadioStation.name)).label('stations')
+            )
+            .join(TrackDetection, Track.id == TrackDetection.track_id)
+            .join(RadioStation, TrackDetection.station_id == RadioStation.id)
+            .filter(TrackDetection.detected_at >= start_time)
+            .filter(Track.label.isnot(None))  # Exclude tracks without labels
+            .group_by(Track.label)
+            .order_by(func.count(TrackDetection.id).desc())
+            .all()
+        )
+        
+        # Format response
+        results = []
+        for (label, detection_count, total_play_time, unique_tracks, tracks, artists, albums, stations) in detections:
+            # Split concatenated strings into lists
+            track_list = tracks.split(',') if tracks else []
+            artist_list = list(set(artists.split(',') if artists else []))
+            album_list = list(set(albums.split(',') if albums else []))
+            station_list = list(set(stations.split(',') if stations else []))
+            
+            results.append({
+                "label": label,
+                "detection_count": detection_count,
+                "total_play_time": str(timedelta(seconds=int(total_play_time))) if total_play_time else "0:00:00",
+                "unique_tracks": unique_tracks,
+                "tracks": track_list,
+                "unique_artists": len(artist_list),
+                "artists": artist_list,
+                "unique_albums": len(album_list),
+                "albums": album_list,
+                "unique_stations": len(station_list),
+                "stations": station_list
+            })
+        
+        return {
+            "time_range": time_range,
+            "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "end_time": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "total_labels": len(results),
+            "labels": results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting label analytics: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting label analytics: {str(e)}"
+        )
+
+@app.get("/api/analytics/channels")
+async def get_channel_analytics(
+    time_range: str = Query(..., description="Time range for analytics (e.g., '7d' for 7 days)"),
+    db: Session = Depends(get_db)
+):
+    """Get channel analytics for a specific time range"""
+    try:
+        # Parse time range
+        unit = time_range[-1].lower()
+        value = int(time_range[:-1])
+        
+        if unit == 'd':
+            delta = timedelta(days=value)
+        elif unit == 'h':
+            delta = timedelta(hours=value)
+        else:
+            raise ValueError(f"Invalid time range format: {time_range}. Use format like '7d' or '24h'")
+        
+        start_time = datetime.now() - delta
+        
+        # Get channel detections in the time range
+        detections = (
+            db.query(
+                RadioStation.id,
+                RadioStation.name,
+                RadioStation.stream_url,
+                RadioStation.country,
+                RadioStation.language,
+                RadioStation.status,
+                func.count(TrackDetection.id).label('detection_count'),
+                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
+                func.count(distinct(Track.id)).label('unique_tracks'),
+                func.group_concat(distinct(Track.title)).label('tracks'),
+                func.group_concat(distinct(Track.artist)).label('artists'),
+                func.group_concat(distinct(Track.label)).label('labels'),
+                func.count(distinct(Track.artist)).label('unique_artists'),
+                func.count(distinct(Track.label)).label('unique_labels')
+            )
+            .outerjoin(TrackDetection, and_(
+                RadioStation.id == TrackDetection.station_id,
+                TrackDetection.detected_at >= start_time
+            ))
+            .outerjoin(Track, TrackDetection.track_id == Track.id)
+            .group_by(RadioStation.id)
+            .order_by(func.count(TrackDetection.id).desc())
+            .all()
+        )
+        
+        # Format response
+        results = []
+        for (
+            station_id, name, stream_url, country, language, status, 
+            detection_count, total_play_time, unique_tracks, tracks, 
+            artists, labels, unique_artists, unique_labels
+        ) in detections:
+            # Split concatenated strings into lists
+            track_list = tracks.split(',') if tracks else []
+            artist_list = list(set(artists.split(',') if artists else []))
+            label_list = list(set(labels.split(',') if labels else []))
+            
+            # Calculate detection rate (detections per hour)
+            hours = delta.total_seconds() / 3600
+            detection_rate = round(detection_count / hours, 2) if detection_count else 0
+            
+            results.append({
+                "id": station_id,
+                "name": name,
+                "url": stream_url,
+                "status": status.value if status else "inactive",
+                "region": f"{country or 'Unknown'} ({language or 'Unknown'})",
+                "detection_count": detection_count or 0,
+                "detection_rate": detection_rate,
+                "total_play_time": str(timedelta(seconds=int(total_play_time))) if total_play_time else "0:00:00",
+                "unique_tracks": unique_tracks or 0,
+                "tracks": track_list,
+                "unique_artists": unique_artists or 0,
+                "artists": artist_list,
+                "unique_labels": unique_labels or 0,
+                "labels": label_list
+            })
+        
+        return {
+            "time_range": time_range,
+            "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "end_time": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "total_channels": len(results),
+            "active_channels": len([r for r in results if r["detection_count"] > 0]),
+            "channels": results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting channel analytics: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting channel analytics: {str(e)}"
+        )
+
+@app.get("/api/analytics/overview")
+async def get_analytics_overview(
+    time_range: str = Query("24h", description="Time range for analytics (e.g., '7d' for 7 days)"),
+    db: Session = Depends(get_db)
+):
+    """Get analytics overview for a specific time range"""
+    try:
+        # Parse time range
+        unit = time_range[-1].lower()
+        value = int(time_range[:-1])
+        
+        if unit == 'd':
+            delta = timedelta(days=value)
+        elif unit == 'h':
+            delta = timedelta(hours=value)
+        else:
+            raise ValueError(f"Invalid time range format: {time_range}. Use format like '7d' or '24h'")
+        
+        start_time = datetime.now() - delta
+        
+        # Get overall detection statistics
+        detection_stats = (
+            db.query(
+                func.count(TrackDetection.id).label('total_detections'),
+                func.count(distinct(TrackDetection.station_id)).label('active_stations'),
+                func.count(distinct(Track.id)).label('unique_tracks'),
+                func.count(distinct(Track.artist)).label('unique_artists'),
+                func.count(distinct(Track.label)).label('unique_labels'),
+                func.avg(TrackDetection.confidence).label('average_confidence'),
+                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time')
+            )
+            .outerjoin(Track, TrackDetection.track_id == Track.id)
+            .filter(TrackDetection.detected_at >= start_time)
+            .first()
+        )
+        
+        # Get total number of stations
+        total_stations = db.query(func.count(RadioStation.id)).scalar()
+        
+        # Get hourly detection counts
+        hourly_detections = (
+            db.query(
+                func.strftime('%Y-%m-%d %H:00:00', TrackDetection.detected_at).label('hour'),
+                func.count(TrackDetection.id).label('count')
+            )
+            .filter(TrackDetection.detected_at >= start_time)
+            .group_by(text('hour'))
+            .order_by(text('hour'))
+            .all()
+        )
+        
+        # Get top tracks
+        top_tracks = (
+            db.query(
+                Track.id,
+                Track.title,
+                Track.artist,
+                Track.label,
+                func.count(TrackDetection.id).label('detection_count'),
+                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
+                func.count(distinct(TrackDetection.station_id)).label('stations')
+            )
+            .join(TrackDetection, Track.id == TrackDetection.track_id)
+            .filter(TrackDetection.detected_at >= start_time)
+            .group_by(Track.id)
+            .order_by(func.count(TrackDetection.id).desc())
+            .limit(10)
+            .all()
+        )
+        
+        # Get top artists
+        top_artists = (
+            db.query(
+                Track.artist,
+                func.count(TrackDetection.id).label('detection_count'),
+                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
+                func.count(distinct(Track.id)).label('unique_tracks'),
+                func.count(distinct(TrackDetection.station_id)).label('stations')
+            )
+            .join(TrackDetection, Track.id == TrackDetection.track_id)
+            .filter(TrackDetection.detected_at >= start_time)
+            .group_by(Track.artist)
+            .order_by(func.count(TrackDetection.id).desc())
+            .limit(10)
+            .all()
+        )
+        
+        # Get top labels
+        top_labels = (
+            db.query(
+                Track.label,
+                func.count(TrackDetection.id).label('detection_count'),
+                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
+                func.count(distinct(Track.id)).label('unique_tracks'),
+                func.count(distinct(Track.artist)).label('unique_artists'),
+                func.count(distinct(TrackDetection.station_id)).label('stations')
+            )
+            .join(TrackDetection, Track.id == TrackDetection.track_id)
+            .filter(TrackDetection.detected_at >= start_time)
+            .group_by(Track.label)
+            .order_by(func.count(TrackDetection.id).desc())
+            .limit(10)
+            .all()
+        )
+
+        # Get top channels
+        top_channels = (
+            db.query(
+                RadioStation.id,
+                RadioStation.name,
+                RadioStation.country,
+                RadioStation.language,
+                func.count(TrackDetection.id).label('detection_count')
+            )
+            .join(TrackDetection, RadioStation.id == TrackDetection.station_id)
+            .filter(TrackDetection.detected_at >= start_time)
+            .group_by(RadioStation.id)
+            .order_by(func.count(TrackDetection.id).desc())
+            .limit(10)
+            .all()
+        )
+        
+        # Format response to match frontend expectations
+        return {
+            "totalChannels": total_stations,
+            "totalPlays": detection_stats.total_detections or 0,
+            "totalPlayTime": str(timedelta(seconds=int(detection_stats.total_play_time))) if detection_stats.total_play_time else "0:00:00",
+            "playsData": [
+                {
+                    "date": hour,
+                    "plays": count
+                }
+                for hour, count in hourly_detections
+            ],
+            "topTracks": [
+                {
+                    "rank": i + 1,
+                    "title": title,
+                    "artist": artist,
+                    "plays": detection_count or 0,
+                    "duration": str(timedelta(seconds=int(total_play_time))) if total_play_time else "0:00:00"
+                }
+                for i, (id, title, artist, label, detection_count, total_play_time, stations) in enumerate(top_tracks)
+            ],
+            "topArtists": [
+                {
+                    "rank": i + 1,
+                    "name": artist,
+                    "plays": detection_count or 0
+                }
+                for i, (artist, detection_count, total_play_time, unique_tracks, stations) in enumerate(top_artists)
+                if artist is not None
+            ],
+            "topLabels": [
+                {
+                    "rank": i + 1,
+                    "name": label,
+                    "plays": detection_count or 0
+                }
+                for i, (label, detection_count, total_play_time, unique_tracks, unique_artists, stations) in enumerate(top_labels)
+                if label is not None
+            ],
+            "topChannels": [
+                {
+                    "rank": i + 1,
+                    "name": name,
+                    "plays": detection_count or 0,
+                    "region": f"{country or 'Unknown'} ({language or 'Unknown'})"
+                }
+                for i, (id, name, country, language, detection_count) in enumerate(top_channels)
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting analytics overview: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting analytics overview: {str(e)}"
+        )
+
+app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(channels_router)
 
 if __name__ == "__main__":
     host = os.getenv('HOST', '0.0.0.0')

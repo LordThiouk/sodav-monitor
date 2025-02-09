@@ -14,13 +14,19 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import { getArtistsAnalytics } from '../../services/api';
-import { formatDuration } from '../../utils/format';
 
 interface Artist {
-  name: string;
-  play_count: number;
-  total_play_time: number;
-  track_count: number;
+  artist: string;
+  detection_count: number;
+  total_play_time: string;
+  unique_tracks: number;
+  tracks: string[];
+  unique_albums: number;
+  albums: string[];
+  unique_labels: number;
+  labels: string[];
+  unique_stations: number;
+  stations: string[];
 }
 
 const AnalyticsArtists: React.FC = () => {
@@ -44,65 +50,60 @@ const AnalyticsArtists: React.FC = () => {
     fetchData();
   }, [timeRange]);
 
-  const handleTimeRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setTimeRange(e.target.value);
-  };
-
   if (loading) {
     return (
-      <Flex justify="center" align="center" h="200px">
-        <Spinner size="xl" />
-      </Flex>
+      <Box p={4} display="flex" justifyContent="center">
+        <Spinner />
+      </Box>
     );
   }
 
   return (
-    <Box>
-      <Flex justify="flex-end" mb={6}>
+    <Box p={4}>
+      <Flex justify="space-between" align="center" mb={4}>
+        <Text fontSize="2xl" fontWeight="bold">
+          Artist Analytics
+        </Text>
         <Select
           value={timeRange}
-          onChange={handleTimeRangeChange}
+          onChange={(e) => setTimeRange(e.target.value)}
           maxW="200px"
-          aria-label="Select time range"
-          title="Time range filter"
         >
-          <option value="24h">Last 24 hours</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-          <option value="90d">Last 90 days</option>
-          <option value="1y">Last year</option>
+          <option value="24h">Last 24 Hours</option>
+          <option value="7d">Last 7 Days</option>
+          <option value="30d">Last 30 Days</option>
         </Select>
       </Flex>
 
       <Box overflowX="auto">
-        <Table variant="simple" borderWidth="1px" borderColor={borderColor}>
+        <Table variant="simple" borderWidth={1} borderColor={borderColor}>
           <Thead>
             <Tr>
-              <Th>Rank</Th>
               <Th>Artist</Th>
-              <Th isNumeric>Total Plays</Th>
-              <Th isNumeric>Total Play Time</Th>
+              <Th isNumeric>Detections</Th>
+              <Th>Total Play Time</Th>
               <Th isNumeric>Unique Tracks</Th>
-              <Th isNumeric>Avg. Plays per Track</Th>
+              <Th isNumeric>Albums</Th>
+              <Th isNumeric>Labels</Th>
+              <Th isNumeric>Stations</Th>
             </Tr>
           </Thead>
           <Tbody>
-            {artists.map((artist, index) => (
-              <Tr key={artist.name}>
-                <Td>{index + 1}</Td>
-                <Td>{artist.name}</Td>
-                <Td isNumeric>{artist.play_count}</Td>
-                <Td isNumeric>{formatDuration(artist.total_play_time)}</Td>
-                <Td isNumeric>{artist.track_count}</Td>
-                <Td isNumeric>
-                  {(artist.play_count / artist.track_count).toFixed(1)}
-                </Td>
+            {artists.map((artist) => (
+              <Tr key={artist.artist}>
+                <Td>{artist.artist}</Td>
+                <Td isNumeric>{artist.detection_count}</Td>
+                <Td>{artist.total_play_time}</Td>
+                <Td isNumeric>{artist.unique_tracks}</Td>
+                <Td isNumeric>{artist.unique_albums}</Td>
+                <Td isNumeric>{artist.unique_labels}</Td>
+                <Td isNumeric>{artist.unique_stations}</Td>
               </Tr>
             ))}
             {artists.length === 0 && (
               <Tr>
-                <Td colSpan={6} textAlign="center" py={8}>
-                  <Text>No artists found for the selected time range</Text>
+                <Td colSpan={7} textAlign="center" py={4}>
+                  No artist data available for this time range
                 </Td>
               </Tr>
             )}
@@ -113,4 +114,4 @@ const AnalyticsArtists: React.FC = () => {
   );
 };
 
-export default AnalyticsArtists; 
+export default AnalyticsArtists;

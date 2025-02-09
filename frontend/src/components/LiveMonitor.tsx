@@ -20,12 +20,51 @@ import {
   StatHelpText,
   Icon,
   Progress,
+  SimpleGrid,
+  Flex,
+  Spacer,
+  Link,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  TableContainer,
+  Divider,
+  Card,
+  CardHeader,
+  CardBody,
+  CardFooter,
+  Stack,
+  Heading,
+  Image,
+  Tag,
+  TagLabel,
+  TagLeftIcon,
 } from '@chakra-ui/react';
-import { FaMusic, FaExclamationTriangle, FaCheckCircle } from 'react-icons/fa';
+import { 
+  FaMusic, 
+  FaExclamationTriangle, 
+  FaCheckCircle, 
+  FaBroadcastTower, 
+  FaArrowRight, 
+  FaChartLine,
+  FaFileAlt,
+  FaCalendarAlt,
+  FaClock,
+  FaDownload,
+  FaBell,
+  FaEnvelope,
+  FaUser
+} from 'react-icons/fa';
 import { fetchStations } from '../services/api';
 import { RadioStation } from '../types';
 import { WS_URL } from '../config';
 import LoadingSpinner from './LoadingSpinner';
+import { Link as RouterLink } from 'react-router-dom';
+import AnalyticsOverview from './AnalyticsOverview';
+import TrackDetectionList from './TrackDetectionList';
 
 interface StationStatus {
   lastUpdate: string;
@@ -39,6 +78,18 @@ interface StationStatus {
   };
 }
 
+interface Detection {
+  id: number;
+  stationName: string;
+  title: string;
+  artist: string;
+  isrc: string;
+  streamUrl: string;
+  confidence: number;
+  detected_at: string;
+  play_duration: string;
+}
+
 interface SystemStatus {
   activeStations: number;
   totalStations: number;
@@ -46,22 +97,46 @@ interface SystemStatus {
   lastUpdate: string;
 }
 
+interface Report {
+  id: string;
+  title: string;
+  type: string;
+  generatedAt: string;
+  status: 'completed' | 'pending' | 'failed';
+  downloadUrl: string;
+  creator: {
+    name: string;
+    email: string;
+  };
+}
+
+interface ReportSubscription {
+  id: string;
+  name: string;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  nextDelivery: string;
+  recipients: string[];
+  type: string;
+}
+
 const LiveMonitor: React.FC = () => {
   const [stations, setStations] = useState<RadioStation[]>([]);
   const [stationStatus, setStationStatus] = useState<Record<number, StationStatus>>({});
+  const [latestDetections, setLatestDetections] = useState<Detection[]>([]);
   const [systemStatus, setSystemStatus] = useState<SystemStatus>({
     activeStations: 0,
     totalStations: 0,
     totalDetections: 0,
     lastUpdate: new Date().toISOString()
   });
+  const [lastReport, setLastReport] = useState<Report | null>(null);
+  const [activeSubscriptions, setActiveSubscriptions] = useState<ReportSubscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [wsConnected, setWsConnected] = useState(false);
-  const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const cardBgColor = useColorModeValue('gray.50', 'gray.700');
 
   const handleWebSocketMessage = useCallback((event: MessageEvent) => {
     try {
@@ -91,6 +166,24 @@ const LiveMonitor: React.FC = () => {
               }
             }
           }));
+
+          // Add to latest detections
+          setLatestDetections(prev => {
+            const station = stations.find(s => s.id === data.stream_id);
+            const newDetection = {
+              id: data.detection.id,
+              stationName: station?.name || 'Unknown Station',
+              title: data.detection.title,
+              artist: data.detection.artist,
+              isrc: data.detection.isrc || 'N/A',
+              streamUrl: station?.stream_url || 'N/A',
+              confidence: data.detection.confidence,
+              detected_at: data.detection.detected_at,
+              play_duration: data.detection.play_duration || '0:00'
+            };
+            const updated = [newDetection, ...prev].slice(0, 10); // Keep only last 10 detections
+            return updated;
+          });
           break;
 
         case 'station_error':
@@ -107,38 +200,13 @@ const LiveMonitor: React.FC = () => {
     } catch (error) {
       console.error('Error handling WebSocket message:', error);
     }
-  }, []);
+  }, [stations]);
 
   const connectWebSocket = useCallback(() => {
     const ws = new WebSocket(WS_URL);
-
-    ws.onopen = () => {
-      console.log('WebSocket connected');
-      setWsConnected(true);
-      setReconnectAttempt(0);
-    };
-
     ws.onmessage = handleWebSocketMessage;
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setWsConnected(false);
-    };
-
-    ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      setWsConnected(false);
-      
-      if (reconnectAttempt < 5) {
-        setTimeout(() => {
-          setReconnectAttempt(prev => prev + 1);
-          connectWebSocket();
-        }, 5000);
-      }
-    };
-
     return ws;
-  }, [handleWebSocketMessage, reconnectAttempt]);
+  }, [handleWebSocketMessage]);
 
   useEffect(() => {
     const loadStations = async () => {
@@ -195,144 +263,97 @@ const LiveMonitor: React.FC = () => {
   }
 
   return (
-    <Container maxW="container.xl" py={4}>
-      {!wsConnected && (
-        <Alert status="warning" mb={4}>
+    <Container maxW="container.xl" py={5}>
+      {error && (
+        <Alert status="error" mb={6}>
           <AlertIcon />
-          Connection to detection service lost. Attempting to reconnect...
-          {reconnectAttempt >= 5 && (
-            <Button
-              ml={4}
-              size="sm"
-              onClick={() => {
-                setReconnectAttempt(0);
-                connectWebSocket();
-              }}
-            >
-              Retry Connection
-            </Button>
-          )}
+          <AlertTitle>Error!</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      <Grid templateColumns="repeat(3, 1fr)" gap={4} mb={6}>
-        <GridItem>
-          <Stat p={4} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
+      <VStack spacing={6} align="stretch">
+        {/* System Overview */}
+        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+          <Stat
+            p={4}
+            shadow="md"
+            border="1px"
+            borderColor={borderColor}
+            borderRadius="lg"
+            bg={bgColor}
+          >
             <StatLabel>Active Stations</StatLabel>
-            <StatNumber>{systemStatus.activeStations}</StatNumber>
+            <StatNumber>{stations.filter(s => s.is_active).length}</StatNumber>
             <StatHelpText>
-              of {systemStatus.totalStations} total
-            </StatHelpText>
-            <Progress 
-              value={(systemStatus.activeStations / systemStatus.totalStations) * 100} 
-              size="sm" 
-              colorScheme="green" 
-              mt={2}
-            />
-          </Stat>
-        </GridItem>
-
-        <GridItem>
-          <Stat p={4} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
-            <StatLabel>Total Detections</StatLabel>
-            <StatNumber>{systemStatus.totalDetections}</StatNumber>
-            <StatHelpText>
-              Last updated: {new Date(systemStatus.lastUpdate).toLocaleTimeString()}
+              <Icon as={FaBroadcastTower} mr={1} />
+              Currently Broadcasting
             </StatHelpText>
           </Stat>
-        </GridItem>
-
-        <GridItem>
-          <Stat p={4} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
-            <StatLabel>Detection Rate</StatLabel>
+          
+          <Stat
+            p={4}
+            shadow="md"
+            border="1px"
+            borderColor={borderColor}
+            borderRadius="lg"
+            bg={bgColor}
+          >
+            <StatLabel>Total Stations</StatLabel>
+            <StatNumber>{stations.length}</StatNumber>
+            <StatHelpText>
+              <Icon as={FaMusic} mr={1} />
+              Monitored Stations
+            </StatHelpText>
+          </Stat>
+          
+          <Stat
+            p={4}
+            shadow="md"
+            border="1px"
+            borderColor={borderColor}
+            borderRadius="lg"
+            bg={bgColor}
+          >
+            <StatLabel>System Status</StatLabel>
             <StatNumber>
-              {stations.length > 0
-                ? `${Math.round((Object.values(stationStatus).filter(s => s.status === 'active').length / stations.length) * 100)}%`
-                : '0%'}
+              <Icon 
+                as={FaCheckCircle} 
+                color="green.500" 
+                mr={2}
+              />
+              Healthy
             </StatNumber>
-            <StatHelpText>Success rate</StatHelpText>
+            <StatHelpText>All Systems Operational</StatHelpText>
           </Stat>
-        </GridItem>
-      </Grid>
+        </SimpleGrid>
 
-      <VStack spacing={4} align="stretch">
-        {stations.map(station => {
-          const status = stationStatus[station.id];
-          const timeSinceLastUpdate = status?.lastUpdate 
-            ? Math.round((new Date().getTime() - new Date(status.lastUpdate).getTime()) / 1000)
-            : null;
+        {/* Live Track Detections */}
+        <Box
+          p={4}
+          shadow="md"
+          border="1px"
+          borderColor={borderColor}
+          borderRadius="lg"
+          bg={bgColor}
+        >
+          <TrackDetectionList />
+        </Box>
 
-          return (
-            <Box
-              key={station.id}
-              p={4}
-              bg={bgColor}
-              borderRadius="lg"
-              borderWidth="1px"
-              borderColor={borderColor}
-              shadow="sm"
-            >
-              <VStack align="stretch" spacing={2}>
-                <HStack justify="space-between">
-                  <HStack>
-                    <Icon
-                      as={status?.status === 'error' ? FaExclamationTriangle : 
-                          status?.status === 'active' ? FaCheckCircle : FaMusic}
-                      color={status?.status === 'active' ? 'green.500' : 
-                            status?.status === 'error' ? 'red.500' : 'gray.500'}
-                    />
-                    <Text fontWeight="bold">{station.name}</Text>
-                  </HStack>
-                  <Badge
-                    colorScheme={
-                      status?.status === 'active' ? 'green' :
-                      status?.status === 'error' ? 'red' : 'gray'
-                    }
-                  >
-                    {status?.status || 'Unknown'}
-                  </Badge>
-                </HStack>
-
-                {status?.currentTrack && (
-                  <Box>
-                    <Text fontSize="sm" color="gray.500">
-                      Current Track
-                    </Text>
-                    <Text fontWeight="medium">
-                      {status.currentTrack.title} - {status.currentTrack.artist}
-                    </Text>
-                    <HStack spacing={4} fontSize="sm" color="gray.500">
-                      <Text>
-                        Confidence: {(status.currentTrack.confidence * 100).toFixed(1)}%
-                      </Text>
-                      <Text>
-                        Detected: {new Date(status.currentTrack.detected_at).toLocaleTimeString()}
-                      </Text>
-                    </HStack>
-                  </Box>
-                )}
-
-                {status?.error && (
-                  <Alert status="error" size="sm">
-                    <AlertIcon />
-                    {status.error}
-                  </Alert>
-                )}
-
-                {timeSinceLastUpdate !== null && (
-                  <Text fontSize="xs" color="gray.500">
-                    Last update: {timeSinceLastUpdate < 60 
-                      ? `${timeSinceLastUpdate} seconds ago`
-                      : `${Math.floor(timeSinceLastUpdate / 60)} minutes ago`}
-                  </Text>
-                )}
-              </VStack>
-            </Box>
-          );
-        })}
+        {/* Analytics Overview */}
+        <Box
+          p={4}
+          shadow="md"
+          border="1px"
+          borderColor={borderColor}
+          borderRadius="lg"
+          bg={bgColor}
+        >
+          <AnalyticsOverview />
+        </Box>
       </VStack>
     </Container>
   );
 };
 
-export default LiveMonitor; 
+export default LiveMonitor;

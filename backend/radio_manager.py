@@ -44,21 +44,20 @@ class RadioManager:
 
                 if station:
                     # Update existing station
-                    station.url = station_data['url']
+                    station.stream_url = station_data['url_resolved']
                     station.country = station_data['country']
                     station.language = station_data['language']
-                    station.tags = station_data['tags']
-                    station.stream_url = station_data['url_resolved']
+                    station.last_checked = datetime.now()
                     station.last_checked = datetime.utcnow()
                 else:
                     # Create new station
                     station = RadioStation(
                         name=station_data['name'],
-                        url=station_data['url'],
+                        stream_url=station_data['url_resolved'],
                         country=station_data['country'],
                         language=station_data['language'],
-                        tags=station_data['tags'],
-                        stream_url=station_data['url_resolved']
+                        is_active=1,
+                        last_checked=datetime.now()
                     )
                     self.db_session.add(station)
 

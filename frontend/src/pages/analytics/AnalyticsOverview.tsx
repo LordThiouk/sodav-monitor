@@ -1,22 +1,26 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   VStack,
-  Grid,
-  GridItem,
+  HStack,
   Text,
   Heading,
-  Icon,
+  Grid,
+  GridItem,
+  Select,
+  Flex,
+  Badge,
   Table,
   Thead,
   Tbody,
   Tr,
   Th,
   Td,
-  Badge,
-  Flex,
-  Select,
   useColorModeValue,
+  Alert,
+  AlertIcon,
+  AlertTitle,
+  AlertDescription,
 } from '@chakra-ui/react';
 import {
   LineChart,
@@ -25,193 +29,213 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer
+  ResponsiveContainer,
 } from 'recharts';
-import { FaCircle } from 'react-icons/fa';
 
+// API Response Interfaces
 interface ChartData {
+  hour: string;
+  count: number;
+}
+
+interface TopTrack {
+  title: string;
+  artist: string;
+  plays: number;
+  duration: string;
+  lastDetected: string | null;
+}
+
+interface TopArtist {
+  name: string;
+  count: number;
+  lastDetected: string | null;
+}
+
+interface SystemHealth {
+  status: string;
+  uptime: number;
+  lastError: string | null;
+}
+
+interface AnalyticsData {
+  totalDetections: number;
+  detectionRate: number;
+  activeStations: number;
+  totalStations: number;
+  averageConfidence: number;
+  detectionsByHour: ChartData[];
+  topArtists: TopArtist[];
+  topTracks: TopTrack[];
+  systemHealth: SystemHealth;
+}
+
+// UI Data Interfaces
+interface TransformedChartData {
   date: string;
   plays: number;
 }
 
-interface TopTrack {
+interface TransformedTrack {
   rank: number;
   title: string;
   artist: string;
-  label: string;
-  isrc: string;
   plays: number;
-  playedTime: string;
-}
-
-interface TopArtist {
-  rank: number;
-  name: string;
-  plays: number;
-  playedTime: string;
-}
-
-interface TopLabel {
-  rank: number;
-  name: string;
-  plays: number;
-  playedTime: string;
-}
-
-interface TopChannel {
-  rank: number;
+  duration: string;
   id: string;
-  name: string;
-  country: string;
-  plays: number;
-  playedTime: string;
 }
 
-// Sample data for the line chart
-const playsData: ChartData[] = [
-  { date: '2024-02-01', plays: 150 },
-  { date: '2024-02-02', plays: 230 },
-  { date: '2024-02-03', plays: 180 },
-  { date: '2024-02-04', plays: 290 },
-  { date: '2024-02-05', plays: 320 },
-  { date: '2024-02-06', plays: 250 },
-  { date: '2024-02-07', plays: 400 },
-];
+interface TransformedArtist {
+  rank: number;
+  name: string;
+  plays: number;
+}
 
-// Update the sample data with proper types
-const topTracks: TopTrack[] = [
-  {
-    rank: 1,
-    title: "Today's News (Ring It)",
-    artist: "Richard John Cartie/KPM Music Ltd",
-    label: "APM Music",
-    isrc: "GBDL4L081385",
-    plays: 127,
-    playedTime: "00:55:54"
-  },
-  {
-    rank: 2,
-    title: "The Road Future",
-    artist: "Fritz Doddy / Jonathan Elias",
-    label: "FirstCom Music",
-    isrc: "US1ST1653569",
-    plays: 92,
-    playedTime: "00:20:53"
-  }
-];
+interface TransformedLabel {
+  rank: number;
+  name: string;
+  plays: number;
+}
 
-const topArtists: TopArtist[] = [
-  {
-    rank: 1,
-    name: "Richard John Cartie/KPM Music Ltd",
-    plays: 127,
-    playedTime: "00:54:55"
-  },
-  {
-    rank: 2,
-    name: "Fritz Doddy / Jonathan Elias",
-    plays: 92,
-    playedTime: "00:20:53"
-  }
-];
+interface TransformedChannel {
+  rank: number;
+  name: string;
+  region: string;
+  plays: number;
+}
 
-const topLabels: TopLabel[] = [
-  {
-    rank: 1,
-    name: "APM Music",
-    plays: 173,
-    playedTime: "00:55:55"
-  },
-  {
-    rank: 2,
-    name: "FirstCom Music",
-    plays: 97,
-    playedTime: "00:22:29"
-  }
-];
-
-const topChannels: TopChannel[] = [
-  {
-    rank: 1,
-    id: "258903",
-    name: "Radio Future Media 94.0 FM",
-    country: "Senegal",
-    plays: 1520,
-    playedTime: "23:22:33"
-  },
-  {
-    rank: 2,
-    id: "246645",
-    name: "Sud FM",
-    country: "Senegal",
-    plays: 891,
-    playedTime: "20:52:45"
-  }
-];
+interface TransformedData {
+  totalChannels: number;
+  totalPlays: number;
+  totalPlayTime: string;
+  playsData: TransformedChartData[];
+  topTracks: TransformedTrack[];
+  topArtists: TransformedArtist[];
+  topLabels: TransformedLabel[];
+  topChannels: TransformedChannel[];
+}
 
 const AnalyticsOverview: React.FC = () => {
-  const [dateRange, setDateRange] = React.useState('7d');
+  const [dateRange, setDateRange] = useState('7d');
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const textColor = useColorModeValue('gray.600', 'gray.400');
-  const tooltipBg = useColorModeValue('white', 'gray.800');
-  const tooltipColor = useColorModeValue('gray.600', 'gray.400');
 
   const handleDateRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setDateRange(e.target.value);
   };
 
-  // Formatter functions
-  const formatDate = (date: string): string => {
-    return new Date(date).toLocaleDateString();
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        const response = await fetch('/api/analytics/overview');
+        if (!response.ok) {
+          throw new Error('Failed to fetch analytics data');
+        }
+        const data: AnalyticsData = await response.json();
+        setAnalytics(data);
+        setError(null);
+      } catch (error) {
+        console.error('Error fetching analytics:', error);
+        setError(error instanceof Error ? error.message : 'An error occurred while fetching analytics data');
+        setAnalytics(null);
+      }
+    };
+
+    fetchAnalytics();
+    const interval = setInterval(fetchAnalytics, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, [dateRange]); // Refetch when date range changes
+
+  // Transform data for display
+  const transformedData: TransformedData = analytics ? {
+    totalChannels: analytics.totalStations || 0,
+    totalPlays: analytics.totalDetections || 0,
+    totalPlayTime: analytics.detectionRate ? 
+      `${Math.floor(analytics.detectionRate * 24)}:${Math.floor((analytics.detectionRate * 24 * 60) % 60).toString().padStart(2, '0')}` : 
+      '0:00',
+    playsData: analytics.detectionsByHour?.map(d => ({ 
+      date: d.hour || '', 
+      plays: d.count || 0 
+    })) || [],
+    topTracks: (analytics.topTracks || []).map((track, index) => ({
+      rank: index + 1,
+      title: track?.title || '',
+      artist: track?.artist || '',
+      plays: track?.plays || 0,
+      duration: track?.duration || '0:00',
+      id: `${track?.title || ''}-${track?.artist || ''}-${index}`
+    })),
+    topArtists: (analytics.topArtists || []).map((artist, index) => ({
+      rank: index + 1,
+      name: artist?.name || '',
+      plays: artist?.count || 0
+    })),
+    topLabels: [], // API doesn't provide label data
+    topChannels: [] // API doesn't provide channel data yet
+  } : {
+    totalChannels: 0,
+    totalPlays: 0,
+    totalPlayTime: '0:00',
+    playsData: [],
+    topTracks: [],
+    topArtists: [],
+    topLabels: [],
+    topChannels: []
   };
 
-  const formatTooltipLabel = (label: string | number): string => {
-    return typeof label === 'string' ? new Date(label).toLocaleDateString() : label.toString();
-  };
-
-  const formatTooltipValue = (value: string | number | Array<string | number>): [string | number, string] => {
-    const numValue = typeof value === 'number' ? value : 
-                    Array.isArray(value) ? Number(value[0]) : 
-                    Number(value);
-    return [numValue, 'plays'];
-  };
+  const data = transformedData;
 
   return (
     <VStack spacing={8} align="stretch">
+      {error && (
+        <Alert status="error" borderRadius="lg" mb={4}>
+          <AlertIcon />
+          <AlertTitle>Error loading analytics:</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       <Flex justify="flex-end" mb={6}>
         <Select
           value={dateRange}
           onChange={handleDateRangeChange}
-          maxW="200px"
+          width="auto"
+          ml={4}
           aria-label="Select date range"
-          title="Date range filter"
+          title="Date range selector"
         >
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-          <option value="90d">Last 90 days</option>
-          <option value="1y">Last year</option>
+          <option value="24h">Last 24 Hours</option>
+          <option value="7d">Last 7 Days</option>
+          <option value="30d">Last 30 Days</option>
+          <option value="90d">Last 90 Days</option>
         </Select>
       </Flex>
 
-      <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={6} mb={8}>
+      <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={6}>
         <GridItem>
           <Box p={6} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
             <Text fontSize="sm" color={textColor}>Total Channels</Text>
-            <Heading size="lg" mt={2}>2</Heading>
-            <Badge colorScheme="green" mt={2}>Running</Badge>
+            <Heading size="lg" mt={2}>{data.totalChannels}</Heading>
+            <Badge colorScheme="green" mt={2}>
+              Active
+            </Badge>
           </Box>
         </GridItem>
         <GridItem>
           <Box p={6} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
             <Text fontSize="sm" color={textColor}>Total Plays</Text>
-            <Heading size="lg" mt={2}>2,786</Heading>
+            <Heading size="lg" mt={2}>{data.totalPlays.toLocaleString()}</Heading>
           </Box>
         </GridItem>
         <GridItem>
           <Box p={6} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
             <Text fontSize="sm" color={textColor}>Total Play Time</Text>
-            <Heading size="lg" mt={2}>44:15:18</Heading>
+            <Heading size="lg" mt={2}>{data.totalPlayTime}</Heading>
           </Box>
         </GridItem>
       </Grid>
@@ -226,168 +250,169 @@ const AnalyticsOverview: React.FC = () => {
       >
         <Heading size="md" mb={6}>Plays Over Time</Heading>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={playsData}>
+          <LineChart data={data.playsData}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis
-              dataKey="date"
-              tickFormatter={formatDate}
-            />
+            <XAxis dataKey="date" />
             <YAxis />
-            <Tooltip
-              content={({ active, payload, label }) => {
-                if (active && payload && payload.length) {
-                  return (
-                    <Box
-                      bg={tooltipBg}
-                      p={2}
-                      borderRadius="md"
-                      boxShadow="md"
-                      border="1px"
-                      borderColor={borderColor}
-                    >
-                      <Box color={tooltipColor}>
-                        <Box fontWeight="medium">{formatTooltipLabel(label)}</Box>
-                        <Box>
-                          Value: {formatTooltipValue(payload[0].value)}
-                        </Box>
-                      </Box>
-                    </Box>
-                  );
-                }
-                return null;
-              }}
-            />
+            <Tooltip />
             <Line
               type="monotone"
               dataKey="plays"
-              stroke="#00853F"
+              stroke="#3182ce"
               strokeWidth={2}
-              dot={{ fill: '#00853F' }}
+              dot={false}
             />
           </LineChart>
         </ResponsiveContainer>
       </Box>
 
-      {/* Top Tracks */}
-      <Box
-        p={6}
-        bg={bgColor}
-        borderRadius="lg"
-        borderWidth="1px"
-        borderColor={borderColor}
-      >
-        <Heading size="md" mb={4}>Top Tracks</Heading>
-        <Box overflowX="auto">
-          <Table variant="simple" size="sm">
-            <Thead>
-              <Tr>
-                <Th>Rank</Th>
-                <Th>Tendency</Th>
-                <Th>Title / Artist</Th>
-                <Th>Label / ISRC</Th>
-                <Th isNumeric>Plays</Th>
-                <Th isNumeric>Played Time</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {topTracks.map((track) => (
-                <Tr key={track.rank}>
-                  <Td>{track.rank}</Td>
-                  <Td>
-                    <Icon as={FaCircle} color="gray.300" boxSize={3} />
-                  </Td>
-                  <Td>
-                    <Text fontWeight="medium">{track.title}</Text>
-                    <Text fontSize="sm" color={textColor}>{track.artist}</Text>
-                  </Td>
-                  <Td>
-                    <Text>{track.label}</Text>
-                    <Text fontSize="sm" color={textColor}>{track.isrc}</Text>
-                  </Td>
-                  <Td isNumeric>{track.plays}</Td>
-                  <Td isNumeric>{track.playedTime}</Td>
+      <Grid templateColumns={{ base: '1fr', lg: '1fr 1fr' }} gap={6}>
+        <GridItem>
+          <Box
+            p={6}
+            bg={bgColor}
+            borderRadius="lg"
+            borderWidth="1px"
+            borderColor={borderColor}
+          >
+            <Heading size="md" mb={6}>Top Tracks</Heading>
+            <Table variant="simple" size="sm">
+              <Thead>
+                <Tr>
+                  <Th>#</Th>
+                  <Th>Track</Th>
+                  <Th isNumeric>Plays</Th>
+                  <Th>Duration</Th>
                 </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </Box>
-      </Box>
+              </Thead>
+              <Tbody>
+                {data?.topTracks && data.topTracks.length > 0 ? data.topTracks.map((track) => (
+                  <Tr key={track.id}>
+                    <Td>{track.rank}</Td>
+                    <Td>
+                      <VStack align="start" spacing={0}>
+                        <Text fontWeight="medium">{track.title}</Text>
+                        <Text fontSize="sm" color={textColor}>{track.artist}</Text>
+                      </VStack>
+                    </Td>
+                    <Td isNumeric>{track.plays}</Td>
+                    <Td>{track.duration}</Td>
+                  </Tr>
+                )) : (
+                  <Tr>
+                    <Td colSpan={4} textAlign="center">No tracks available</Td>
+                  </Tr>
+                )}
+              </Tbody>
+            </Table>
+          </Box>
+        </GridItem>
 
-      {/* Top Artists */}
-      <Box
-        p={6}
-        bg={bgColor}
-        borderRadius="lg"
-        borderWidth="1px"
-        borderColor={borderColor}
-      >
-        <Heading size="md" mb={4}>Top Artists</Heading>
-        <Box overflowX="auto">
-          <Table variant="simple" size="sm">
-            <Thead>
-              <Tr>
-                <Th>Rank</Th>
-                <Th>Tendency</Th>
-                <Th>Artist</Th>
-                <Th isNumeric>Plays</Th>
-                <Th isNumeric>Played Time</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {topArtists.map((artist) => (
-                <Tr key={artist.rank}>
-                  <Td>{artist.rank}</Td>
-                  <Td>
-                    <Icon as={FaCircle} color="gray.300" boxSize={3} />
-                  </Td>
-                  <Td>{artist.name}</Td>
-                  <Td isNumeric>{artist.plays}</Td>
-                  <Td isNumeric>{artist.playedTime}</Td>
+        <GridItem>
+          <Box
+            p={6}
+            bg={bgColor}
+            borderRadius="lg"
+            borderWidth="1px"
+            borderColor={borderColor}
+          >
+            <Heading size="md" mb={6}>Top Artists</Heading>
+            <Table variant="simple" size="sm">
+              <Thead>
+                <Tr>
+                  <Th>#</Th>
+                  <Th>Artist</Th>
+                  <Th isNumeric>Plays</Th>
                 </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </Box>
-      </Box>
+              </Thead>
+              <Tbody>
+                {data?.topArtists && data.topArtists.length > 0 ? data.topArtists.map((artist) => (
+                  <Tr key={artist.rank}>
+                    <Td>{artist.rank}</Td>
+                    <Td>{artist.name}</Td>
+                    <Td isNumeric>{artist.plays}</Td>
+                  </Tr>
+                )) : (
+                  <Tr>
+                    <Td colSpan={3} textAlign="center">No artists available</Td>
+                  </Tr>
+                )}
+              </Tbody>
+            </Table>
+          </Box>
+        </GridItem>
 
-      {/* Top Labels */}
-      <Box
-        p={6}
-        bg={bgColor}
-        borderRadius="lg"
-        borderWidth="1px"
-        borderColor={borderColor}
-      >
-        <Heading size="md" mb={4}>Top Labels</Heading>
-        <Box overflowX="auto">
-          <Table variant="simple" size="sm">
-            <Thead>
-              <Tr>
-                <Th>Rank</Th>
-                <Th>Tendency</Th>
-                <Th>Label</Th>
-                <Th isNumeric>Plays</Th>
-                <Th isNumeric>Played Time</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {topLabels.map((label) => (
-                <Tr key={label.rank}>
-                  <Td>{label.rank}</Td>
-                  <Td>
-                    <Icon as={FaCircle} color="gray.300" boxSize={3} />
-                  </Td>
-                  <Td>{label.name}</Td>
-                  <Td isNumeric>{label.plays}</Td>
-                  <Td isNumeric>{label.playedTime}</Td>
+        <GridItem>
+          <Box
+            p={6}
+            bg={bgColor}
+            borderRadius="lg"
+            borderWidth="1px"
+            borderColor={borderColor}
+          >
+            <Heading size="md" mb={6}>Top Labels</Heading>
+            <Table variant="simple" size="sm">
+              <Thead>
+                <Tr>
+                  <Th>#</Th>
+                  <Th>Label</Th>
+                  <Th isNumeric>Plays</Th>
                 </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </Box>
-      </Box>
+              </Thead>
+              <Tbody>
+                {data?.topLabels && data.topLabels.length > 0 ? data.topLabels.map((label) => (
+                  <Tr key={label.rank}>
+                    <Td>{label.rank}</Td>
+                    <Td>{label.name}</Td>
+                    <Td isNumeric>{label.plays}</Td>
+                  </Tr>
+                )) : (
+                  <Tr>
+                    <Td colSpan={3} textAlign="center">No labels available</Td>
+                  </Tr>
+                )}
+              </Tbody>
+            </Table>
+          </Box>
+        </GridItem>
 
-      {/* Top Channels */}
+        <GridItem>
+          <Box
+            p={6}
+            bg={bgColor}
+            borderRadius="lg"
+            borderWidth="1px"
+            borderColor={borderColor}
+          >
+            <Heading size="md" mb={6}>Top Channels</Heading>
+            <Table variant="simple" size="sm">
+              <Thead>
+                <Tr>
+                  <Th>#</Th>
+                  <Th>Channel</Th>
+                  <Th>Region</Th>
+                  <Th isNumeric>Plays</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {data?.topChannels && data.topChannels.length > 0 ? data.topChannels.map((channel) => (
+                  <Tr key={channel.rank}>
+                    <Td>{channel.rank}</Td>
+                    <Td>{channel.name}</Td>
+                    <Td>{channel.region}</Td>
+                    <Td isNumeric>{channel.plays}</Td>
+                  </Tr>
+                )) : (
+                  <Tr>
+                    <Td colSpan={4} textAlign="center">No channels available</Td>
+                  </Tr>
+                )}
+              </Tbody>
+            </Table>
+          </Box>
+        </GridItem>
+      </Grid>
+
       <Box
         p={6}
         bg={bgColor}
@@ -395,40 +420,13 @@ const AnalyticsOverview: React.FC = () => {
         borderWidth="1px"
         borderColor={borderColor}
       >
-        <Heading size="md" mb={4}>Top Channels</Heading>
-        <Box overflowX="auto">
-          <Table variant="simple" size="sm">
-            <Thead>
-              <Tr>
-                <Th>Rank</Th>
-                <Th>Tendency</Th>
-                <Th>Channel ID</Th>
-                <Th>Channel Name</Th>
-                <Th>Country</Th>
-                <Th isNumeric>Plays</Th>
-                <Th isNumeric>Played Time</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {topChannels.map((channel) => (
-                <Tr key={channel.rank}>
-                  <Td>{channel.rank}</Td>
-                  <Td>
-                    <Icon as={FaCircle} color="gray.300" boxSize={3} />
-                  </Td>
-                  <Td>{channel.id}</Td>
-                  <Td>{channel.name}</Td>
-                  <Td>{channel.country}</Td>
-                  <Td isNumeric>{channel.plays}</Td>
-                  <Td isNumeric>{channel.playedTime}</Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </Box>
+        <Heading size="md" mb={6}>Raw Analytics Data (Debug View)</Heading>
+        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {JSON.stringify(data, null, 2)}
+        </pre>
       </Box>
     </VStack>
   );
 };
 
-export default AnalyticsOverview; 
+export default AnalyticsOverview;

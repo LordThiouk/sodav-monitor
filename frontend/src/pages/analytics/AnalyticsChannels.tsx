@@ -12,21 +12,26 @@ import {
   Flex,
   Badge,
   Spinner,
+  Link,
   useColorModeValue,
 } from '@chakra-ui/react';
 import { getChannelsAnalytics } from '../../services/api';
-import { formatDuration } from '../../utils/format';
 
 interface Channel {
   id: number;
   name: string;
-  country?: string;
-  language?: string;
+  url: string;
+  status: string;
+  region: string;
   detection_count: number;
-  total_play_time: number;
+  detection_rate: number;
+  total_play_time: string;
   unique_tracks: number;
+  tracks: string[];
   unique_artists: number;
-  is_active: boolean;
+  artists: string[];
+  unique_labels: number;
+  labels: string[];
 }
 
 const AnalyticsChannels: React.FC = () => {
@@ -50,76 +55,74 @@ const AnalyticsChannels: React.FC = () => {
     fetchData();
   }, [timeRange]);
 
-  const handleTimeRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setTimeRange(e.target.value);
-  };
-
   if (loading) {
     return (
-      <Flex justify="center" align="center" h="200px">
-        <Spinner size="xl" />
-      </Flex>
+      <Box p={4} display="flex" justifyContent="center">
+        <Spinner />
+      </Box>
     );
   }
 
   return (
-    <Box>
-      <Flex justify="flex-end" mb={6}>
+    <Box p={4}>
+      <Flex justify="space-between" align="center" mb={4}>
+        <Text fontSize="2xl" fontWeight="bold">
+          Channel Analytics
+        </Text>
         <Select
           value={timeRange}
-          onChange={handleTimeRangeChange}
+          onChange={(e) => setTimeRange(e.target.value)}
           maxW="200px"
-          aria-label="Select time range"
-          title="Time range filter"
         >
-          <option value="24h">Last 24 hours</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-          <option value="90d">Last 90 days</option>
-          <option value="1y">Last year</option>
+          <option value="24h">Last 24 Hours</option>
+          <option value="7d">Last 7 Days</option>
+          <option value="30d">Last 30 Days</option>
         </Select>
       </Flex>
 
       <Box overflowX="auto">
-        <Table variant="simple" borderWidth="1px" borderColor={borderColor}>
+        <Table variant="simple" borderWidth={1} borderColor={borderColor}>
           <Thead>
             <Tr>
-              <Th>Rank</Th>
               <Th>Channel</Th>
-              <Th>Country</Th>
-              <Th>Language</Th>
+              <Th>Region</Th>
               <Th>Status</Th>
-              <Th isNumeric>Total Detections</Th>
-              <Th isNumeric>Total Play Time</Th>
-              <Th isNumeric>Unique Tracks</Th>
-              <Th isNumeric>Unique Artists</Th>
+              <Th isNumeric>Detections</Th>
+              <Th isNumeric>Det/Hour</Th>
+              <Th>Total Play Time</Th>
+              <Th isNumeric>Artists</Th>
+              <Th isNumeric>Tracks</Th>
+              <Th isNumeric>Labels</Th>
             </Tr>
           </Thead>
           <Tbody>
-            {channels.map((channel, index) => (
+            {channels.map((channel) => (
               <Tr key={channel.id}>
-                <Td>{index + 1}</Td>
-                <Td>{channel.name}</Td>
-                <Td>{channel.country || '-'}</Td>
-                <Td>{channel.language || '-'}</Td>
+                <Td>
+                  <Link href={channel.url} isExternal color="blue.500">
+                    {channel.name}
+                  </Link>
+                </Td>
+                <Td>{channel.region}</Td>
                 <Td>
                   <Badge
-                    colorScheme={channel.is_active ? 'green' : 'red'}
-                    variant="subtle"
+                    colorScheme={channel.status === 'active' ? 'green' : 'red'}
                   >
-                    {channel.is_active ? 'Active' : 'Inactive'}
+                    {channel.status}
                   </Badge>
                 </Td>
                 <Td isNumeric>{channel.detection_count}</Td>
-                <Td isNumeric>{formatDuration(channel.total_play_time)}</Td>
-                <Td isNumeric>{channel.unique_tracks}</Td>
+                <Td isNumeric>{channel.detection_rate}</Td>
+                <Td>{channel.total_play_time}</Td>
                 <Td isNumeric>{channel.unique_artists}</Td>
+                <Td isNumeric>{channel.unique_tracks}</Td>
+                <Td isNumeric>{channel.unique_labels}</Td>
               </Tr>
             ))}
             {channels.length === 0 && (
               <Tr>
-                <Td colSpan={9} textAlign="center" py={8}>
-                  <Text>No channels found for the selected time range</Text>
+                <Td colSpan={9} textAlign="center" py={4}>
+                  No channel data available for this time range
                 </Td>
               </Tr>
             )}
@@ -130,4 +133,4 @@ const AnalyticsChannels: React.FC = () => {
   );
 };
 
-export default AnalyticsChannels; 
+export default AnalyticsChannels;

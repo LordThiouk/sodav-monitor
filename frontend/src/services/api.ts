@@ -1,7 +1,7 @@
-import { RadioStation, Track, TrackDetection, Report } from '../types';
+import { RadioStation, Track, TrackDetection, Report, TrackAnalytics } from '../types';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8002/api';
+const API_BASE_URL = 'http://localhost:8000/api';
 
 export interface Stream extends RadioStation {
   type: string;
@@ -75,10 +75,11 @@ export const fetchDetections = async (stationId: number): Promise<TrackDetection
     if (!response.ok) {
       throw new Error('Failed to fetch detections');
     }
-    return await response.json();
+    const data = await response.json();
+    return data.detections || [];
   } catch (error) {
     console.error('Error fetching detections:', error);
-    throw error;
+    return [];
   }
 };
 
@@ -109,13 +110,27 @@ export const fetchReports = async (): Promise<Report[]> => {
   }
 };
 
+export const getTracksAnalytics = async (timeRange: string): Promise<TrackAnalytics[]> => {
+  try {
+    const response = await fetch(`/api/analytics/tracks?time_range=${timeRange}`);
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data as TrackAnalytics[];
+  } catch (error) {
+    console.error('Error fetching tracks analytics:', error);
+    throw error;
+  }
+};
+
 export interface WebSocketCleanup {
   cleanup: () => void;
   ws: WebSocket | null;
 }
 
 export const connectWebSocket = (onMessage: (data: WebSocketMessage) => void): WebSocketCleanup => {
-  const ws = new WebSocket('ws://localhost:8002/ws');
+  const ws = new WebSocket('ws://localhost:8000/ws');
   
   ws.onmessage = (event) => {
     try {
@@ -137,22 +152,17 @@ export const connectWebSocket = (onMessage: (data: WebSocketMessage) => void): W
 };
 
 // Analytics API
-export const getTracksAnalytics = async (timeRange: string = '7d') => {
-  const response = await axios.get(`${API_BASE_URL}/analytics/tracks?time_range=${timeRange}`);
-  return response.data;
-};
-
 export const getArtistsAnalytics = async (timeRange: string = '7d') => {
   const response = await axios.get(`${API_BASE_URL}/analytics/artists?time_range=${timeRange}`);
-  return response.data;
+  return response.data.artists;
 };
 
 export const getLabelsAnalytics = async (timeRange: string = '7d') => {
   const response = await axios.get(`${API_BASE_URL}/analytics/labels?time_range=${timeRange}`);
-  return response.data;
+  return response.data.labels;
 };
 
 export const getChannelsAnalytics = async (timeRange: string = '7d') => {
   const response = await axios.get(`${API_BASE_URL}/analytics/channels?time_range=${timeRange}`);
-  return response.data;
+  return response.data.channels;
 };

@@ -29,8 +29,9 @@ import {
   StatHelpText,
 } from '@chakra-ui/react';
 import { SearchIcon, ExternalLinkIcon } from '@chakra-ui/icons';
-import { FaChartLine, FaPlay, FaPause, FaMusic } from 'react-icons/fa';
+import { FaChartLine, FaPlay, FaMusic, FaGlobe } from 'react-icons/fa';
 import { Link as RouterLink } from 'react-router-dom';
+import axios from 'axios';
 import { fetchStations, detectAudio } from '../services/api';
 import { RadioStation } from '../types';
 import { WS_URL } from '../config';
@@ -41,7 +42,7 @@ const Channels: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detectingStations, setDetectingStations] = useState<Record<number, boolean>>({});
-  const [wsConnected, setWsConnected] = useState(false);
+
   const toast = useToast();
 
   const bgColor = useColorModeValue('white', 'gray.800');
@@ -56,7 +57,7 @@ const Channels: React.FC = () => {
           if (station.id === data.stream_id) {
             return {
               ...station,
-              is_active: true,
+              is_active: 1,
               last_detection: {
                 title: data.detection.title,
                 artist: data.detection.artist,
@@ -76,8 +77,7 @@ const Channels: React.FC = () => {
 
   useEffect(() => {
     const ws = new WebSocket(WS_URL);
-    ws.onopen = () => setWsConnected(true);
-    ws.onclose = () => setWsConnected(false);
+
     ws.onmessage = handleWebSocketMessage;
 
     return () => {
@@ -134,6 +134,31 @@ const Channels: React.FC = () => {
     }
   };
 
+  const handleFetchSenegalStations = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.post('/api/channels/fetch-senegal');
+      toast({
+        title: 'Success',
+        description: `Successfully fetched ${response.data.count} Senegalese stations`,
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+      loadStations();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch Senegalese stations',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredStations = stations.filter(station =>
     station.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     station.language?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -187,24 +212,27 @@ const Channels: React.FC = () => {
       <VStack spacing={6} align="stretch">
         <HStack justify="space-between">
           <Heading size="lg">Radio Stations</Heading>
-          <InputGroup maxW="300px">
-            <InputLeftElement pointerEvents="none">
-              <SearchIcon color="gray.400" />
-            </InputLeftElement>
-            <Input
-              placeholder="Search stations..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </InputGroup>
+          <HStack spacing={4}>
+            <Button
+              colorScheme="blue"
+              leftIcon={<Icon as={FaGlobe} />}
+              onClick={handleFetchSenegalStations}
+              isLoading={loading}
+            >
+              Fetch Senegalese Stations
+            </Button>
+            <InputGroup maxW="300px">
+              <InputLeftElement pointerEvents="none">
+                <SearchIcon color="gray.400" />
+              </InputLeftElement>
+              <Input
+                placeholder="Search stations..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </InputGroup>
+          </HStack>
         </HStack>
-
-        {!wsConnected && (
-          <Alert status="warning">
-            <AlertIcon />
-            Connection to detection service lost. Real-time updates are not available.
-          </Alert>
-        )}
 
         <Grid templateColumns="repeat(auto-fill, minmax(300px, 1fr))" gap={4}>
           {filteredStations.map(station => (
@@ -219,9 +247,15 @@ const Channels: React.FC = () => {
               >
                 <VStack align="stretch" spacing={3}>
                   <HStack justify="space-between">
-                    <Text fontWeight="bold" noOfLines={1}>
+                    <Link
+                      as={RouterLink}
+                      to={`/channels/${station.id}/detections`}
+                      fontWeight="bold"
+                      noOfLines={1}
+                      _hover={{ color: 'brand.500', textDecoration: 'none' }}
+                    >
                       {station.name}
-                    </Text>
+                    </Link>
                     <Badge colorScheme={station.is_active ? 'green' : 'red'}>
                       {station.is_active ? 'Active' : 'Inactive'}
                     </Badge>
@@ -245,6 +279,15 @@ const Channels: React.FC = () => {
                     </Text>
                   </Box>
 
+                  <Box>
+                    <Text fontSize="sm" color={textColor}>
+                      Last Checked
+                    </Text>
+                    <Text fontWeight="medium">
+                      {station.last_checked ? new Date(station.last_checked).toLocaleString() : 'Never'}
+                    </Text>
+                  </Box>
+
                   {station.last_detection && (
                     <Box>
                       <Text fontSize="sm" color={textColor}>
@@ -265,17 +308,19 @@ const Channels: React.FC = () => {
                   )}
 
                   <HStack spacing={2}>
-                    <Button
-                      colorScheme="brand"
-                      size="sm"
-                      flex={1}
-                      leftIcon={<Icon as={station.is_active ? FaPause : FaPlay} />}
-                      onClick={() => handleStartDetection(station.id)}
-                      isLoading={detectingStations[station.id]}
-                      loadingText="Starting"
-                    >
-                      {station.is_active ? 'Stop Detection' : 'Start Detection'}
-                    </Button>
+                    {!station.is_active && (
+                      <Button
+                        colorScheme="brand"
+                        size="sm"
+                        flex={1}
+                        leftIcon={<Icon as={FaPlay} />}
+                        onClick={() => handleStartDetection(station.id)}
+                        isLoading={detectingStations[station.id]}
+                        loadingText="Starting"
+                      >
+                        Start Detection
+                      </Button>
+                    )}
 
                     <IconButton
                       aria-label="View detections"
@@ -307,4 +352,4 @@ const Channels: React.FC = () => {
   );
 };
 
-export default Channels; 
+export default Channels;
