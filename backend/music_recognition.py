@@ -8,6 +8,12 @@ from dotenv import load_dotenv
 import numpy as np
 import librosa
 from datetime import datetime
+import musicbrainzngs
+from sqlalchemy.orm import Session
+from models import Track
+import acoustid
+import hashlib
+from functools import lru_cache
 
 # Configure logging
 logging.basicConfig(
@@ -24,14 +30,52 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class MusicRecognizer:
-    def __init__(self, audd_api_key: Optional[str] = None):
+    def __init__(self, db_session: Session, audd_api_key: Optional[str] = None):
         """Initialize music recognizer with API key"""
+        self.db_session = db_session
         self.audd_api_key = audd_api_key or os.getenv('AUDD_API_KEY')
         logger.info("Initializing MusicRecognizer")
+        
+        # Initialize MusicBrainz
+        musicbrainzngs.set_useragent(
+            "SODAV Monitor",
+            "1.0",
+            "https://sodav.sn"
+        )
         
         if not self.audd_api_key:
             logger.warning("AudD API key not found")
     
+    @staticmethod
+    def _calculate_audio_hash(audio_data: bytes) -> str:
+        """Calculate a hash of the audio data for caching"""
+        return hashlib.md5(audio_data).hexdigest()
+
+    @lru_cache(maxsize=1000)
+    def _get_fingerprint(self, audio_hash: str) -> Tuple[float, str]:
+        """Get fingerprint from cache or generate it"""
+        # Check if we have this fingerprint in the database
+        track = self.db_session.query(Track).filter(
+            Track.fingerprint == audio_hash
+        ).first()
+        
+        if track and track.fingerprint_raw:
+            logger.info(f"Found cached fingerprint for track: {track.title}")
+            return track.fingerprint_raw
+        
+        return None
+
+    def _save_fingerprint(self, audio_hash: str, fingerprint_raw: bytes, track: Track) -> None:
+        """Save fingerprint to database"""
+        try:
+            track.fingerprint = audio_hash
+            track.fingerprint_raw = list(fingerprint_raw)  # Convert to list for storage
+            self.db_session.commit()
+            logger.info(f"Saved fingerprint for track: {track.title}")
+        except Exception as e:
+            logger.error(f"Error saving fingerprint: {str(e)}")
+            self.db_session.rollback()
+
     def _analyze_audio_features(self, audio_data: bytes) -> Dict[str, float]:
         """
         Analyze audio features to determine if the content is music or speech
@@ -88,16 +132,97 @@ class MusicRecognizer:
         except Exception as e:
             logger.error(f"Error analyzing audio features: {str(e)}", exc_info=True)
             return {'music_likelihood': 50}  # Default to uncertain if analysis fails
-    
-    def recognize_from_audio_data(self, audio_data: bytes) -> Dict[str, Any]:
-        """
-        Recognize music from audio data using AudD service
-        """
+
+    def _search_local_database(self, audio_data: bytes) -> Optional[Track]:
+        """Search for matching track in local database using acoustic fingerprinting"""
         try:
-            logger.info("Starting music recognition process")
-            logger.debug(f"Received {len(audio_data)} bytes of audio data")
+            # Calculate audio hash
+            audio_hash = self._calculate_audio_hash(audio_data)
             
-            # Prepare request data
+            # Check cache first
+            cached_fingerprint = self._get_fingerprint(audio_hash)
+            if cached_fingerprint:
+                # Search for track by fingerprint
+                track = self.db_session.query(Track).filter(
+                    Track.fingerprint_raw == cached_fingerprint
+                ).first()
+                
+                if track:
+                    logger.info(f"Found matching track in cache: {track.title}")
+                    return track
+            
+            # If not in cache, generate new fingerprint
+            # Convert audio to WAV for fingerprinting
+            audio = AudioSegment.from_file(io.BytesIO(audio_data))
+            wav_data = io.BytesIO()
+            audio.export(wav_data, format="wav")
+            wav_data.seek(0)
+            
+            # Generate fingerprint using acoustid
+            duration, fingerprint = acoustid.fingerprint_file(wav_data)
+            
+            # Search for tracks in our database with similar fingerprints
+            matches = acoustid.lookup(os.getenv('ACOUSTID_API_KEY'), fingerprint, duration)
+            
+            if not matches:
+                return None
+                
+            # Get the best match
+            best_match = matches[0]
+            recording_id = best_match.get('recordings', [{}])[0].get('id')
+            
+            if not recording_id:
+                return None
+                
+            # Try to find track in our database by MusicBrainz ID
+            track = self.db_session.query(Track).filter(
+                Track.external_ids['musicbrainz_id'].astext == recording_id
+            ).first()
+            
+            if track:
+                # Save fingerprint for future use
+                self._save_fingerprint(audio_hash, fingerprint, track)
+                logger.info(f"Found matching track in database: {track.title}")
+                return track
+                
+            # If no match by MusicBrainz ID, try ISRC if available
+            recording = musicbrainzngs.get_recording_by_id(
+                recording_id,
+                includes=["isrcs"]
+            )
+            
+            if recording and "recording" in recording:
+                isrcs = recording["recording"].get("isrc-list", [])
+                if isrcs:
+                    track = self.db_session.query(Track).filter(
+                        Track.isrc.in_(isrcs)
+                    ).first()
+                    
+                    if track:
+                        # Save fingerprint for future use
+                        self._save_fingerprint(audio_hash, fingerprint, track)
+                        logger.info(f"Found matching track by ISRC: {track.title}")
+                        return track
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error searching local database: {str(e)}")
+            return None
+
+    def _recognize_with_musicbrainz(self, audio_data: bytes) -> Optional[Dict[str, Any]]:
+        """Try to recognize music using MusicBrainz"""
+        try:
+            # TODO: Implement actual MusicBrainz acoustic fingerprinting
+            # For now, return None to indicate no match found
+            return None
+        except Exception as e:
+            logger.error(f"Error with MusicBrainz recognition: {str(e)}")
+            return None
+
+    def _recognize_with_audd(self, audio_data: bytes) -> Optional[Dict[str, Any]]:
+        """Recognize music using AudD service"""
+        try:
             data = {
                 'api_token': self.audd_api_key,
                 'return': 'spotify,deezer,musicbrainz'
@@ -107,20 +232,16 @@ class MusicRecognizer:
                 'file': ('audio.mp3', audio_data, 'audio/mpeg')
             }
             
-            # Make recognition request
             response = requests.post('https://api.audd.io/', data=data, files=files)
-            logger.debug(f"AudD API response status: {response.status_code}")
             
             if response.status_code != 200:
                 logger.error(f"AudD API error: {response.status_code}")
-                return {"error": f"API error: {response.status_code}"}
+                return None
             
             result = response.json()
-            logger.debug(f"AudD API response: {result}")
             
             if result.get('status') == 'success' and result.get('result'):
                 song = result['result']
-                logger.info(f"Song detected: {song.get('title')} by {song.get('artist')}")
                 
                 # Extract metadata
                 spotify_data = song.get('spotify', {})
@@ -140,7 +261,7 @@ class MusicRecognizer:
                     "artist": song.get('artist'),
                     "album": song.get('album'),
                     "isrc": musicbrainz_data.get('isrc') if isinstance(musicbrainz_data, dict) else None,
-                    "confidence": 100,  # AudD doesn't provide confidence, assume 100 if match found
+                    "confidence": 100,
                     "detected_at": datetime.now().isoformat(),
                     "external_metadata": {
                         "spotify": spotify_data,
@@ -148,10 +269,97 @@ class MusicRecognizer:
                         "musicbrainz": musicbrainz_data
                     }
                 }
-            else:
-                logger.info("No music detected")
-                return {"error": "No music detected"}
+            
+            return None
                 
         except Exception as e:
-            logger.error(f"Error in music recognition: {str(e)}", exc_info=True)
-            return {"error": str(e)}
+            logger.error(f"Error with AudD recognition: {str(e)}")
+            return None
+
+    def _calculate_play_duration(self, audio_data: bytes) -> float:
+        """Calculate the duration of the audio in seconds"""
+        try:
+            audio = AudioSegment.from_file(io.BytesIO(audio_data))
+            return len(audio) / 1000.0  # Convert milliseconds to seconds
+        except Exception as e:
+            logger.error(f"Error calculating play duration: {str(e)}")
+            return 15.0  # Default to 15 seconds if calculation fails
+
+    async def recognize(self, audio_data: bytes) -> dict:
+        """
+        Main recognition function implementing the cascade detection strategy:
+        1. Check if it's music
+        2. Search local database
+        3. Try MusicBrainz
+        4. Try AudD
+        """
+        try:
+            # First, analyze if it's music
+            features = self._analyze_audio_features(audio_data)
+            if features['music_likelihood'] < 50:  # Lowered from 70 to 50
+                logger.info(f"Audio not detected as music (likelihood: {features['music_likelihood']})")
+                return {
+                    "is_music": False,
+                    "confidence": features['music_likelihood']
+                }
+
+            # Calculate play duration
+            play_duration = self._calculate_play_duration(audio_data)
+            
+            # Try local database first
+            local_match = self._search_local_database(audio_data)
+            if local_match:
+                logger.info("Match found in local database")
+                return {
+                    "is_music": True,
+                    "track": {
+                        "title": local_match.title,
+                        "artist": local_match.artist,
+                        "isrc": local_match.isrc,
+                        "label": local_match.label,
+                        "duration_minutes": play_duration / 60
+                    },
+                    "confidence": 100.0,
+                    "source": "local_db"
+                }
+
+            # Try MusicBrainz
+            mb_result = self._recognize_with_musicbrainz(audio_data)
+            if mb_result:
+                logger.info("Match found with MusicBrainz")
+                mb_result['duration_minutes'] = play_duration / 60
+                return {
+                    "is_music": True,
+                    "track": mb_result,
+                    "confidence": 90.0,
+                    "source": "musicbrainz"
+                }
+
+            # Finally, try AudD
+            audd_result = self._recognize_with_audd(audio_data)
+            if audd_result:
+                logger.info("Match found with AudD")
+                audd_result['duration_minutes'] = play_duration / 60
+                return {
+                    "is_music": True,
+                    "track": audd_result,
+                    "confidence": 85.0,
+                    "source": "audd"
+                }
+
+            # No match found
+            logger.info("No match found in any service")
+            return {
+                "is_music": True,
+                "confidence": features['music_likelihood'],
+                "error": "No match found",
+                "duration_minutes": play_duration / 60
+            }
+
+        except Exception as e:
+            logger.error(f"Error in recognition cascade: {str(e)}")
+            return {
+                "error": str(e),
+                "is_music": False,
+                "confidence": 0.0
+            }

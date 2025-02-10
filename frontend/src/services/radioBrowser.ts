@@ -11,6 +11,7 @@ const mapExternalToInternalStation = (external: ExternalRadioStation): RadioStat
     language: external.language,
     is_active: external.lastcheckok,
     last_checked: external.lastchecktime,
+    total_play_time: '00:00:00', // Default value since external API doesn't provide this
     favicon: external.favicon,
     codec: external.codec,
     bitrate: external.bitrate,
@@ -114,11 +115,11 @@ export const getTestStations = async (): Promise<RadioStation[]> => {
             id: 1,
             name: "Sud FM",
             stream_url: "https://stream.zeno.fm/d970hwkm1f8uv",
-
             country: "Senegal",
             language: "French/Wolof",
             is_active: 1,
             last_checked: new Date().toISOString(),
+            total_play_time: '00:00:00',
             favicon: "https://sudfm.sn/wp-content/uploads/2020/03/cropped-logo-sudfm-192x192.png",
             tags: ["senegal", "dakar", "news", "african"],
             codec: "MP3",

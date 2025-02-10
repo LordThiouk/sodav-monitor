@@ -21,6 +21,9 @@ import {
   AlertIcon,
   AlertTitle,
   AlertDescription,
+  Spinner,
+  FormControl,
+  FormLabel,
 } from '@chakra-ui/react';
 import {
   LineChart,
@@ -39,17 +42,17 @@ interface ChartData {
 }
 
 interface TopTrack {
+  rank: number;
   title: string;
   artist: string;
   plays: number;
   duration: string;
-  lastDetected: string | null;
 }
 
 interface TopArtist {
+  rank: number;
   name: string;
-  count: number;
-  lastDetected: string | null;
+  plays: number;
 }
 
 interface SystemHealth {
@@ -59,15 +62,16 @@ interface SystemHealth {
 }
 
 interface AnalyticsData {
-  totalDetections: number;
-  detectionRate: number;
+  totalChannels: number;
   activeStations: number;
-  totalStations: number;
-  averageConfidence: number;
-  detectionsByHour: ChartData[];
-  topArtists: TopArtist[];
+  totalPlays: number;
+  totalPlayTime: string;
+  playsData: ChartData[];
   topTracks: TopTrack[];
+  topArtists: TopArtist[];
   systemHealth: SystemHealth;
+  topLabels: TransformedLabel[];
+  topChannels: TransformedChannel[];
 }
 
 // UI Data Interfaces
@@ -106,6 +110,7 @@ interface TransformedChannel {
 
 interface TransformedData {
   totalChannels: number;
+  activeChannels: number;
   totalPlays: number;
   totalPlayTime: string;
   playsData: TransformedChartData[];
@@ -119,6 +124,7 @@ const AnalyticsOverview: React.FC = () => {
   const [dateRange, setDateRange] = useState('7d');
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
@@ -131,7 +137,8 @@ const AnalyticsOverview: React.FC = () => {
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const response = await fetch('/api/analytics/overview');
+        setIsLoading(true);
+        const response = await fetch(`/api/analytics/overview?time_range=${dateRange}`);
         if (!response.ok) {
           throw new Error('Failed to fetch analytics data');
         }
@@ -142,6 +149,8 @@ const AnalyticsOverview: React.FC = () => {
         console.error('Error fetching analytics:', error);
         setError(error instanceof Error ? error.message : 'An error occurred while fetching analytics data');
         setAnalytics(null);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -149,38 +158,30 @@ const AnalyticsOverview: React.FC = () => {
     const interval = setInterval(fetchAnalytics, 60000); // Update every minute
 
     return () => clearInterval(interval);
-  }, [dateRange]); // Refetch when date range changes
+  }, [dateRange]);
 
   // Transform data for display
   const transformedData: TransformedData = analytics ? {
-    totalChannels: analytics.totalStations || 0,
-    totalPlays: analytics.totalDetections || 0,
-    totalPlayTime: analytics.detectionRate ? 
-      `${Math.floor(analytics.detectionRate * 24)}:${Math.floor((analytics.detectionRate * 24 * 60) % 60).toString().padStart(2, '0')}` : 
-      '0:00',
-    playsData: analytics.detectionsByHour?.map(d => ({ 
-      date: d.hour || '', 
+    totalChannels: analytics.totalChannels || 0,
+    activeChannels: analytics.activeStations || 0,
+    totalPlays: analytics.totalPlays || 0,
+    totalPlayTime: analytics.totalPlayTime || '00:00:00',
+    playsData: analytics.playsData?.map(d => ({ 
+      date: new Date(d.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 
       plays: d.count || 0 
     })) || [],
-    topTracks: (analytics.topTracks || []).map((track, index) => ({
-      rank: index + 1,
-      title: track?.title || '',
-      artist: track?.artist || '',
-      plays: track?.plays || 0,
-      duration: track?.duration || '0:00',
-      id: `${track?.title || ''}-${track?.artist || ''}-${index}`
+    topTracks: (analytics.topTracks || []).map(track => ({
+      ...track,
+      id: `track-${track.rank}`
     })),
-    topArtists: (analytics.topArtists || []).map((artist, index) => ({
-      rank: index + 1,
-      name: artist?.name || '',
-      plays: artist?.count || 0
-    })),
-    topLabels: [], // API doesn't provide label data
-    topChannels: [] // API doesn't provide channel data yet
+    topArtists: analytics.topArtists || [],
+    topLabels: analytics.topLabels || [],
+    topChannels: analytics.topChannels || []
   } : {
     totalChannels: 0,
+    activeChannels: 0,
     totalPlays: 0,
-    totalPlayTime: '0:00',
+    totalPlayTime: '00:00:00',
     playsData: [],
     topTracks: [],
     topArtists: [],
@@ -189,6 +190,14 @@ const AnalyticsOverview: React.FC = () => {
   };
 
   const data = transformedData;
+
+  if (isLoading) {
+    return (
+      <Flex justify="center" align="center" minH="400px">
+        <Spinner size="xl" color="blue.500" />
+      </Flex>
+    );
+  }
 
   return (
     <VStack spacing={8} align="stretch">
@@ -201,19 +210,21 @@ const AnalyticsOverview: React.FC = () => {
       )}
 
       <Flex justify="flex-end" mb={6}>
-        <Select
-          value={dateRange}
-          onChange={handleDateRangeChange}
-          width="auto"
-          ml={4}
-          aria-label="Select date range"
-          title="Date range selector"
-        >
-          <option value="24h">Last 24 Hours</option>
-          <option value="7d">Last 7 Days</option>
-          <option value="30d">Last 30 Days</option>
-          <option value="90d">Last 90 Days</option>
-        </Select>
+        <FormControl id="dateRange" w="auto">
+          <FormLabel srOnly>Select date range</FormLabel>
+          <Select
+            value={dateRange}
+            onChange={handleDateRangeChange}
+            width="auto"
+            ml={4}
+            aria-label="Select date range"
+          >
+            <option value="24h">Last 24 Hours</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
+            <option value="90d">Last 90 Days</option>
+          </Select>
+        </FormControl>
       </Flex>
 
       <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={6}>
@@ -221,8 +232,11 @@ const AnalyticsOverview: React.FC = () => {
           <Box p={6} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
             <Text fontSize="sm" color={textColor}>Total Channels</Text>
             <Heading size="lg" mt={2}>{data.totalChannels}</Heading>
-            <Badge colorScheme="green" mt={2}>
-              Active
+            <Text fontSize="sm" color={textColor} mt={2}>
+              {data.activeChannels} channels currently active
+            </Text>
+            <Badge colorScheme={data.activeChannels > 0 ? "green" : "gray"} mt={2}>
+              {data.activeChannels} Active / {data.totalChannels} Total
             </Badge>
           </Box>
         </GridItem>
@@ -230,12 +244,18 @@ const AnalyticsOverview: React.FC = () => {
           <Box p={6} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
             <Text fontSize="sm" color={textColor}>Total Plays</Text>
             <Heading size="lg" mt={2}>{data.totalPlays.toLocaleString()}</Heading>
+            <Text fontSize="sm" color={textColor} mt={2}>
+              In the last {dateRange === '24h' ? '24 hours' : dateRange === '7d' ? '7 days' : dateRange === '30d' ? '30 days' : '90 days'}
+            </Text>
           </Box>
         </GridItem>
         <GridItem>
           <Box p={6} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
             <Text fontSize="sm" color={textColor}>Total Play Time</Text>
             <Heading size="lg" mt={2}>{data.totalPlayTime}</Heading>
+            <Text fontSize="sm" color={textColor} mt={2}>
+              Hours:Minutes:Seconds
+            </Text>
           </Box>
         </GridItem>
       </Grid>
@@ -413,18 +433,7 @@ const AnalyticsOverview: React.FC = () => {
         </GridItem>
       </Grid>
 
-      <Box
-        p={6}
-        bg={bgColor}
-        borderRadius="lg"
-        borderWidth="1px"
-        borderColor={borderColor}
-      >
-        <Heading size="md" mb={6}>Raw Analytics Data (Debug View)</Heading>
-        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-          {JSON.stringify(data, null, 2)}
-        </pre>
-      </Box>
+      
     </VStack>
   );
 };

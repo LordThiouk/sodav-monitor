@@ -16,15 +16,16 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, distinct, case, and_, text
 import librosa
-from models import Base, RadioStation, Track, TrackDetection, User, Report
+from models import Base, RadioStation, Track, TrackDetection, User, Report, ReportStatus
 from database import SessionLocal, engine
 from audio_processor import AudioProcessor
+from music_recognition import MusicRecognizer
 from fingerprint import AudioProcessor as FingerprintProcessor
 from radio_manager import RadioManager
 from fingerprint_generator import generate_fingerprint
-from music_recognition import MusicRecognizer
 from routers.analytics import router as analytics_router
 from routers.channels import router as channels_router
+from routers.reports import router as reports_router
 
 # Load environment variables
 load_dotenv()
@@ -48,7 +49,7 @@ app = FastAPI(title="SODAV Media Monitor", version="1.0.0")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3001", "http://localhost:8000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -106,6 +107,13 @@ class AnalyticsResponse(BaseModel):
     topArtists: List[Dict[str, Union[str, int]]]
     systemHealth: SystemHealth
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
 # Dependency
 def get_db():
     db = SessionLocal()
@@ -115,8 +123,9 @@ def get_db():
         db.close()
 
 # Initialize MusicRecognizer and AudioProcessor
-music_recognizer = MusicRecognizer()
-processor = AudioProcessor(db_session=SessionLocal(), music_recognizer=music_recognizer)
+db_session = SessionLocal()
+music_recognizer = MusicRecognizer(db_session=db_session)
+processor = AudioProcessor(db_session=db_session, music_recognizer=music_recognizer)
 
 # Store active connections
 active_connections: List[WebSocket] = []
@@ -715,37 +724,65 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
 @app.post("/api/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """Login and get access token"""
-    user = db.query(User).filter(User.username == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+    try:
+        user = db.query(User).filter(User.username == form_data.username).first()
+        if not user or not verify_password(form_data.password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Update user's last login time and ensure they are active
+        user.last_login = datetime.utcnow()
+        user.is_active = True
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+        # Create access token with user information
+        access_token = create_access_token(
+            data={
+                "sub": user.username,
+                "id": user.id,
+                "email": user.email,
+                "role": user.role
+            }
         )
-    
-    user.last_login = datetime.now()
-    db.commit()
-    
-    access_token = create_access_token(data={"sub": user.username})
-    return {"access_token": access_token, "token_type": "bearer"}
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "role": user.role
+            }
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Login error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error during login process"
+        )
 
 # Report management endpoints
 @app.post("/api/reports", response_model=ReportResponse)
 async def create_report(
     report_request: ReportRequest,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Create a new report"""
     report = Report(
-        user_id=current_user.id,
         type=report_request.type,
         format=report_request.format,
         start_date=report_request.start_date,
         end_date=report_request.end_date,
         filters=report_request.filters,
-        status=ReportStatus.PENDING
+        status='pending'
     )
     db.add(report)
     db.commit()
@@ -780,7 +817,7 @@ async def download_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     
-    if report.status != ReportStatus.COMPLETED:
+    if report.status != 'completed':
         raise HTTPException(status_code=400, detail="Report not ready for download")
     
     if not report.file_path or not os.path.exists(report.file_path):
@@ -793,54 +830,16 @@ async def download_report(
 
 async def generate_report(report_id: int, db: Session):
     """Background task to generate report"""
-    report = db.query(Report).filter(Report.id == report_id).first()
-    if not report:
-        return
-    
     try:
-        report.status = ReportStatus.GENERATING
-        db.commit()
-        
-        # Get detection data for the report period
-        detections = db.query(TrackDetection).filter(
-            TrackDetection.detected_at >= report.start_date,
-            TrackDetection.detected_at <= report.end_date
-        ).all()
-        
-        # Create report directory if it doesn't exist
-        reports_dir = Path("reports")
-        reports_dir.mkdir(exist_ok=True)
-        
-        # Generate report based on format
-        if report.format == "csv":
-            file_path = reports_dir / f"report_{report.id}.csv"
-            df = pd.DataFrame([{
-                'station': d.station.name,
-                'track': d.track.title,
-                'artist': d.track.artist,
-                'detected_at': d.detected_at,
-                'duration': d.play_duration,
-                'confidence': d.confidence
-            } for d in detections])
-            df.to_csv(file_path, index=False)
-        elif report.format == "xlsx":
-            file_path = reports_dir / f"report_{report.id}.xlsx"
-            df = pd.DataFrame([{
-                'station': d.station.name,
-                'track': d.track.title,
-                'artist': d.track.artist,
-                'detected_at': d.detected_at,
-                'duration': d.play_duration,
-                'confidence': d.confidence
-            } for d in detections])
-            df.to_excel(file_path, index=False)
-        
-        report.file_path = str(file_path)
-        report.status = ReportStatus.COMPLETED
+        report = db.query(Report).filter(Report.id == report_id).first()
+        if not report:
+            return
+
+        report.status = "completed"
         report.completed_at = datetime.now()
         
     except Exception as e:
-        report.status = ReportStatus.FAILED
+        report.status = "failed"
         report.error_message = str(e)
         logger.error(f"Error generating report {report_id}: {e}")
     
@@ -1191,27 +1190,31 @@ async def get_analytics_overview(
         
         start_time = datetime.now() - delta
         
-        # Get overall detection statistics
-        detection_stats = (
+        # Get total number of stations and active stations
+        total_stations = db.query(func.count(RadioStation.id)).scalar() or 0
+        active_stations = db.query(func.count(RadioStation.id))\
+            .filter(RadioStation.last_checked >= start_time)\
+            .filter(RadioStation.is_active == True)\
+            .scalar() or 0
+        
+        # Get overall detection statistics using a subquery
+        detection_subq = (
             db.query(
                 func.count(TrackDetection.id).label('total_detections'),
-                func.count(distinct(TrackDetection.station_id)).label('active_stations'),
+                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
                 func.count(distinct(Track.id)).label('unique_tracks'),
                 func.count(distinct(Track.artist)).label('unique_artists'),
-                func.count(distinct(Track.label)).label('unique_labels'),
-                func.avg(TrackDetection.confidence).label('average_confidence'),
-                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time')
+                func.avg(TrackDetection.confidence).label('average_confidence')
             )
             .outerjoin(Track, TrackDetection.track_id == Track.id)
             .filter(TrackDetection.detected_at >= start_time)
-            .first()
+            .subquery()
         )
         
-        # Get total number of stations
-        total_stations = db.query(func.count(RadioStation.id)).scalar()
+        detection_stats = db.query(detection_subq).first()
         
-        # Get hourly detection counts
-        hourly_detections = (
+        # Get hourly detection counts using a subquery
+        hourly_subq = (
             db.query(
                 func.strftime('%Y-%m-%d %H:00:00', TrackDetection.detected_at).label('hour'),
                 func.count(TrackDetection.id).label('count')
@@ -1219,65 +1222,68 @@ async def get_analytics_overview(
             .filter(TrackDetection.detected_at >= start_time)
             .group_by(text('hour'))
             .order_by(text('hour'))
-            .all()
+            .subquery()
         )
         
-        # Get top tracks
-        top_tracks = (
+        hourly_detections = db.query(hourly_subq).all()
+        
+        # Get top tracks using a subquery
+        tracks_subq = (
             db.query(
                 Track.id,
                 Track.title,
                 Track.artist,
-                Track.label,
                 func.count(TrackDetection.id).label('detection_count'),
-                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
-                func.count(distinct(TrackDetection.station_id)).label('stations')
+                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time')
             )
             .join(TrackDetection, Track.id == TrackDetection.track_id)
             .filter(TrackDetection.detected_at >= start_time)
             .group_by(Track.id)
             .order_by(func.count(TrackDetection.id).desc())
             .limit(10)
-            .all()
+            .subquery()
         )
         
-        # Get top artists
-        top_artists = (
+        top_tracks = db.query(tracks_subq).all()
+        
+        # Get top artists using a subquery
+        artists_subq = (
             db.query(
                 Track.artist,
                 func.count(TrackDetection.id).label('detection_count'),
-                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
-                func.count(distinct(Track.id)).label('unique_tracks'),
-                func.count(distinct(TrackDetection.station_id)).label('stations')
+                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time')
             )
             .join(TrackDetection, Track.id == TrackDetection.track_id)
             .filter(TrackDetection.detected_at >= start_time)
             .group_by(Track.artist)
             .order_by(func.count(TrackDetection.id).desc())
             .limit(10)
-            .all()
+            .subquery()
         )
         
-        # Get top labels
-        top_labels = (
+        top_artists = db.query(artists_subq).all()
+
+        # Get top labels using a subquery
+        labels_subq = (
             db.query(
                 Track.label,
-                func.count(TrackDetection.id).label('detection_count'),
-                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
-                func.count(distinct(Track.id)).label('unique_tracks'),
-                func.count(distinct(Track.artist)).label('unique_artists'),
-                func.count(distinct(TrackDetection.station_id)).label('stations')
+                func.count(TrackDetection.id).label('detection_count')
             )
             .join(TrackDetection, Track.id == TrackDetection.track_id)
-            .filter(TrackDetection.detected_at >= start_time)
+            .filter(
+                Track.label.isnot(None),
+                TrackDetection.detected_at >= start_time
+            )
             .group_by(Track.label)
             .order_by(func.count(TrackDetection.id).desc())
             .limit(10)
-            .all()
+            .subquery()
         )
+        
+        top_labels = db.query(labels_subq).all()
 
-        # Get top channels
-        top_channels = (
+        # Get top channels using a subquery
+        channels_subq = (
             db.query(
                 RadioStation.id,
                 RadioStation.name,
@@ -1290,18 +1296,21 @@ async def get_analytics_overview(
             .group_by(RadioStation.id)
             .order_by(func.count(TrackDetection.id).desc())
             .limit(10)
-            .all()
+            .subquery()
         )
         
-        # Format response to match frontend expectations
+        top_channels = db.query(channels_subq).all()
+        
+        # Format response
         return {
             "totalChannels": total_stations,
+            "activeStations": active_stations,
             "totalPlays": detection_stats.total_detections or 0,
-            "totalPlayTime": str(timedelta(seconds=int(detection_stats.total_play_time))) if detection_stats.total_play_time else "0:00:00",
+            "totalPlayTime": str(timedelta(seconds=int(detection_stats.total_play_time))) if detection_stats.total_play_time else "00:00:00",
             "playsData": [
                 {
-                    "date": hour,
-                    "plays": count
+                    "hour": hour,
+                    "count": count
                 }
                 for hour, count in hourly_detections
             ],
@@ -1311,9 +1320,9 @@ async def get_analytics_overview(
                     "title": title,
                     "artist": artist,
                     "plays": detection_count or 0,
-                    "duration": str(timedelta(seconds=int(total_play_time))) if total_play_time else "0:00:00"
+                    "duration": str(timedelta(seconds=int(total_play_time))) if total_play_time else "00:00:00"
                 }
-                for i, (id, title, artist, label, detection_count, total_play_time, stations) in enumerate(top_tracks)
+                for i, (id, title, artist, detection_count, total_play_time) in enumerate(top_tracks)
             ],
             "topArtists": [
                 {
@@ -1321,26 +1330,26 @@ async def get_analytics_overview(
                     "name": artist,
                     "plays": detection_count or 0
                 }
-                for i, (artist, detection_count, total_play_time, unique_tracks, stations) in enumerate(top_artists)
+                for i, (artist, detection_count, total_play_time) in enumerate(top_artists)
                 if artist is not None
             ],
             "topLabels": [
                 {
                     "rank": i + 1,
-                    "name": label,
-                    "plays": detection_count or 0
+                    "name": label or "Unknown",
+                    "plays": count
                 }
-                for i, (label, detection_count, total_play_time, unique_tracks, unique_artists, stations) in enumerate(top_labels)
-                if label is not None
+                for i, (label, count) in enumerate(top_labels)
             ],
             "topChannels": [
                 {
                     "rank": i + 1,
                     "name": name,
-                    "plays": detection_count or 0,
-                    "region": f"{country or 'Unknown'} ({language or 'Unknown'})"
+                    "country": country or "Unknown",
+                    "language": language or "Unknown",
+                    "plays": count
                 }
-                for i, (id, name, country, language, detection_count) in enumerate(top_channels)
+                for i, (id, name, country, language, count) in enumerate(top_channels)
             ]
         }
         
@@ -1351,8 +1360,94 @@ async def get_analytics_overview(
             detail=f"Error getting analytics overview: {str(e)}"
         )
 
+@app.post("/api/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """Send password reset email"""
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        # Don't reveal if email exists or not for security
+        return {"message": "If the email exists, you will receive reset instructions"}
+    
+    # Generate reset token
+    reset_token = create_access_token(
+        data={"sub": user.username, "type": "reset"},
+        expires_delta=timedelta(minutes=15)
+    )
+    
+    # In a real app, send email here
+    # For now, just return the token
+    return {
+        "message": "Password reset instructions sent",
+        "token": reset_token  # In production, this should be sent via email
+    }
+
+@app.post("/api/reset-password")
+async def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Reset password using token"""
+    try:
+        # Verify token
+        payload = jwt.decode(request.token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if not username or payload.get("type") != "reset":
+            raise HTTPException(status_code=400, detail="Invalid token")
+        
+        # Get user
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Update password
+        user.password_hash = get_password_hash(request.new_password)
+        db.commit()
+        
+        return {"message": "Password reset successful"}
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+@app.post("/api/channels/detect-music")
+async def detect_music_all_stations(db: Session = Depends(get_db)):
+    """Detect music from all active stations"""
+    try:
+        # Get all active stations
+        stations = db.query(RadioStation).filter(RadioStation.is_active == True).all()
+        
+        if not stations:
+            raise HTTPException(status_code=404, detail="No active stations found")
+        
+        results = []
+        for station in stations:
+            try:
+                # Analyze stream
+                result = await processor.analyze_stream(station.stream_url, station.id)
+                if result:
+                    results.append({
+                        "station_id": station.id,
+                        "station_name": station.name,
+                        "detection": result
+                    })
+            except Exception as e:
+                logger.error(f"Error detecting music for station {station.name}: {str(e)}")
+                continue
+        
+        return {
+            "status": "success",
+            "message": f"Analyzed {len(stations)} stations",
+            "detections": results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in detect_music_all_stations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Include routers
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(channels_router)
+app.include_router(
+    reports_router, 
+    prefix="/api/reports", 
+    tags=["reports"],
+    dependencies=[]  # Ensure no authentication dependencies
+)
 
 if __name__ == "__main__":
     host = os.getenv('HOST', '0.0.0.0')

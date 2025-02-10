@@ -1,349 +1,257 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
+  Container,
   VStack,
+  HStack,
   Heading,
   Text,
-  Select,
-  Input,
   Button,
   useColorModeValue,
-  Flex,
-  useDisclosure,
-  useToast,
   Table,
   Thead,
   Tbody,
   Tr,
   Th,
   Td,
+  Badge,
+  Card,
+  CardHeader,
+  CardBody,
+  SimpleGrid,
+  Icon,
   Modal,
   ModalOverlay,
   ModalContent,
   ModalHeader,
   ModalBody,
+  ModalFooter,
   ModalCloseButton,
   FormControl,
   FormLabel,
-  Switch,
-  RadioGroup,
-  Radio,
-  Stack,
-  Badge
+  Input,
+  Select,
+  useDisclosure,
+  useToast,
+  Flex,
+  Spacer,
+  Spinner,
 } from '@chakra-ui/react';
-import { FaDownload, FaFilter } from 'react-icons/fa';
+import {
+  FaDownload,
+  FaCalendarAlt,
+  FaEnvelope,
+  FaFileAlt,
+  FaClock,
+  FaPlus,
+} from 'react-icons/fa';
+import { formatDistanceToNow } from 'date-fns';
+import { authenticatedFetch } from '../services/auth';
+import { useNavigate, useLocation } from 'react-router-dom';
 
-// Simplify types and interfaces
-type ReportType = 'plays' | 'artists' | 'tracks' | 'channels';
-type Frequency = 'daily' | 'weekly' | 'monthly';
-
-interface FilterState {
-  startDate: string;
-  endDate: string;
-  channel: string;
-  artist: string;
-  track: string;
-  isrc: string;
-  reportType: ReportType;
-}
-
-interface SubscriptionFilters {
-  channel: string;
-  artist: string;
-  track: string;
-  isrc: string;
-}
-
-interface SubscriptionState {
+interface Report {
   id: string;
-  email: string;
-  frequency: 'daily' | 'weekly' | 'monthly';
-  time: string;
-  reportType: ReportType;
-  filters: SubscriptionFilters;
-  active: boolean;
-  lastDelivery: string;
-  nextDelivery: string;
+  title: string;
+  type: string;
+  format: string;
+  generatedAt: string;
+  status: 'completed' | 'pending' | 'failed';
+  downloadUrl?: string;
 }
 
-interface ReportTypeOption {
-  value: ReportType;
-  label: string;
-}
-
-interface Channel {
+interface Subscription {
   id: string;
   name: string;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  type: string;
+  nextDelivery: string;
+  recipients: string[];
 }
 
-interface ReportFiltersProps {
-  filters: FilterState;
-  handleSelectChange: (e: React.ChangeEvent<HTMLSelectElement>, field: keyof FilterState) => void;
-  handleInputChange: (e: React.ChangeEvent<HTMLInputElement>, field: keyof FilterState) => void;
-  handleFilterChange: (field: keyof FilterState, value: string) => void;
-  reportTypes: ReportTypeOption[];
-  channels: Channel[];
+interface GenerateReportRequest {
+  type: string;
+  format: string;
+  start_date: string;
+  end_date: string;
 }
 
-// Separate components for form elements
-const FormSelect: React.FC<{
-  id: string;
-  label: string;
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
-  options: Array<{ value: string; label: string }>;
-  placeholder?: string;
-}> = ({ id, label, value, onChange, options, placeholder }) => (
-  <Select
-    id={id}
-    value={value}
-    onChange={onChange}
-    aria-label={label}
-    placeholder={placeholder}
-  >
-    {options.map(option => (
-      <option key={option.value} value={option.value}>
-        {option.label}
-      </option>
-    ))}
-  </Select>
-);
-
-const FormInput: React.FC<{
-  id: string;
-  label: string;
-  type?: string;
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  placeholder?: string;
-}> = ({ id, label, type = 'text', value, onChange, placeholder }) => (
-  <Input
-    id={id}
-    type={type}
-    value={value}
-    onChange={onChange}
-    placeholder={placeholder}
-    aria-label={label}
-  />
-);
-
-const ReportFilters: React.FC<ReportFiltersProps> = ({ 
-  filters, 
-  handleSelectChange, 
-  handleInputChange, 
-  handleFilterChange,
-  reportTypes,
-  channels 
-}) => {
-  return (
-    <VStack spacing={4} align="stretch">
-      <FormSelect
-        id="reportType"
-        label="Report Type"
-        value={filters.reportType}
-        onChange={(e) => handleSelectChange(e, 'reportType')}
-        options={reportTypes.map(opt => ({ value: opt.value, label: opt.label }))}
-      />
-
-      <FormInput
-        id="startDate"
-        label="Start Date"
-        type="date"
-        value={filters.startDate}
-        onChange={(e) => handleInputChange(e, 'startDate')}
-      />
-
-      <FormInput
-        id="endDate"
-        label="End Date"
-        type="date"
-        value={filters.endDate}
-        onChange={(e) => handleInputChange(e, 'endDate')}
-      />
-
-      <FormSelect
-        id="channel"
-        label="Channel"
-        value={filters.channel}
-        onChange={(e) => handleSelectChange(e, 'channel')}
-        options={channels.map(ch => ({ value: ch.id, label: ch.name }))}
-        placeholder="All Channels"
-      />
-
-      <FormInput
-        id="artist"
-        label="Artist"
-        value={filters.artist}
-        onChange={(e) => handleFilterChange('artist', e.target.value)}
-        placeholder="Search by artist"
-      />
-
-      <FormInput
-        id="track"
-        label="Track"
-        value={filters.track}
-        onChange={(e) => handleFilterChange('track', e.target.value)}
-        placeholder="Search by track"
-      />
-
-      <FormInput
-        id="isrc"
-        label="ISRC"
-        value={filters.isrc}
-        onChange={(e) => handleFilterChange('isrc', e.target.value)}
-        placeholder="Search by ISRC"
-      />
-    </VStack>
-  );
+const formatDate = (dateString: string | undefined): string => {
+  if (!dateString) return 'Unknown date';
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      return 'Invalid date';
+    }
+    return formatDistanceToNow(date, { addSuffix: true });
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return 'Invalid date';
+  }
 };
 
-const Reports = (): React.ReactElement => {
-  const [filters, setFilters] = React.useState<FilterState>({
-    startDate: '',
-    endDate: '',
-    channel: '',
-    artist: '',
-    track: '',
-    isrc: '',
-    reportType: 'plays',
-  });
-
-  const [subscriptions, setSubscriptions] = React.useState<SubscriptionState[]>([
-    {
-      id: '1',
-      email: 'test@example.com',
-      frequency: 'daily',
-      time: '09:00',
-      reportType: 'plays',
-      filters: {
-        channel: '1',
-        artist: '',
-        track: '',
-        isrc: '',
-      },
-      active: true,
-      lastDelivery: '2024-02-06 09:00',
-      nextDelivery: '2024-02-07 09:00',
-    },
-    {
-      id: '2',
-      email: 'reports@example.com',
-      frequency: 'weekly',
-      time: '10:00',
-      reportType: 'artists',
-      filters: {
-        channel: '',
-        artist: '',
-        track: '',
-        isrc: '',
-      },
-      active: false,
-      lastDelivery: '2024-01-30 10:00',
-      nextDelivery: '2024-02-13 10:00',
-    },
-  ]);
-
-  const { isOpen, onOpen, onClose } = useDisclosure();
+const Reports: React.FC = () => {
+  const [reports, setReports] = useState<Report[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { isOpen: isSubscriptionOpen, onOpen: onSubscriptionOpen, onClose: onSubscriptionClose } = useDisclosure();
+  const { isOpen: isGenerateOpen, onOpen: onGenerateOpen, onClose: onGenerateClose } = useDisclosure();
+  const [isGenerating, setIsGenerating] = useState(false);
   const toast = useToast();
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const [newSubscription, setNewSubscription] = useState({
+    name: '',
+    frequency: 'daily',
+    type: 'detection',
+    email: '',
+  });
+  const [newReport, setNewReport] = useState({
+    type: 'detection',
+    format: 'csv',
+    start_date: '',
+    end_date: '',
+  });
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const textColor = useColorModeValue('gray.600', 'gray.400');
 
-  const reportTypeOptions: ReportTypeOption[] = [
-    { value: 'plays', label: 'Plays Report' },
-    { value: 'artists', label: 'Artists Report' },
-    { value: 'tracks', label: 'Tracks Report' },
-    { value: 'channels', label: 'Channels Report' },
-  ];
+  useEffect(() => {
+    fetchData();
+  }, [toast]);
 
-  const channelOptions: Channel[] = [
-    { id: '1', name: 'Radio Future Media 94.0 FM' },
-    { id: '2', name: 'Sud FM' },
-  ];
-
-  const sampleData = [
-    {
-      date: '2024-02-06',
-      channel: 'Radio Future Media',
-      track: 'Sample Track 1',
-      artist: 'Sample Artist 1',
-      isrc: 'USABC1234567',
-      duration: '03:45',
-      status: 'Verified'
-    },
-    {
-      date: '2024-02-06',
-      channel: 'Sud FM',
-      track: 'Sample Track 2',
-      artist: 'Sample Artist 2',
-      isrc: 'USABC1234568',
-      duration: '04:12',
-      status: 'Verified'
-    },
-  ];
-
-  const handleFilterChange = (field: keyof FilterState, value: string): void => {
-    setFilters(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>, field: keyof FilterState): void => {
-    handleFilterChange(field, e.target.value);
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, field: keyof FilterState): void => {
-    handleFilterChange(field, e.target.value);
-  };
-
-  const generateCSV = (data: typeof sampleData): string => {
-    const headers = {
-      plays: ['Date', 'Channel', 'Track', 'Artist', 'ISRC', 'Duration', 'Status'],
-      artists: ['Artist', 'Total Plays', 'Total Duration', 'Most Played Track'],
-      tracks: ['Track', 'Artist', 'ISRC', 'Total Plays', 'Total Duration'],
-      channels: ['Channel', 'Country', 'Total Plays', 'Total Duration', 'Unique Tracks']
-    };
-
-    const selectedHeaders = headers[filters.reportType as keyof typeof headers];
-    let csv = selectedHeaders.join(',') + '\n';
-
-    data.forEach(row => {
-      const values = selectedHeaders.map(header => {
-        const value = row[header.toLowerCase() as keyof typeof row] || '';
-        return `"${value.toString().replace(/"/g, '""')}"`;
-      });
-      csv += values.join(',') + '\n';
-    });
-
-    return csv;
-  };
-
-  const handleDownload = (): void => {
+  const fetchData = async () => {
     try {
-      const csv = generateCSV(sampleData);
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      const date = new Date().toISOString().split('T')[0];
-      const filename = `sodav_${filters.reportType}_report_${date}.csv`;
-      
-      link.setAttribute('href', url);
-      link.setAttribute('download', filename);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
+      setLoading(true);
+      // Fetch reports using authenticated fetch
+      const reportsResponse = await authenticatedFetch('/api/reports');
+      if (!reportsResponse.ok) {
+        if (reportsResponse.status === 401) {
+          // Redirect to login if unauthorized
+          navigate('/login', { state: { from: location } });
+          return;
+        }
+        throw new Error('Failed to fetch reports');
+      }
+      const reportsData = await reportsResponse.json();
+      // Ensure reports is always an array
+      setReports(Array.isArray(reportsData) ? reportsData : []);
+
+      // Fetch subscriptions using authenticated fetch
+      const subscriptionsResponse = await authenticatedFetch('/api/reports/subscriptions');
+      if (!subscriptionsResponse.ok) {
+        if (subscriptionsResponse.status === 401) {
+          navigate('/login', { state: { from: location } });
+          return;
+        }
+        throw new Error('Failed to fetch subscriptions');
+      }
+      const subscriptionsData = await subscriptionsResponse.json();
+      // Ensure subscriptions is always an array
+      setSubscriptions(Array.isArray(subscriptionsData) ? subscriptionsData : []);
+    } catch (error) {
+      console.error('Error fetching data:', error);
       toast({
-        title: 'Report Downloaded',
-        description: `Your ${filters.reportType} report has been downloaded successfully.`,
-        status: 'success',
+        title: 'Error fetching data',
+        description: 'Unable to load reports and subscriptions',
+        status: 'error',
         duration: 5000,
         isClosable: true,
       });
+      setReports([]);
+      setSubscriptions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateReport = async () => {
+    try {
+      setIsGenerating(true);
+      
+      // Validate dates
+      if (!newReport.start_date || !newReport.end_date) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please select both start and end dates',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
+        return;
+      }
+
+      const response = await authenticatedFetch('/api/reports', {
+        method: 'POST',
+        body: JSON.stringify(newReport),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          navigate('/login', { state: { from: location } });
+          return;
+        }
+        throw new Error('Failed to generate report');
+      }
+
+      const data = await response.json();
+      toast({
+        title: 'Report Generation Started',
+        description: 'Your report is being generated. It will appear in the list when ready.',
+        status: 'info',
+        duration: 5000,
+        isClosable: true,
+      });
+
+      // Refresh the reports list after a short delay
+      setTimeout(fetchData, 2000);
+      onGenerateClose();
     } catch (error) {
       console.error('Error generating report:', error);
       toast({
-        title: 'Download Failed',
-        description: 'There was an error generating your report. Please try again.',
+        title: 'Error',
+        description: 'Failed to generate report',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleDownload = async (report: Report) => {
+    if (!report.downloadUrl) {
+      toast({
+        title: 'Download not available',
+        description: 'Report is not ready for download',
+        status: 'warning',
+        duration: 5000,
+        isClosable: true,
+      });
+      return;
+    }
+
+    try {
+      const response = await authenticatedFetch(report.downloadUrl);
+      if (!response.ok) {
+        if (response.status === 401) {
+          navigate('/login', { state: { from: location } });
+          return;
+        }
+        throw new Error('Download failed');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${report.title}-${report.generatedAt}.${report.format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      toast({
+        title: 'Download failed',
+        description: 'Unable to download the report',
         status: 'error',
         duration: 5000,
         isClosable: true,
@@ -351,356 +259,368 @@ const Reports = (): React.ReactElement => {
     }
   };
 
-  const handleClearFilters = (): void => {
-    setFilters({
-      startDate: '',
-      endDate: '',
-      channel: '',
-      artist: '',
-      track: '',
-      isrc: '',
-      reportType: 'plays',
-    });
-  };
+  const handleCreateSubscription = async () => {
+    try {
+      const response = await authenticatedFetch('/api/reports/subscriptions', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newSubscription.name,
+          frequency: newSubscription.frequency,
+          type: newSubscription.type,
+          recipients: [newSubscription.email],
+        }),
+      });
 
-  const handleToggleSubscription = (id: string): void => {
-    setSubscriptions((prev: SubscriptionState[]) => 
-      prev.map((sub: SubscriptionState) => {
-        if (sub.id === id) {
-          const newStatus = !sub.active;
-          toast({
-            title: `Subscription ${newStatus ? 'Activated' : 'Deactivated'}`,
-            description: newStatus 
-              ? `Reports will resume delivery to ${sub.email}`
-              : `Reports to ${sub.email} have been paused`,
-            status: newStatus ? 'success' : 'info',
-            duration: 5000,
-            isClosable: true,
-          });
-          return { ...sub, active: newStatus };
+      if (!response.ok) {
+        if (response.status === 401) {
+          navigate('/login', { state: { from: location } });
+          return;
         }
-        return sub;
-      })
+        throw new Error('Failed to create subscription');
+      }
+
+      const data = await response.json();
+      setSubscriptions(prev => [...prev, data]);
+      onSubscriptionClose();
+      toast({
+        title: 'Subscription created',
+        description: 'Your report subscription has been created successfully',
+        status: 'success',
+        duration: 5000,
+        isClosable: true,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to create subscription',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'green';
+      case 'pending':
+        return 'yellow';
+      case 'failed':
+        return 'red';
+      default:
+        return 'gray';
+    }
+  };
+
+  if (loading) {
+    return (
+      <Container maxW="container.xl" py={8}>
+        <VStack spacing={4} align="center">
+          <Spinner size="xl" />
+          <Text>Loading reports and subscriptions...</Text>
+        </VStack>
+      </Container>
     );
-  };
-
-  const handleSubscriptionChange = (field: keyof SubscriptionState, value: string | boolean): void => {
-    setSubscriptions(prev => prev.map(sub => sub.id === '1' ? { ...sub, [field]: value } : sub));
-  };
-
-  const handleSubscriptionFilterChange = (field: keyof SubscriptionFilters, value: string): void => {
-    setSubscriptions(prev => prev.map(sub => sub.id === '1' ? { ...sub, filters: { ...sub.filters, [field]: value } } : sub));
-  };
-
-  // Update event handlers with proper types
-  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleSubscriptionChange('email', e.target.value);
-  };
-
-  const handleReportTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    handleSubscriptionChange('reportType', e.target.value as ReportType);
-  };
-
-  const handleFrequencyChange = (value: string) => {
-    handleSubscriptionChange('frequency', value as Frequency);
-  };
-
-  const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleSubscriptionChange('time', e.target.value);
-  };
-
-  const handleChannelFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    handleSubscriptionFilterChange('channel', e.target.value);
-  };
-
-  const handleArtistFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleSubscriptionFilterChange('artist', e.target.value);
-  };
-
-  const handleTrackFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleSubscriptionFilterChange('track', e.target.value);
-  };
-
-  const handleIsrcFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleSubscriptionFilterChange('isrc', e.target.value);
-  };
-
-  const handleActiveChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleSubscriptionChange('active', e.target.checked);
-  };
-
-  const handleSubscribe = (): void => {
-    toast({
-      title: 'Subscription Created',
-      description: `You will receive ${subscriptions[0].frequency} reports at ${subscriptions[0].time} to ${subscriptions[0].email}`,
-      status: 'success',
-      duration: 5000,
-      isClosable: true,
-    });
-    onClose();
-  };
+  }
 
   return (
-    <Box maxW="container.xl">
+    <Container maxW="container.xl" py={8}>
       <VStack spacing={8} align="stretch">
-        <Box>
-          <Heading size="lg">Reports</Heading>
-          <Text color={textColor} mt={2}>
-            Generate and download custom reports
-          </Text>
-        </Box>
+        <HStack justify="space-between">
+          <Heading size="lg">Reports & Subscriptions</Heading>
+          <Button
+            leftIcon={<Icon as={FaPlus} />}
+            colorScheme="blue"
+            onClick={onSubscriptionOpen}
+          >
+            New Subscription
+          </Button>
+        </HStack>
 
-        <Box p={6} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
-          <VStack spacing={6} align="stretch">
-            <Flex justify="space-between" align="center">
-              <Heading size="md">Report Filters</Heading>
-              <Button
-                leftIcon={<FaFilter />}
-                colorScheme="blue"
-                variant="outline"
-                onClick={onOpen}
-                size="sm"
-              >
-                Schedule Reports
-              </Button>
-            </Flex>
-
-            <ReportFilters 
-              filters={filters}
-              handleSelectChange={handleSelectChange}
-              handleInputChange={handleInputChange}
-              handleFilterChange={handleFilterChange}
-              reportTypes={reportTypeOptions}
-              channels={channelOptions}
-            />
-
-            <Flex gap={4} mt={4}>
-              <Button
-                leftIcon={<FaDownload />}
-                colorScheme="green"
-                onClick={handleDownload}
-                isDisabled={!filters.startDate || !filters.endDate}
-              >
-                Download Report
-              </Button>
-              <Button
-                leftIcon={<FaFilter />}
-                variant="outline"
-                onClick={handleClearFilters}
-              >
-                Clear Filters
-              </Button>
-            </Flex>
-          </VStack>
-        </Box>
-
-        {/* Active Subscriptions Section */}
-        <Box p={6} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
-          <VStack spacing={4} align="stretch">
-            <Heading size="md">Active Subscriptions</Heading>
-            <Box overflowX="auto">
-              <Table>
+        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
+          {/* Recent Reports */}
+          <Card>
+            <CardHeader>
+              <Flex align="center">
+                <Heading size="md">Recent Reports</Heading>
+                <Spacer />
+                <Button
+                  size="sm"
+                  colorScheme="blue"
+                  leftIcon={<Icon as={FaFileAlt} />}
+                  onClick={onGenerateOpen}
+                >
+                  Generate Report
+                </Button>
+              </Flex>
+            </CardHeader>
+            <CardBody>
+              <Table variant="simple">
                 <Thead>
                   <Tr>
-                    <Th>Email</Th>
-                    <Th>Report Type</Th>
-                    <Th>Frequency</Th>
-                    <Th>Time</Th>
-                    <Th>Last Delivery</Th>
-                    <Th>Next Delivery</Th>
+                    <Th>Report</Th>
+                    <Th>Generated</Th>
                     <Th>Status</Th>
                     <Th>Action</Th>
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {subscriptions.map((sub) => (
-                    <Tr key={sub.id}>
-                      <Td>{sub.email}</Td>
-                      <Td>{reportTypeOptions.find(t => t.value === sub.reportType)?.label}</Td>
-                      <Td style={{ textTransform: 'capitalize' }}>{sub.frequency}</Td>
-                      <Td>{sub.time}</Td>
-                      <Td>{sub.lastDelivery}</Td>
-                      <Td>{sub.nextDelivery}</Td>
+                  {reports.map((report) => (
+                    <Tr key={report.id}>
                       <Td>
-                        <Badge 
-                          colorScheme={sub.active ? 'green' : 'gray'}
-                        >
-                          {sub.active ? 'Active' : 'Paused'}
+                        <HStack>
+                          <Icon as={FaFileAlt} color={textColor} />
+                          <Box>
+                            <Text fontWeight="medium">{report.title}</Text>
+                            <Text fontSize="sm" color={textColor}>
+                              {report.type}
+                            </Text>
+                          </Box>
+                        </HStack>
+                      </Td>
+                      <Td>
+                        <Text>
+                          {formatDate(report.generatedAt)}
+                        </Text>
+                      </Td>
+                      <Td>
+                        <Badge colorScheme={getStatusColor(report.status)}>
+                          {report.status}
                         </Badge>
                       </Td>
                       <Td>
-                        <Switch
-                          isChecked={sub.active}
-                          onChange={() => handleToggleSubscription(sub.id)}
-                        />
+                        <Button
+                          size="sm"
+                          leftIcon={<Icon as={FaDownload} />}
+                          isDisabled={report.status !== 'completed'}
+                          onClick={() => handleDownload(report)}
+                        >
+                          Download
+                        </Button>
                       </Td>
                     </Tr>
                   ))}
+                  {reports.length === 0 && (
+                    <Tr>
+                      <Td colSpan={4} textAlign="center" py={8}>
+                        <Text color={textColor}>No reports available</Text>
+                      </Td>
+                    </Tr>
+                  )}
                 </Tbody>
               </Table>
-            </Box>
-          </VStack>
-        </Box>
+            </CardBody>
+          </Card>
 
-        {/* Preview Section */}
-        <Box p={6} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
-          <VStack spacing={4} align="stretch">
-            <Heading size="md">Report Preview</Heading>
-            <Box overflowX="auto">
-              <Table>
+          {/* Active Subscriptions */}
+          <Card>
+            <CardHeader>
+              <Heading size="md">Active Subscriptions</Heading>
+            </CardHeader>
+            <CardBody>
+              <Table variant="simple">
                 <Thead>
                   <Tr>
-                    <Th>Date</Th>
-                    <Th>Channel</Th>
-                    <Th>Track</Th>
-                    <Th>Artist</Th>
-                    <Th>ISRC</Th>
-                    <Th>Duration</Th>
-                    <Th>Status</Th>
+                    <Th>Name</Th>
+                    <Th>Frequency</Th>
+                    <Th>Next Delivery</Th>
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {sampleData.map((row, index) => (
-                    <Tr key={index}>
-                      <Td>{row.date}</Td>
-                      <Td>{row.channel}</Td>
-                      <Td>{row.track}</Td>
-                      <Td>{row.artist}</Td>
-                      <Td>{row.isrc}</Td>
-                      <Td>{row.duration}</Td>
+                  {subscriptions.map((subscription) => (
+                    <Tr key={subscription.id}>
                       <Td>
-                        <Badge 
-                          colorScheme="green"
-                        >
-                          {row.status}
-                        </Badge>
+                        <HStack>
+                          <Icon as={FaEnvelope} color={textColor} />
+                          <Box>
+                            <Text fontWeight="medium">{subscription.name}</Text>
+                            <Text fontSize="sm" color={textColor}>
+                              {subscription.type} report
+                            </Text>
+                          </Box>
+                        </HStack>
+                      </Td>
+                      <Td>
+                        <HStack>
+                          <Icon as={FaCalendarAlt} color={textColor} />
+                          <Text>{subscription.frequency}</Text>
+                        </HStack>
+                      </Td>
+                      <Td>
+                        <HStack>
+                          <Icon as={FaClock} color={textColor} />
+                          <Text>
+                            {formatDate(subscription.nextDelivery)}
+                          </Text>
+                        </HStack>
                       </Td>
                     </Tr>
                   ))}
+                  {subscriptions.length === 0 && (
+                    <Tr>
+                      <Td colSpan={3} textAlign="center" py={8}>
+                        <Text color={textColor}>No active subscriptions</Text>
+                      </Td>
+                    </Tr>
+                  )}
                 </Tbody>
               </Table>
-            </Box>
-          </VStack>
-        </Box>
+            </CardBody>
+          </Card>
+        </SimpleGrid>
+      </VStack>
 
-        {/* Subscription Modal */}
-        <Modal isOpen={isOpen} onClose={onClose}>
-          <ModalOverlay />
-          <ModalContent>
-            <ModalHeader>Schedule Report Delivery</ModalHeader>
-            <ModalCloseButton />
-            <ModalBody>
-              <FormControl>
-                <FormLabel>Email Address</FormLabel>
+      {/* New Subscription Modal */}
+      <Modal isOpen={isSubscriptionOpen} onClose={onSubscriptionClose}>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Create New Subscription</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack spacing={4}>
+              <FormControl isRequired>
+                <FormLabel>Subscription Name</FormLabel>
                 <Input
-                  type="email"
-                  value={subscriptions[0].email}
-                  onChange={handleEmailChange}
-                  placeholder="Enter your email"
+                  placeholder="Daily Detection Report"
+                  value={newSubscription.name}
+                  onChange={(e) =>
+                    setNewSubscription({ ...newSubscription, name: e.target.value })
+                  }
                 />
               </FormControl>
 
-              <FormControl>
+              <FormControl isRequired>
                 <FormLabel>Report Type</FormLabel>
                 <Select
-                  value={subscriptions[0].reportType}
-                  onChange={handleReportTypeChange}
+                  value={newSubscription.type}
+                  onChange={(e) =>
+                    setNewSubscription({ ...newSubscription, type: e.target.value })
+                  }
                 >
-                  {reportTypeOptions.map(type => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))}
+                  <option value="detection">Detection Report</option>
+                  <option value="analytics">Analytics Report</option>
+                  <option value="summary">Summary Report</option>
                 </Select>
               </FormControl>
 
-              <FormControl>
+              <FormControl isRequired>
                 <FormLabel>Frequency</FormLabel>
-                <RadioGroup
-                  value={subscriptions[0].frequency}
-                  onChange={handleFrequencyChange}
+                <Select
+                  value={newSubscription.frequency}
+                  onChange={(e) =>
+                    setNewSubscription({
+                      ...newSubscription,
+                      frequency: e.target.value as 'daily' | 'weekly' | 'monthly',
+                    })
+                  }
                 >
-                  <Stack direction="row">
-                    <Radio value="daily">Daily</Radio>
-                    <Radio value="weekly">Weekly</Radio>
-                    <Radio value="monthly">Monthly</Radio>
-                  </Stack>
-                </RadioGroup>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </Select>
               </FormControl>
 
-              <FormControl>
-                <FormLabel>Delivery Time</FormLabel>
+              <FormControl isRequired>
+                <FormLabel>Email</FormLabel>
                 <Input
-                  type="time"
-                  value={subscriptions[0].time}
-                  onChange={handleTimeChange}
+                  type="email"
+                  placeholder="your@email.com"
+                  value={newSubscription.email}
+                  onChange={(e) =>
+                    setNewSubscription({ ...newSubscription, email: e.target.value })
+                  }
+                />
+              </FormControl>
+            </VStack>
+          </ModalBody>
+
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={onSubscriptionClose}>
+              Cancel
+            </Button>
+            <Button colorScheme="blue" onClick={handleCreateSubscription}>
+              Create Subscription
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Generate Report Modal */}
+      <Modal isOpen={isGenerateOpen} onClose={onGenerateClose}>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Generate New Report</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack spacing={4}>
+              <FormControl isRequired>
+                <FormLabel>Report Type</FormLabel>
+                <Select
+                  value={newReport.type}
+                  onChange={(e) =>
+                    setNewReport({ ...newReport, type: e.target.value })
+                  }
+                >
+                  <option value="detection">Detection Report</option>
+                  <option value="analytics">Analytics Report</option>
+                  <option value="summary">Summary Report</option>
+                </Select>
+              </FormControl>
+
+              <FormControl isRequired>
+                <FormLabel>Format</FormLabel>
+                <Select
+                  value={newReport.format}
+                  onChange={(e) =>
+                    setNewReport({ ...newReport, format: e.target.value })
+                  }
+                >
+                  <option value="csv">CSV</option>
+                  <option value="xlsx">Excel</option>
+                </Select>
+              </FormControl>
+
+              <FormControl isRequired>
+                <FormLabel>Start Date</FormLabel>
+                <Input
+                  type="datetime-local"
+                  value={newReport.start_date}
+                  onChange={(e) =>
+                    setNewReport({ ...newReport, start_date: e.target.value })
+                  }
                 />
               </FormControl>
 
-              <FormControl>
-                <FormLabel>Filters</FormLabel>
-
-                <FormControl>
-                  <FormLabel>Channel</FormLabel>
-                  <Select
-                    value={subscriptions[0].filters.channel}
-                    onChange={handleChannelFilterChange}
-                  >
-                    {channelOptions.map(channel => (
-                      <option key={channel.id} value={channel.id}>
-                        {channel.name}
-                      </option>
-                    ))}
-                  </Select>
-                </FormControl>
-
-                <FormControl>
-                  <FormLabel>Artist</FormLabel>
-                  <Input
-                    placeholder="Filter by artist"
-                    value={subscriptions[0].filters.artist}
-                    onChange={handleArtistFilterChange}
-                  />
-                </FormControl>
-
-                <FormControl>
-                  <FormLabel>Track</FormLabel>
-                  <Input
-                    placeholder="Filter by track"
-                    value={subscriptions[0].filters.track}
-                    onChange={handleTrackFilterChange}
-                  />
-                </FormControl>
-
-                <FormControl>
-                  <FormLabel>ISRC</FormLabel>
-                  <Input
-                    placeholder="Filter by ISRC"
-                    value={subscriptions[0].filters.isrc}
-                    onChange={handleIsrcFilterChange}
-                  />
-                </FormControl>
-              </FormControl>
-
-              <FormControl>
-                <FormLabel>Status</FormLabel>
-                <Switch
-                  isChecked={subscriptions[0].active}
-                  onChange={handleActiveChange}
+              <FormControl isRequired>
+                <FormLabel>End Date</FormLabel>
+                <Input
+                  type="datetime-local"
+                  value={newReport.end_date}
+                  onChange={(e) =>
+                    setNewReport({ ...newReport, end_date: e.target.value })
+                  }
                 />
               </FormControl>
+            </VStack>
+          </ModalBody>
 
-              <Button
-                onClick={handleSubscribe}
-                disabled={!subscriptions[0].email || !subscriptions[0].time}
-              >
-                Subscribe to Reports
-              </Button>
-            </ModalBody>
-          </ModalContent>
-        </Modal>
-      </VStack>
-    </Box>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={onGenerateClose}>
+              Cancel
+            </Button>
+            <Button
+              colorScheme="blue"
+              onClick={handleGenerateReport}
+              isLoading={isGenerating}
+              loadingText="Generating..."
+            >
+              Generate Report
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    </Container>
   );
 };
 

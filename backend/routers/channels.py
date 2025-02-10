@@ -19,10 +19,9 @@ class StationResponse(BaseModel):
     stream_url: str
     country: Optional[str]
     language: Optional[str]
-    status: StationStatus
     is_active: bool
-    last_checked: Optional[datetime]
-    last_detection_time: Optional[datetime]
+    last_checked: datetime
+    status: str
 
     class Config:
         orm_mode = True

@@ -9,7 +9,9 @@ export interface TrackAnalytics {
   total_play_time: number; // Changed to number
   unique_stations: number;
   stations: string[];
-}export interface RadioStation {
+}
+
+export interface RadioStation {
   id: number;
   name: string;
   stream_url: string;
@@ -17,10 +19,12 @@ export interface TrackAnalytics {
   language: string;
   is_active: number;
   last_checked: string;
+  total_play_time: string;
   codec?: string;
   bitrate?: number;
   favicon?: string;
   homepage?: string;
+  tags?: string[];
   last_detection?: {
     title: string;
     artist: string;
@@ -72,28 +76,6 @@ export interface ExternalRadioStation {
   codec?: string;
   bitrate?: number;
   homepage?: string;
-}
-
-export interface RadioStation {
-  id: number;
-  name: string;
-  stream_url: string;
-  country: string;
-  language: string;
-  is_active: number;
-  last_checked: string;
-  codec?: string;
-  bitrate?: number;
-  favicon?: string;
-  homepage?: string;
-  tags?: string[];
-  last_detection?: {
-    title: string;
-    artist: string;
-    confidence: number;
-    detected_at: string;
-    total_tracks: number;
-  };
 }
 
 export interface RadioBrowserError {

@@ -1,7 +1,7 @@
 import { RadioStation, Track, TrackDetection, Report, TrackAnalytics } from '../types';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = '/api';
 
 export interface Stream extends RadioStation {
   type: string;

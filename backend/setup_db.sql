@@ -26,7 +26,7 @@ CREATE TABLE reports (
     format VARCHAR DEFAULT 'csv',
     start_date TIMESTAMP NOT NULL,
     end_date TIMESTAMP NOT NULL,
-    filters JSON,
+    filters TEXT,
     file_path VARCHAR,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP,
@@ -42,7 +42,9 @@ CREATE TABLE radio_stations (
     country VARCHAR,
     language VARCHAR,
     is_active INTEGER DEFAULT 1,
-    last_checked TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    last_checked TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_detection_time TIMESTAMP,
+    status VARCHAR DEFAULT 'active'
 );
 
 -- Create tracks table
@@ -58,7 +60,9 @@ CREATE TABLE tracks (
     total_play_time INTERVAL DEFAULT '0 seconds',
     last_played TIMESTAMP,
     external_ids JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fingerprint VARCHAR,
+    fingerprint_raw BLOB
 );
 
 -- Create track_detections table

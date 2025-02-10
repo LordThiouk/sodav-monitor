@@ -3,24 +3,69 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from datetime import datetime, timedelta
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
+from pydantic import BaseModel
 
 from database import get_db
 from models import Track, TrackDetection, RadioStation, ArtistStats, TrackStats, DetectionHourly, AnalyticsData
 
 router = APIRouter(
-    prefix="/api/analytics",
     tags=["analytics"],
     responses={404: {"description": "Not found"}}
 )
 
 logger = logging.getLogger(__name__)
 
+class ChartDataPoint(BaseModel):
+    hour: str
+    count: int
+
+class TopTrack(BaseModel):
+    rank: int
+    title: str
+    artist: str
+    plays: int
+    duration: str
+
+class TopArtist(BaseModel):
+    rank: int
+    name: str
+    plays: int
+
+class TopLabel(BaseModel):
+    rank: int
+    name: str
+    plays: int
+
+class TopChannel(BaseModel):
+    rank: int
+    name: str
+    country: str
+    language: str
+    plays: int
+
+class SystemHealth(BaseModel):
+    status: str
+    uptime: float
+    lastError: Optional[str] = None
+
+class AnalyticsResponse(BaseModel):
+    totalChannels: int
+    activeStations: int
+    totalPlays: int
+    totalPlayTime: str
+    playsData: List[ChartDataPoint]
+    topTracks: List[TopTrack]
+    topArtists: List[TopArtist]
+    topLabels: List[TopLabel]
+    topChannels: List[TopChannel]
+    systemHealth: SystemHealth
+
 @router.get(
     "/overview",
-    response_model=Dict,
+    response_model=AnalyticsResponse,
     summary="Get Analytics Overview",
-    description="Returns an overview of system analytics including detection stats, top artists, and top tracks"
+    description="Returns an overview of system analytics including detection stats, top artists, tracks, labels, and channels"
 )
 def get_analytics_overview(db: Session = Depends(get_db)):
     try:
@@ -76,12 +121,43 @@ def get_analytics_overview(db: Session = Depends(get_db)):
         if not top_tracks:
             logger.info("No track stats found")
             top_tracks = []
+            
+        # Get top labels
+        top_labels = db.query(
+            Track.label,
+            func.count(TrackDetection.id).label('detection_count')
+        ).join(
+            TrackDetection,
+            Track.id == TrackDetection.track_id
+        ).filter(
+            Track.label.isnot(None),
+            TrackDetection.detected_at >= last_24h
+        ).group_by(
+            Track.label
+        ).order_by(
+            desc('detection_count')
+        ).limit(10).all()
+        
+        # Get top channels
+        top_channels = db.query(
+            RadioStation,
+            func.count(TrackDetection.id).label('detection_count')
+        ).join(
+            TrackDetection,
+            RadioStation.id == TrackDetection.station_id
+        ).filter(
+            TrackDetection.detected_at >= last_24h
+        ).group_by(
+            RadioStation.id
+        ).order_by(
+            desc('detection_count')
+        ).limit(10).all()
         
         # Get system health
         try:
             total_stations = db.query(func.count(RadioStation.id)).scalar() or 0
             active_stations = db.query(func.count(RadioStation.id))\
-                .filter(RadioStation.last_check_time >= last_24h)\
+                .filter(RadioStation.last_checked >= last_24h)\
                 .scalar() or 0
                 
             system_health = {
@@ -99,37 +175,58 @@ def get_analytics_overview(db: Session = Depends(get_db)):
         
         # Format response
         response = {
-            "totalDetections": analytics.detection_count,
-            "detectionRate": analytics.detection_rate,
+            "totalChannels": total_stations,
             "activeStations": active_stations,
-            "totalStations": total_stations,
-            "averageConfidence": analytics.average_confidence,
-            "detectionsByHour": [
-                {
-                    "hour": detection.hour.isoformat(),
-                    "count": detection.count
-                }
+            "totalPlays": analytics.detection_count,
+            "totalPlayTime": str(timedelta(seconds=int(analytics.detection_count * 15))),  # Assuming 15 seconds per detection
+            "playsData": [
+                ChartDataPoint(
+                    hour=detection.hour.isoformat(),
+                    count=detection.count
+                ).dict()
                 for detection in hourly_detections
             ],
             "topArtists": [
-                {
-                    "name": artist.artist_name,
-                    "count": artist.detection_count,
-                    "lastDetected": artist.last_detected.isoformat() if artist.last_detected else None
-                }
-                for artist in top_artists
+                TopArtist(
+                    rank=idx + 1,
+                    name=artist.artist_name,
+                    plays=artist.detection_count
+                ).dict()
+                for idx, artist in enumerate(top_artists)
             ],
             "topTracks": [
-                {
-                    "title": track.title,
-                    "artist": track.artist,
-                    "plays": stats.detection_count,
-                    "duration": track.duration or "0:00",
-                    "lastDetected": stats.last_detected.isoformat() if stats.last_detected else None
-                }
-                for track, stats in top_tracks
+                TopTrack(
+                    rank=idx + 1,
+                    title=track.title,
+                    artist=track.artist,
+                    plays=stats.detection_count,
+                    duration=str(track.duration) if track.duration else "00:00:00"
+                ).dict()
+                for idx, (track, stats) in enumerate(top_tracks)
             ],
-            "systemHealth": system_health
+            "topLabels": [
+                TopLabel(
+                    rank=idx + 1,
+                    name=label or "Unknown",
+                    plays=count
+                ).dict()
+                for idx, (label, count) in enumerate(top_labels)
+            ],
+            "topChannels": [
+                TopChannel(
+                    rank=idx + 1,
+                    name=station.name,
+                    country=station.country or "Unknown",
+                    language=station.language or "Unknown",
+                    plays=count
+                ).dict()
+                for idx, (station, count) in enumerate(top_channels)
+            ],
+            "systemHealth": SystemHealth(
+                status="healthy" if active_stations > 0 else "warning",
+                uptime=100.0 * (active_stations / total_stations if total_stations > 0 else 0),
+                lastError=None
+            ).dict()
         }
         
         logger.info("Successfully retrieved analytics overview")
@@ -178,11 +275,11 @@ async def get_station_analytics(db: Session = Depends(get_db)):
             {
                 "id": station.id,
                 "name": station.name,
-                "status": station.status,
-                "region": station.region,
+                "status": station.status.value if station.status else "inactive",
+                "country": station.country or "Unknown",
+                "language": station.language or "Unknown",
                 "detections24h": detection_count,
-                "lastCheckTime": station.last_check_time.isoformat() if station.last_check_time else None,
-                "lastDetectionTime": station.last_detection_time.isoformat() if station.last_detection_time else None
+                "lastCheckTime": station.last_checked.isoformat() if station.last_checked else None
             }
             for station, detection_count in stations
         ]

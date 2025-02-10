@@ -31,44 +31,42 @@ class AudioProcessor:
         self.logger = logging.getLogger(__name__)
         logger.info("Initializing AudioProcessor")
 
-    async def analyze_stream(self, stream_url: str, station_id: int):
+    async def analyze_stream(self, stream_url: str, station_id: int = None):
         try:
             # Download a 15-second sample of the stream
-            target_size = 320 * 1024  # 320KB for better quality samples
+            target_size = 640 * 1024  # Increased from 320KB to 640KB for better quality samples
             audio_data = await self._download_stream_sample(stream_url, target_size)
             
             if not audio_data:
                 self.logger.error(f"Failed to download audio from stream: {stream_url}")
                 return None
 
-            # Analyze audio features to determine if it's likely music
-            music_likelihood = await self._analyze_audio_features(audio_data)
-            if music_likelihood < 0.5:  # Less than 50% likely to be music
-                self.logger.info(f"Audio sample unlikely to be music (likelihood: {music_likelihood})")
-                return None
-
-            # Recognize the music
+            # Analyze the stream using the music recognizer
             result = await self.music_recognizer.recognize(audio_data)
             
-            if result and 'track' in result:
+            if not result.get('is_music', False):
+                self.logger.info("Audio sample not detected as music")
+                return None
+
+            if result.get('error'):
+                self.logger.error(f"Error in music recognition: {result['error']}")
+                return None
+
+            if station_id:
                 # Create or update track record
                 track = self._get_or_create_track(result)
                 
-                # Get actual duration from recognition result or default to 15 seconds
-                duration_minutes = result.get('duration_minutes', 0.25)  # 0.25 minutes = 15 seconds
-                play_duration = timedelta(minutes=duration_minutes)
-                
-                # Create detection record with station_id
+                # Create detection record with station_id and play duration
                 detection = TrackDetection(
                     station_id=station_id,
                     track_id=track.id,
                     confidence=result.get('confidence', 0),
                     detected_at=datetime.now(),
-                    play_duration=play_duration  # Use actual duration
+                    play_duration=timedelta(minutes=result['track'].get('duration_minutes', 0.25))
                 )
                 
                 self.db_session.add(detection)
-                await self.db_session.commit()
+                self.db_session.commit()
                 
                 return {
                     'id': detection.id,
@@ -76,15 +74,17 @@ class AudioProcessor:
                         'id': track.id,
                         'title': track.title,
                         'artist': track.artist,
-                        'isrc': track.isrc
+                        'isrc': track.isrc,
+                        'label': track.label
                     },
                     'confidence': detection.confidence,
                     'detected_at': detection.detected_at.isoformat(),
-                    'play_duration': str(play_duration),
-                    'station_id': station_id
+                    'play_duration': str(detection.play_duration),
+                    'station_id': station_id,
+                    'source': result.get('source', 'unknown')
                 }
             
-            return None
+            return result
             
         except Exception as e:
             self.logger.error(f"Error analyzing stream: {str(e)}")
@@ -141,25 +141,52 @@ class AudioProcessor:
                         self.logger.error(f"Failed to connect to stream: {url}, status: {response.status}")
                         return None
                     
+                    # Ensure target_size is a multiple of 2 (for 16-bit audio)
+                    target_size = (target_size // 2) * 2
+                    
                     chunks = []
                     total_size = 0
+                    chunk_size = 1024 * 2  # 2KB chunks (multiple of 2)
                     
                     while total_size < target_size:
-                        chunk = await response.content.read(8192)
+                        chunk = await response.content.read(chunk_size)
                         if not chunk:
                             break
                         chunks.append(chunk)
                         total_size += len(chunk)
                     
-                    return b''.join(chunks)
+                    # Combine chunks and ensure final size is a multiple of 2
+                    audio_data = b''.join(chunks)
+                    if len(audio_data) % 2 != 0:
+                        audio_data = audio_data[:-1]
+                    
+                    self.logger.info(f"Downloaded {len(audio_data)} bytes of audio data")
+                    return audio_data
+                    
         except Exception as e:
             self.logger.error(f"Error downloading stream: {str(e)}")
             return None
 
     async def _analyze_audio_features(self, audio_data: bytes) -> float:
         try:
-            # Convert audio bytes to numpy array
+            # Ensure audio_data is not empty
+            if not audio_data:
+                self.logger.error("Empty audio data received")
+                return 0.0
+
+            # Convert audio bytes to numpy array, ensuring proper alignment
             audio_array = np.frombuffer(audio_data, dtype=np.int16)
+            
+            # Ensure we have enough samples for analysis (at least 1024)
+            if len(audio_array) < 1024:
+                self.logger.error("Insufficient audio data for analysis")
+                return 0.0
+            
+            # Pad array to ensure it's a multiple of 1024
+            remainder = len(audio_array) % 1024
+            if remainder != 0:
+                padding = 1024 - remainder
+                audio_array = np.pad(audio_array, (0, padding), mode='constant')
             
             # Normalize samples
             normalized = audio_array.astype(np.float32) / 32768.0
@@ -169,16 +196,18 @@ class AudioProcessor:
             zero_crossings = np.sum(np.abs(np.diff(np.signbit(normalized))))
             spectral_centroid = np.mean(np.abs(np.fft.rfft(normalized)))
             
-            # Simple heuristic for music likelihood
-            # High RMS (volume), moderate zero crossings, and high spectral centroid
-            # typically indicate music rather than speech
-            music_likelihood = (
-                min(rms * 2, 1.0) * 0.4 +
-                min(zero_crossings / len(normalized) * 100, 1.0) * 0.3 +
-                min(spectral_centroid / 1000, 1.0) * 0.3
+            # Calculate music likelihood score (0-100)
+            # Higher centroid, consistent energy, lower ZCR, higher rolloff = more likely to be music
+            music_score = (
+                (min(spectral_centroid / 4000, 1.0) * 30) +  # Increased weight for spectral centroid
+                (max(1 - rms * 8, 0.0) * 30) +  # Increased weight for energy consistency
+                (max(1 - zero_crossings / len(normalized) * 80, 0.0) * 20) +  # Reduced weight for ZCR
+                (min(spectral_centroid / 10000, 1.0) * 20)  # Reduced weight for rolloff
             )
             
-            return music_likelihood
+            self.logger.info(f"Audio analysis results - RMS: {rms:.3f}, Zero crossings: {zero_crossings}, Spectral centroid: {spectral_centroid:.3f}, Music score: {music_score:.3f}")
+            return music_score
+            
         except Exception as e:
             self.logger.error(f"Error analyzing audio features: {str(e)}")
             return 0.0

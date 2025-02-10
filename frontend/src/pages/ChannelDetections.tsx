@@ -52,6 +52,7 @@ const ChannelDetections: React.FC = () => {
   const navigate = useNavigate();
   const [station, setStation] = useState<RadioStation | null>(null);
   const [detections, setDetections] = useState<TrackDetection[]>([]);
+  const [channel, setChannel] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -127,9 +128,11 @@ const ChannelDetections: React.FC = () => {
       
       try {
         setLoading(true);
-        const [stationData, detectionsData] = await Promise.all([
+        const [stationData, detectionsData, channelData] = await Promise.all([
           fetchStations().then(stations => stations.find(s => s.id === Number(id))),
-          fetchDetections(Number(id))
+          fetchDetections(Number(id)),
+          fetch(`/api/analytics/channels?time_range=7d`).then(res => res.json())
+          .then(data => data.channels.find((c: any) => c.id === Number(id)))
         ]);
 
         if (!stationData) {
@@ -138,6 +141,7 @@ const ChannelDetections: React.FC = () => {
 
         setStation(stationData);
         setDetections(detectionsData);
+        setChannel(channelData);
         setError(null);
       } catch (error) {
         console.error('Error loading data:', error);
@@ -347,7 +351,7 @@ const ChannelDetections: React.FC = () => {
               <Stat p={4} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
                 <StatLabel>Total Play Duration</StatLabel>
                 <StatNumber>
-                  {formatDuration(detections.reduce((sum, d) => sum + (d.play_duration || 0), 0))}
+                  {channel?.total_play_time || '00:00:00'}
                 </StatNumber>
                 <StatHelpText>Total time songs played</StatHelpText>
               </Stat>
