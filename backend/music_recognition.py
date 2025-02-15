@@ -14,17 +14,10 @@ from models import Track
 import acoustid
 import hashlib
 from functools import lru_cache
+from utils.logging_config import setup_logging
 
 # Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('music_recognition.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = setup_logging(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -158,54 +151,46 @@ class MusicRecognizer:
             audio.export(wav_data, format="wav")
             wav_data.seek(0)
             
-            # Generate fingerprint using acoustid
-            duration, fingerprint = acoustid.fingerprint_file(wav_data)
+            # Save temporary WAV file
+            temp_wav = "temp_audio.wav"
+            with open(temp_wav, "wb") as f:
+                f.write(wav_data.getvalue())
             
-            # Search for tracks in our database with similar fingerprints
-            matches = acoustid.lookup(os.getenv('ACOUSTID_API_KEY'), fingerprint, duration)
-            
-            if not matches:
-                return None
+            try:
+                # Generate fingerprint using acoustid
+                duration, fingerprint = acoustid.fingerprint_file(temp_wav)
                 
-            # Get the best match
-            best_match = matches[0]
-            recording_id = best_match.get('recordings', [{}])[0].get('id')
-            
-            if not recording_id:
-                return None
+                # Search for tracks in our database with similar fingerprints
+                matches = acoustid.lookup(os.getenv('ACOUSTID_API_KEY'), fingerprint, duration)
                 
-            # Try to find track in our database by MusicBrainz ID
-            track = self.db_session.query(Track).filter(
-                Track.external_ids['musicbrainz_id'].astext == recording_id
-            ).first()
-            
-            if track:
-                # Save fingerprint for future use
-                self._save_fingerprint(audio_hash, fingerprint, track)
-                logger.info(f"Found matching track in database: {track.title}")
-                return track
-                
-            # If no match by MusicBrainz ID, try ISRC if available
-            recording = musicbrainzngs.get_recording_by_id(
-                recording_id,
-                includes=["isrcs"]
-            )
-            
-            if recording and "recording" in recording:
-                isrcs = recording["recording"].get("isrc-list", [])
-                if isrcs:
-                    track = self.db_session.query(Track).filter(
-                        Track.isrc.in_(isrcs)
-                    ).first()
+                if not matches:
+                    return None
                     
-                    if track:
-                        # Save fingerprint for future use
-                        self._save_fingerprint(audio_hash, fingerprint, track)
-                        logger.info(f"Found matching track by ISRC: {track.title}")
-                        return track
-            
-            return None
-            
+                # Get the best match
+                best_match = matches[0]
+                recording_id = best_match.get('recordings', [{}])[0].get('id')
+                
+                if not recording_id:
+                    return None
+                    
+                # Try to find track in our database by MusicBrainz ID
+                track = self.db_session.query(Track).filter(
+                    Track.external_ids['musicbrainz_id'].astext == recording_id
+                ).first()
+                
+                if track:
+                    # Save fingerprint for future use
+                    self._save_fingerprint(audio_hash, fingerprint, track)
+                    logger.info(f"Found matching track in database: {track.title}")
+                    return track
+                    
+                return None
+                
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_wav):
+                    os.remove(temp_wav)
+                
         except Exception as e:
             logger.error(f"Error searching local database: {str(e)}")
             return None
@@ -285,7 +270,7 @@ class MusicRecognizer:
             logger.error(f"Error calculating play duration: {str(e)}")
             return 15.0  # Default to 15 seconds if calculation fails
 
-    async def recognize(self, audio_data: bytes) -> dict:
+    async def recognize(self, audio_data: bytes, station_name: str = None) -> dict:
         """
         Main recognition function implementing the cascade detection strategy:
         1. Check if it's music
@@ -294,24 +279,77 @@ class MusicRecognizer:
         4. Try AudD
         """
         try:
+            logger.info("Starting music detection", extra={
+                'station': {'name': station_name},
+                'step': 'start',
+                'audio_size': len(audio_data)
+            })
+            
             # First, analyze if it's music
             features = self._analyze_audio_features(audio_data)
-            if features['music_likelihood'] < 50:  # Lowered from 70 to 50
-                logger.info(f"Audio not detected as music (likelihood: {features['music_likelihood']})")
+            
+            logger.info("Audio analysis completed", extra={
+                'station': {'name': station_name},
+                'step': 'analysis',
+                'detection_data': {
+                    'music_likelihood': features['music_likelihood'],
+                    'spectral_centroid': features.get('spectral_centroid_mean', 0),
+                    'rms_energy': features.get('rms_energy_std', 0),
+                    'zero_crossing_rate': features.get('zero_crossing_rate_mean', 0),
+                    'spectral_rolloff': features.get('spectral_rolloff_mean', 0)
+                }
+            })
+            
+            if features['music_likelihood'] < 30:
+                logger.info("No music detected", extra={
+                    'station': {'name': station_name},
+                    'step': 'analysis',
+                    'detection_data': {
+                        'music_likelihood': features['music_likelihood'],
+                        'content_type': 'speech'
+                    }
+                })
                 return {
                     "is_music": False,
-                    "confidence": features['music_likelihood']
+                    "confidence": features['music_likelihood'],
+                    "station": station_name,
+                    "content_type": "speech"
                 }
 
+            logger.info("Music detected", extra={
+                'station': {'name': station_name},
+                'step': 'analysis',
+                'detection_data': {
+                    'music_likelihood': features['music_likelihood'],
+                    'content_type': 'music'
+                }
+            })
+            
             # Calculate play duration
             play_duration = self._calculate_play_duration(audio_data)
             
             # Try local database first
+            logger.info("Searching local database", extra={
+                'station': {'name': station_name},
+                'step': 'local_search'
+            })
+            
             local_match = self._search_local_database(audio_data)
             if local_match:
-                logger.info("Match found in local database")
+                logger.info("Match found in local database", extra={
+                    'station': {'name': station_name},
+                    'step': 'local_search',
+                    'detection_data': {
+                        'title': local_match.title,
+                        'artist': local_match.artist,
+                        'label': local_match.label,
+                        'isrc': local_match.isrc,
+                        'duration': str(play_duration)
+                    }
+                })
                 return {
                     "is_music": True,
+                    "station": station_name,
                     "track": {
                         "title": local_match.title,
                         "artist": local_match.artist,
@@ -324,42 +362,128 @@ class MusicRecognizer:
                 }
 
             # Try MusicBrainz
+            logger.info("Searching MusicBrainz", extra={
+                'station': {'name': station_name},
+                'step': 'musicbrainz_search'
+            })
+            
             mb_result = self._recognize_with_musicbrainz(audio_data)
             if mb_result:
-                logger.info("Match found with MusicBrainz")
+                logger.info("Match found in MusicBrainz", extra={
+                    'station': {'name': station_name},
+                    'step': 'musicbrainz_search',
+                    'detection_data': {
+                        'title': mb_result.get('title'),
+                        'artist': mb_result.get('artist'),
+                        'isrc': mb_result.get('isrc'),
+                        'label': mb_result.get('label'),
+                        'duration': str(play_duration)
+                    }
+                })
                 mb_result['duration_minutes'] = play_duration / 60
                 return {
                     "is_music": True,
+                    "station": station_name,
                     "track": mb_result,
                     "confidence": 90.0,
                     "source": "musicbrainz"
                 }
 
             # Finally, try AudD
+            logger.info("Searching AudD", extra={
+                'station': {'name': station_name},
+                'step': 'audd_search'
+            })
+            
             audd_result = self._recognize_with_audd(audio_data)
             if audd_result:
-                logger.info("Match found with AudD")
+                logger.info("Match found in AudD", extra={
+                    'station': {'name': station_name},
+                    'step': 'audd_search',
+                    'detection_data': {
+                        'title': audd_result.get('title'),
+                        'artist': audd_result.get('artist'),
+                        'album': audd_result.get('album'),
+                        'isrc': audd_result.get('isrc'),
+                        'label': audd_result.get('label'),
+                        'duration': str(play_duration)
+                    }
+                })
+                
                 audd_result['duration_minutes'] = play_duration / 60
+                
+                # Save to database
+                try:
+                    new_track = Track(
+                        title=audd_result.get('title'),
+                        artist=audd_result.get('artist'),
+                        album=audd_result.get('album'),
+                        isrc=audd_result.get('isrc'),
+                        label=audd_result.get('label'),
+                        external_ids=audd_result.get('external_metadata', {}),
+                        created_at=datetime.now()
+                    )
+                    self.db_session.add(new_track)
+                    self.db_session.commit()
+                    logger.info("Track saved to database", extra={
+                        'station': {'name': station_name},
+                        'step': 'database_save',
+                        'detection_data': {
+                            'track_id': new_track.id,
+                            'title': new_track.title,
+                            'artist': new_track.artist,
+                            'isrc': new_track.isrc,
+                            'label': new_track.label
+                        }
+                    })
+                except Exception as e:
+                    logger.error("Error saving to database", extra={
+                        'station': {'name': station_name},
+                        'step': 'database_save',
+                        'error': str(e)
+                    }, exc_info=True)
+                    self.db_session.rollback()
+                
                 return {
                     "is_music": True,
+                    "station": station_name,
                     "track": audd_result,
                     "confidence": 85.0,
                     "source": "audd"
                 }
 
             # No match found
-            logger.info("No match found in any service")
+            logger.info("No matches found", extra={
+                'station': {'name': station_name},
+                'step': 'complete',
+                'detection_data': {
+                    'music_likelihood': features['music_likelihood'],
+                    'duration': str(play_duration),
+                    'content_type': 'unknown_music'
+                }
+            })
+            
             return {
                 "is_music": True,
+                "station": station_name,
                 "confidence": features['music_likelihood'],
-                "error": "No match found",
-                "duration_minutes": play_duration / 60
+                "error": "No matches found",
+                "duration_minutes": play_duration / 60,
+                "content_type": "unknown_music"
             }
 
         except Exception as e:
-            logger.error(f"Error in recognition cascade: {str(e)}")
+            logger.error("Error in music detection", extra={
+                'station': {'name': station_name},
+                'step': 'error',
+                'error': str(e)
+            }, exc_info=True)
             return {
                 "error": str(e),
+                "station": station_name,
                 "is_music": False,
-                "confidence": 0.0
+                "confidence": 0.0,
+                "content_type": "error"
             }
+        finally:
+            logger.info(f"=== Fin de la détection pour la station: {station_name} ===\n")

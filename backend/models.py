@@ -71,18 +71,19 @@ class ReportSubscription(Base):
     user = relationship("User")
 
 class RadioStation(Base):
-    __tablename__ = 'radio_stations'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    stream_url = Column(String, nullable=False)
+    __tablename__ = "radio_stations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    stream_url = Column(String)
     country = Column(String)
     language = Column(String)
-    is_active = Column(Boolean, default=True, index=True)
-    last_checked = Column(DateTime, default=datetime.utcnow, index=True)
-    last_detection_time = Column(DateTime, nullable=True)
-    status = Column(String, default='active')
-    
+    status = Column(Enum(StationStatus), default=StationStatus.inactive)
+    is_active = Column(Boolean, default=False)
+    last_checked = Column(DateTime)
+    last_detection_time = Column(DateTime)
+    total_play_time = Column(Interval, default=timedelta(seconds=0))
+
     detections = relationship("TrackDetection", back_populates="station")
     track_stats = relationship("StationTrackStats", back_populates="station")
 
@@ -134,6 +135,7 @@ class ArtistStats(Base):
     artist_name = Column(String)
     detection_count = Column(Integer, default=0)
     last_detected = Column(DateTime, nullable=True)
+    total_play_time = Column(Interval, default=timedelta(0))
 
 class TrackStats(Base):
     __tablename__ = 'track_stats'
@@ -143,6 +145,7 @@ class TrackStats(Base):
     detection_count = Column(Integer, default=0)
     average_confidence = Column(Float, default=0.0)
     last_detected = Column(DateTime, nullable=True)
+    total_play_time = Column(Interval, default=timedelta(0))
     
     track = relationship("Track", back_populates="stats")
 

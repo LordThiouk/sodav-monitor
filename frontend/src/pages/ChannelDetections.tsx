@@ -1,508 +1,454 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
   Box,
   Container,
+  Heading,
   Table,
   Thead,
   Tbody,
   Tr,
   Th,
   Td,
-  Text,
-  HStack,
-  Icon,
-  IconButton,
-  useColorModeValue,
-  Heading,
-  Button,
-  Badge,
-  Link,
-  Input,
-  Select,
-  VStack,
-  Flex,
-  InputGroup,
-  InputLeftElement,
-  FormControl,
-  FormLabel,
+  Spinner,
   Alert,
   AlertIcon,
-  AlertTitle,
-  AlertDescription,
-  Stat,
-  StatLabel,
-  StatNumber,
-  StatHelpText,
-  Grid,
-  GridItem
+  TableContainer,
+  HStack,
+  VStack,
+  Text,
+  Input,
+  Select,
+  Button,
+  Badge,
+  SimpleGrid,
+  InputGroup,
+  InputLeftElement,
+  Flex,
+  ButtonGroup,
+  FormControl,
+  FormLabel,
+  useToast
 } from '@chakra-ui/react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { FaSpotify, FaYoutube, FaDeezer, FaSearch, FaSort, FaSortUp, FaSortDown, FaMusic } from 'react-icons/fa';
-import { BiTime } from 'react-icons/bi';
-import { fetchDetections, fetchStations } from '../services/api';
-import { TrackDetection, RadioStation } from '../types';
-import { WS_URL } from '../config';
-import LoadingSpinner from '../components/LoadingSpinner';
+import { SearchIcon } from '@chakra-ui/icons';
+import { formatDistanceToNow } from 'date-fns';
+import { fr } from 'date-fns/locale';
 
-type SortField = 'detected_at' | 'title' | 'artist' | 'label' | 'isrc' | 'play_duration';
-type SortOrder = 'asc' | 'desc';
+interface Detection {
+  id: number;
+  station_id: number;
+  track_id: number;
+  confidence: number;
+  detected_at: string;
+  play_duration: string;
+  track: {
+    title: string;
+    artist: string;
+    isrc?: string;
+    label?: string;
+    fingerprint?: string;
+  };
+}
+
+interface StationInfo {
+  id: number;
+  name: string;
+  country: string;
+  language: string;
+  status: string;
+  total_detections: number;
+  average_confidence: number;
+  total_play_duration: string;
+}
+
+interface StationDetails {
+  id: number;
+  name: string;
+  country: string;
+  language: string;
+  status: string;
+  metrics: {
+    total_play_time: string;
+    detection_count: number;
+    unique_tracks: number;
+    average_track_duration: string;
+    uptime_percentage: number;
+  };
+  top_tracks: Array<{
+    title: string;
+    artist: string;
+    play_time: string;
+    play_count: number;
+  }>;
+}
+
+interface ApiResponse {
+  detections: Detection[];
+  total: number;
+  page: number;
+  pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+  labels: string[];
+  station: StationInfo;
+}
 
 const ChannelDetections: React.FC = () => {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [station, setStation] = useState<RadioStation | null>(null);
-  const [detections, setDetections] = useState<TrackDetection[]>([]);
-  const [channel, setChannel] = useState<any>(null);
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [labelFilter, setLabelFilter] = useState('all');
-  const [sortField, setSortField] = useState<SortField>('detected_at');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [data, setData] = useState<ApiResponse | null>(null);
+  const [stationDetails, setStationDetails] = useState<StationDetails | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-
-  const itemsPerPage = 10;
-
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
-  const textColor = useColorModeValue('gray.600', 'gray.300');
-
-  const handleWebSocketMessage = useCallback((event: MessageEvent) => {
-    try {
-      const data = JSON.parse(event.data);
-      if (data.type === 'track_detection' && data.stream_id === Number(id)) {
-        // Validate and format dates
-        const now = new Date().toISOString();
-        const detectedAt = data.detection?.detected_at ? new Date(data.detection.detected_at).toISOString() : now;
-        
-        // Create new detection with proper typing and validated dates
-        const newDetection: TrackDetection = {
-          id: Date.now(),
-          station_id: data.stream_id,
-          track_id: Date.now(),
-          station_name: station?.name || 'Unknown Station',
-          track_title: data.detection.title,
-          artist: data.detection.artist,
-          detected_at: detectedAt,
-          confidence: data.detection.confidence,
-          play_duration: data.detection.play_duration ? parseFloat(data.detection.play_duration) : 15,
-          track: {
-            id: Date.now(),
-            title: data.detection.title,
-            artist: data.detection.artist,
-            isrc: data.detection.isrc || undefined,
-            label: data.detection.label || undefined,
-            play_count: 1,
-            total_play_time: data.detection.play_duration ? parseFloat(data.detection.play_duration) : 15,
-            created_at: now,
-            last_played: now
-          },
-          ...(station && { station })
-        };
-
-        setDetections(prev => [newDetection, ...prev]);
-
-        // Update station status if needed
-        if (station && !station.is_active) {
-          setStation({
-            ...station,
-            is_active: 1,
-            last_checked: now
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Error handling WebSocket message:', error);
-    }
-  }, [id, station]);
-
-  const connectWebSocket = useCallback(() => {
-    const ws = new WebSocket(WS_URL);
-    ws.onmessage = handleWebSocketMessage;
-    return ws;
-  }, [handleWebSocketMessage]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedLabel, setSelectedLabel] = useState("All Labels");
+  const [limit] = useState(10);
 
   useEffect(() => {
-    const loadData = async () => {
-      if (!id) return;
-      
+    if (!id) {
+      navigate('/channels');
+      return;
+    }
+
+    const fetchStationDetails = async () => {
+      try {
+        const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+        const stationUrl = `${baseUrl}/api/channels/${id}/stats`;
+        console.log('Fetching station details from:', stationUrl);
+        const response = await fetch(stationUrl);
+        if (!response.ok) {
+          console.error('Station details error:', response.status, response.statusText);
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Erreur lors de la récupération des détails de la station');
+        }
+        const details = await response.json();
+        console.log('Station Details Response:', details);
+        setStationDetails(details);
+      } catch (err) {
+        console.error('Error fetching station details:', err);
+        toast({
+          title: "Erreur",
+          description: err instanceof Error ? err.message : "Impossible de récupérer les détails de la station",
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        });
+      }
+    };
+
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const [stationData, detectionsData, channelData] = await Promise.all([
-          fetchStations().then(stations => stations.find(s => s.id === Number(id))),
-          fetchDetections(Number(id)),
-          fetch(`/api/analytics/channels?time_range=7d`).then(res => res.json())
-          .then(data => data.channels.find((c: any) => c.id === Number(id)))
-        ]);
+        setError(null);
 
-        if (!stationData) {
-          throw new Error('Station not found');
+        const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+        const url = new URL(`${baseUrl}/api/channels/${id}/detections`);
+        url.searchParams.append('page', currentPage.toString());
+        url.searchParams.append('limit', limit.toString());
+        if (searchQuery) url.searchParams.append('search', searchQuery);
+        if (selectedLabel !== "All Labels") url.searchParams.append('label', selectedLabel);
+
+        console.log('Fetching detections from:', url.toString());
+        const response = await fetch(url.toString());
+        
+        if (!response.ok) {
+          console.error('Detections error:', response.status, response.statusText);
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Erreur lors de la récupération des détections');
         }
 
-        setStation(stationData);
-        setDetections(detectionsData);
-        setChannel(channelData);
-        setError(null);
-      } catch (error) {
-        console.error('Error loading data:', error);
-        setError('Failed to load station data');
+        const responseData: ApiResponse = await response.json();
+        console.log('Detections Response:', responseData);
+        setData(responseData);
+
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Une erreur est survenue';
+        console.error('Fetch Error:', err);
+        setError(errorMessage);
+        toast({
+          title: "Erreur",
+          description: errorMessage,
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        });
       } finally {
         setLoading(false);
       }
     };
 
-    loadData();
-  }, [id]);
+    // Fetch both station details and detections
+    Promise.all([fetchStationDetails(), fetchData()]);
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [id, navigate, currentPage, searchQuery, selectedLabel, limit, toast]);
 
-  useEffect(() => {
-    const ws = connectWebSocket();
-    return () => {
-      ws.close();
-    };
-  }, [connectWebSocket]);
-
-  // Get unique labels for filter dropdown
-  const uniqueLabels = React.useMemo(() => {
-    const labels = detections
-      .map(d => d.track?.label || '')
-      .filter(Boolean);
-    return ['all', ...Array.from(new Set(labels))];
-  }, [detections]);
-
-  // Filter detections
-  const filteredDetections = React.useMemo(() => {
-    return detections.filter(detection => {
-      const matchesSearch = (
-        detection.track?.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        detection.track?.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        detection.track?.isrc?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      const matchesLabel = labelFilter === 'all' || detection.track?.label === labelFilter;
-      return matchesSearch && matchesLabel;
-    });
-  }, [detections, searchQuery, labelFilter]);
-
-  // Sort detections
-  const sortedDetections = React.useMemo(() => {
-    return [...filteredDetections].sort((a, b) => {
-      let aValue: any = a.detected_at;
-      let bValue: any = b.detected_at;
-
-      if (sortField !== 'detected_at') {
-        if (sortField === 'title' || sortField === 'artist' || sortField === 'label' || sortField === 'isrc') {
-          aValue = a.track?.[sortField] || '';
-          bValue = b.track?.[sortField] || '';
-        } else {
-          aValue = a[sortField];
-          bValue = b[sortField];
-        }
-      }
-
-      if (sortOrder === 'asc') {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
-    });
-  }, [filteredDetections, sortField, sortOrder]);
-
-  // Paginate detections
-  const paginatedDetections = React.useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return sortedDetections.slice(startIndex, startIndex + itemsPerPage);
-  }, [sortedDetections, currentPage]);
-
-  const totalPages = Math.ceil(sortedDetections.length / itemsPerPage);
-
-  const handleSort = (field: SortField) => {
-    if (field === sortField) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortOrder('asc');
-    }
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
   };
 
-  const getSortIcon = (field: SortField) => {
-    if (field !== sortField) return <Icon as={FaSort} />;
-    return sortOrder === 'asc' ? <Icon as={FaSortUp} /> : <Icon as={FaSortDown} />;
+  const handleSearch = (value: string) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
   };
 
-  // Add helper function for safe date formatting
-  const formatDuration = (seconds: number): string => {
-    try {
-      if (!seconds || isNaN(seconds)) return '00:00:00';
-      const hours = Math.floor(seconds / 3600);
-      const minutes = Math.floor((seconds % 3600) / 60);
-      const remainingSeconds = Math.floor(seconds % 60);
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-    } catch (error) {
-      console.error('Error formatting duration:', error);
-      return '00:00:00';
-    }
+  const handleLabelChange = (value: string) => {
+    setSelectedLabel(value);
+    setCurrentPage(1);
   };
 
-  const formatDate = (dateString: string): string => {
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) {
-        throw new Error('Invalid date');
-      }
-      return date.toLocaleString();
-    } catch (error) {
-      console.error('Error formatting date:', error);
-      return 'Invalid date';
-    }
-  };
-
-  if (loading) {
-    return <LoadingSpinner />;
+  if (loading && !data) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+        <Spinner size="xl" />
+      </Box>
+    );
   }
 
-  if (error || !station) {
+  if (error && !data) {
     return (
-      <Container maxW="container.xl" py={8}>
-        <Alert
-          status="error"
-          variant="subtle"
-          flexDirection="column"
-          alignItems="center"
-          justifyContent="center"
-          textAlign="center"
-          height="200px"
-          borderRadius="lg"
-        >
-          <AlertIcon boxSize="40px" mr={0} />
-          <AlertTitle mt={4} mb={1} fontSize="lg">
-            Error Loading Station
-          </AlertTitle>
-          <AlertDescription maxWidth="sm">
-            {error || 'Station not found'}
-            <Button
-              colorScheme="red"
-              size="sm"
-              mt={4}
-              onClick={() => navigate('/channels')}
-            >
-              Back to Channels
-            </Button>
-          </AlertDescription>
+      <Container maxW="container.xl" py={4}>
+        <RouterLink to="/channels">← Retour à la liste des stations</RouterLink>
+        <Alert status="error" mt={4}>
+          <AlertIcon />
+          {error}
         </Alert>
       </Container>
     );
   }
 
   return (
-    <Container maxW="container.xl" py={8}>
-      <VStack spacing={6} align="stretch">
-        <Box>
-          <Button
-            onClick={() => navigate('/channels')}
-            variant="ghost"
-            size="sm"
-            mb={4}
-          >
-            ← Back to Channels
-          </Button>
-          
-          <Grid templateColumns="repeat(3, 1fr)" gap={4} mb={6}>
-            <GridItem colSpan={3}>
-              <Box p={4} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
-                <HStack spacing={4}>
-                  <Icon as={FaMusic} boxSize={8} color="brand.500" />
-                  <VStack align="start" spacing={0}>
-                    <Heading size="lg">{station.name}</Heading>
-                    <Text color={textColor}>
-                      ID: {station.id} • {station.country} • {station.language}
-                    </Text>
-                  </VStack>
-                  <Badge
-                    ml="auto"
-                    colorScheme={station.is_active ? 'green' : 'red'}
-                    fontSize="md"
-                    px={3}
-                    py={1}
-                  >
-                    {station.is_active ? 'Active' : 'Inactive'}
-                  </Badge>
-                </HStack>
+    <Container maxW="container.xl" py={4}>
+      <RouterLink to="/channels" style={{ color: '#38A169', fontWeight: 500, marginBottom: '1rem', display: 'inline-block' }}>
+        ← Retour à la liste des stations
+      </RouterLink>
+
+      {(data?.station || stationDetails) && (
+        <>
+          <Box bg="green.50" p={4} rounded="lg" mb={4} borderLeft="4px" borderColor="green.500">
+            <Heading size="md" mb={2} color="green.700">
+              Informations de la station
+            </Heading>
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <Box>
+                <Text fontWeight="bold" color="green.700">Nom de la station</Text>
+                <Text fontSize="lg">{data?.station?.name || stationDetails?.name}</Text>
               </Box>
-            </GridItem>
-
-            <GridItem>
-              <Stat p={4} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
-                <StatLabel>Total Detections</StatLabel>
-                <StatNumber>{detections.length}</StatNumber>
-                <StatHelpText>All time</StatHelpText>
-              </Stat>
-            </GridItem>
-
-            <GridItem>
-              <Stat p={4} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
-                <StatLabel>Average Confidence</StatLabel>
-                <StatNumber>
-                  {detections.length > 0 ? '100%' : 'N/A'}
-                </StatNumber>
-                <StatHelpText>Detection accuracy</StatHelpText>
-              </Stat>
-            </GridItem>
-
-            <GridItem>
-              <Stat p={4} bg={bgColor} borderRadius="lg" borderWidth="1px" borderColor={borderColor}>
-                <StatLabel>Total Play Duration</StatLabel>
-                <StatNumber>
-                  {channel?.total_play_time || '00:00:00'}
-                </StatNumber>
-                <StatHelpText>Total time songs played</StatHelpText>
-              </Stat>
-            </GridItem>
-          </Grid>
-        </Box>
-
-        <VStack spacing={4}>
-          <Flex w="100%" gap={4} direction={{ base: 'column', md: 'row' }}>
-            <InputGroup maxW={{ base: "100%", md: "400px" }}>
-              <InputLeftElement pointerEvents="none">
-                <Icon as={FaSearch} color="gray.400" />
-              </InputLeftElement>
-              <Input
-                placeholder="Search by title, artist, or ISRC..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </InputGroup>
-
-            <Select
-              value={labelFilter}
-              onChange={(e) => setLabelFilter(e.target.value)}
-              maxW={{ base: "100%", md: "200px" }}
-              aria-label="Filter by Label"
-              title="Filter detections by label"
-            >
-              {uniqueLabels.map(label => (
-                <option key={label} value={label}>
-                  {label === 'all' ? 'All Labels' : label}
-                </option>
-              ))}
-            </Select>
-          </Flex>
-        </VStack>
-
-        <Box
-          bg={bgColor}
-          borderRadius="lg"
-          border="1px"
-          borderColor={borderColor}
-          overflow="hidden"
-        >
-          <Box overflowX="auto">
-            <Table variant="simple">
-              <Thead>
-                <Tr>
-                  <Th cursor="pointer" onClick={() => handleSort('detected_at')}>
-                    <HStack spacing={2}>
-                      <Text>Timestamp</Text>
-                      {getSortIcon('detected_at')}
-                    </HStack>
-                  </Th>
-                  <Th cursor="pointer" onClick={() => handleSort('title')}>
-                    <HStack spacing={2}>
-                      <Text>Title</Text>
-                      {getSortIcon('title')}
-                    </HStack>
-                  </Th>
-                  <Th cursor="pointer" onClick={() => handleSort('artist')}>
-                    <HStack spacing={2}>
-                      <Text>Artist</Text>
-                      {getSortIcon('artist')}
-                    </HStack>
-                  </Th>
-                  <Th cursor="pointer" onClick={() => handleSort('label')}>
-                    <HStack spacing={2}>
-                      <Text>Label</Text>
-                      {getSortIcon('label')}
-                    </HStack>
-                  </Th>
-                  <Th cursor="pointer" onClick={() => handleSort('isrc')}>
-                    <HStack spacing={2}>
-                      <Text>ISRC</Text>
-                      {getSortIcon('isrc')}
-                    </HStack>
-                  </Th>
-                  <Th cursor="pointer" onClick={() => handleSort('play_duration')}>
-                    <HStack spacing={2}>
-                      <Text>Play Duration</Text>
-                      {getSortIcon('play_duration')}
-                    </HStack>
-                  </Th>
-                  <Th>Confidence</Th>
-                </Tr>
-              </Thead>
-              <Tbody>
-                {paginatedDetections.map((detection) => (
-                  <Tr key={detection.id}>
-                    <Td whiteSpace="nowrap">
-                      <HStack spacing={2}>
-                        <Icon as={BiTime} color="gray.500" />
-                        <Text>{formatDate(detection.detected_at)}</Text>
-                      </HStack>
-                    </Td>
-                    <Td>{detection.track?.title}</Td>
-                    <Td>{detection.track?.artist}</Td>
-                    <Td>{detection.track?.label}</Td>
-                    <Td>{detection.track?.isrc}</Td>
-                    <Td>
-                      <HStack spacing={2}>
-                        <Icon as={BiTime} color="gray.500" />
-                        <Text>{formatDuration(detection.play_duration || 0)}</Text>
-                      </HStack>
-                    </Td>
-                    <Td>
-                      <Badge colorScheme="green">
-                        100%
-                      </Badge>
-                    </Td>
-                  </Tr>
-                ))}
-              </Tbody>
-            </Table>
+              <Box>
+                <Text fontWeight="bold" color="green.700">Identifiant</Text>
+                <Text fontSize="lg">#{data?.station?.id || stationDetails?.id}</Text>
+              </Box>
+              <Box>
+                <Text fontWeight="bold" color="green.700">Pays</Text>
+                <Text fontSize="lg">{data?.station?.country || stationDetails?.country || 'Non spécifié'}</Text>
+              </Box>
+              <Box>
+                <Text fontWeight="bold" color="green.700">Langue</Text>
+                <Text fontSize="lg">{data?.station?.language || stationDetails?.language || 'Non spécifiée'}</Text>
+              </Box>
+              <Box>
+                <Text fontWeight="bold" color="green.700">Temps total de diffusion</Text>
+                <Text fontSize="lg">{stationDetails?.metrics?.total_play_time || data?.station?.total_play_duration}</Text>
+              </Box>
+              <Box>
+                <Text fontWeight="bold" color="green.700">Statut</Text>
+                <Badge 
+                  colorScheme={(data?.station?.status || stationDetails?.status) === 'active' ? 'green' : 'gray'} 
+                  fontSize="md" 
+                  px={2} 
+                  py={1}
+                >
+                  {(data?.station?.status || stationDetails?.status || '').toUpperCase()}
+                </Badge>
+              </Box>
+            </SimpleGrid>
           </Box>
-        </Box>
 
-        <Flex justify="center" mt={6} gap={2}>
-          <Button
-            size="sm"
-            onClick={() => setCurrentPage(1)}
-            isDisabled={currentPage === 1}
-          >
-            First
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-            isDisabled={currentPage === 1}
-          >
-            Previous
-          </Button>
-          <Text alignSelf="center" mx={4}>
-            Page {currentPage} of {totalPages}
-          </Text>
-          <Button
-            size="sm"
-            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-            isDisabled={currentPage === totalPages}
-          >
-            Next
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => setCurrentPage(totalPages)}
-            isDisabled={currentPage === totalPages}
-          >
-            Last
-          </Button>
-        </Flex>
-      </VStack>
+          <Box bg="white" rounded="lg" shadow="sm" p={6} mb={6}>
+            <SimpleGrid columns={3} spacing={8}>
+              <Box p={4} bg="gray.50" rounded="md">
+                <Text color="gray.600" fontSize="sm">Total des détections</Text>
+                <Text fontSize="2xl" fontWeight="bold">
+                  {stationDetails?.metrics?.detection_count || data?.station?.total_detections || 0}
+                </Text>
+                <Text color="gray.500" fontSize="sm">Depuis le début</Text>
+              </Box>
+              <Box p={4} bg="gray.50" rounded="md">
+                <Text color="gray.600" fontSize="sm">Taux d'activité</Text>
+                <Text fontSize="2xl" fontWeight="bold">
+                  {stationDetails?.metrics?.uptime_percentage 
+                    ? `${Math.round(stationDetails.metrics.uptime_percentage)}%`
+                    : 'N/A'}
+                </Text>
+                <Text color="gray.500" fontSize="sm">Temps en ligne</Text>
+              </Box>
+              <Box p={4} bg="gray.50" rounded="md">
+                <Text color="gray.600" fontSize="sm">Durée moyenne des pistes</Text>
+                <Text fontSize="2xl" fontWeight="bold">
+                  {stationDetails?.metrics?.average_track_duration || 'N/A'}
+                </Text>
+                <Text color="gray.500" fontSize="sm">Par détection</Text>
+              </Box>
+            </SimpleGrid>
+          </Box>
+
+          {stationDetails?.top_tracks && stationDetails.top_tracks.length > 0 && (
+            <Box bg="white" rounded="lg" shadow="sm" p={6} mb={6}>
+              <Heading size="md" mb={4}>Top des pistes</Heading>
+              <Table variant="simple" size="sm">
+                <Thead>
+                  <Tr>
+                    <Th>Titre</Th>
+                    <Th>Artiste</Th>
+                    <Th>Temps de lecture</Th>
+                    <Th>Nombre de lectures</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {stationDetails.top_tracks.map((track, index) => (
+                    <Tr key={index}>
+                      <Td>{track.title}</Td>
+                      <Td>{track.artist}</Td>
+                      <Td>{track.play_time}</Td>
+                      <Td>{track.play_count}</Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
+            </Box>
+          )}
+        </>
+      )}
+
+      <Box bg="white" rounded="lg" shadow="sm" p={6}>
+        <HStack spacing={4} mb={6}>
+          <InputGroup maxW="400px">
+            <InputLeftElement pointerEvents="none">
+              <SearchIcon color="gray.400" />
+            </InputLeftElement>
+            <Input
+              placeholder="Rechercher par titre, artiste ou ISRC..."
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              aria-label="Rechercher des détections"
+            />
+          </InputGroup>
+          <FormControl maxW="200px">
+            <FormLabel htmlFor="label-filter">Filtrer par label</FormLabel>
+            <Select
+              id="label-filter"
+              value={selectedLabel}
+              onChange={(e) => handleLabelChange(e.target.value)}
+              aria-label="Filtrer par label"
+              title="Filtrer les détections par label"
+            >
+              <option value="All Labels">Tous les labels</option>
+              {data?.labels?.map(label => (
+                <option key={label} value={label}>{label}</option>
+              )) || null}
+            </Select>
+          </FormControl>
+        </HStack>
+
+        {loading && (
+          <Box display="flex" justifyContent="center" my={4}>
+            <Spinner />
+          </Box>
+        )}
+
+        {error && (
+          <Alert status="error" mb={4}>
+            <AlertIcon />
+            {error}
+          </Alert>
+        )}
+
+        <TableContainer>
+          <Table variant="simple">
+            <Thead bg="gray.50">
+              <Tr>
+                <Th>HORODATAGE</Th>
+                <Th>TITRE</Th>
+                <Th>ARTISTE</Th>
+                <Th>LABEL</Th>
+                <Th>ISRC</Th>
+                <Th>DURÉE DE LECTURE</Th>
+                <Th>CONFIANCE</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
+              {data?.detections.map((detection) => (
+                <Tr key={detection.id}>
+                  <Td whiteSpace="nowrap">{new Date(detection.detected_at).toLocaleString('fr-FR')}</Td>
+                  <Td>{detection.track.title}</Td>
+                  <Td>{detection.track.artist}</Td>
+                  <Td>{detection.track.label || 'N/A'}</Td>
+                  <Td>{detection.track.isrc || 'N/A'}</Td>
+                  <Td>{detection.play_duration}</Td>
+                  <Td>
+                    <Badge colorScheme={detection.confidence >= 80 ? 'green' : 'yellow'} variant="solid">
+                      {Math.round(detection.confidence)}%
+                    </Badge>
+                  </Td>
+                </Tr>
+              ))}
+              {!loading && (!data?.detections || data.detections.length === 0) && (
+                <Tr>
+                  <Td colSpan={7} textAlign="center">
+                    {searchQuery || selectedLabel !== "All Labels" 
+                      ? "Aucune détection ne correspond aux critères de recherche"
+                      : "Aucune détection trouvée"}
+                  </Td>
+                </Tr>
+              )}
+            </Tbody>
+          </Table>
+        </TableContainer>
+
+        {data?.detections && data.detections.length > 0 && (
+          <Flex justify="center" mt={4} gap={2}>
+            <ButtonGroup>
+              <Button
+                size="sm"
+                colorScheme="gray"
+                onClick={() => handlePageChange(1)}
+                isDisabled={currentPage === 1}
+              >
+                Premier
+              </Button>
+              <Button
+                size="sm"
+                colorScheme="gray"
+                onClick={() => handlePageChange(currentPage - 1)}
+                isDisabled={!data.has_prev}
+              >
+                Précédent
+              </Button>
+              <Text alignSelf="center" mx={2}>
+                Page {data.page} sur {data.pages}
+              </Text>
+              <Button
+                size="sm"
+                colorScheme="gray"
+                onClick={() => handlePageChange(currentPage + 1)}
+                isDisabled={!data.has_next}
+              >
+                Suivant
+              </Button>
+              <Button
+                size="sm"
+                colorScheme="gray"
+                onClick={() => handlePageChange(data.pages)}
+                isDisabled={currentPage === data.pages}
+              >
+                Dernier
+              </Button>
+            </ButtonGroup>
+          </Flex>
+        )}
+      </Box>
     </Container>
   );
 };
