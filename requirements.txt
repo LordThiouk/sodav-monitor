@@ -1,5 +1,6 @@
-pip>=23.0
-setuptools>=65.5.0
+pip<23.0
+setuptools<67
+wheel
 fastapi==0.95.2
 uvicorn==0.22.0
 sqlalchemy==2.0.15
