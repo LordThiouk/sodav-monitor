@@ -35,6 +35,8 @@ class RadioManager:
                     # Update existing station
                     for key, value in station_data.items():
                         setattr(existing_station, key, value)
+                    existing_station.is_active = True
+                    existing_station.status = StationStatus.active
                     updated_count += 1
                 else:
                     # Create new station
@@ -44,6 +46,7 @@ class RadioManager:
                         country=station_data['country'],
                         language=station_data['language'],
                         is_active=True,
+                        status=StationStatus.active,
                         last_checked=datetime.utcnow()
                     )
                     self.db.add(new_station)

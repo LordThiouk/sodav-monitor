@@ -1,31 +1,43 @@
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
-from dotenv import load_dotenv
 import os
+from dotenv import load_dotenv
 
 load_dotenv()
 
-# Get database URL from environment variable or use SQLite as default
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/sodav_monitor.db")
+# Get database URL from environment variable
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sodav.db")
 
-# Create SQLAlchemy engine with optimized settings
-engine = create_engine(
-    DATABASE_URL,
-    poolclass=QueuePool,
-    pool_size=20,
-    max_overflow=10,
-    pool_timeout=30,
-    pool_recycle=1800,
-    connect_args={
-        "check_same_thread": False,  # Required for SQLite
-        "timeout": 30  # SQLite timeout in seconds
-    }
-)
+# Configure engine with appropriate pooling and concurrency settings
+if DATABASE_URL.startswith("sqlite"):
+    # SQLite specific settings
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={
+            "check_same_thread": False,
+            "timeout": 30
+        },
+        pool_size=20,
+        max_overflow=0,
+        poolclass=QueuePool,
+        pool_pre_ping=True,
+        pool_recycle=3600
+    )
+else:
+    # PostgreSQL or other database settings
+    engine = create_engine(
+        DATABASE_URL,
+        pool_size=20,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+        poolclass=QueuePool
+    )
 
 # Optimize SQLite performance
-@event.listens_for(engine, "connect")
 def optimize_sqlite(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")  # Use Write-Ahead Logging
@@ -48,6 +60,7 @@ Base = declarative_base()
 
 # Dependency
 def get_db():
+    """Get database session"""
     db = SessionLocal()
     try:
         yield db

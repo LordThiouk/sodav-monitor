@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 import uvicorn
 import json
 import os
-import logging
 from logging.handlers import RotatingFileHandler
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -26,20 +25,14 @@ from fingerprint_generator import generate_fingerprint
 from routers.analytics import router as analytics_router
 from routers.channels import router as channels_router
 from routers.reports import router as reports_router
+from routers import channels, detections
+from utils.logging_config import setup_logging
 
 # Load environment variables
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(
-    level=logging.DEBUG if os.getenv('DEBUG', 'False').lower() == 'true' else logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('music_recognition.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = setup_logging(__name__)
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -216,19 +209,57 @@ async def add_track(
 @app.get("/api/stations")
 async def get_stations(db: Session = Depends(get_db)):
     """Get all radio stations with their current status."""
-    stations = db.query(RadioStation).all()
-    return [
-        {
-            "id": station.id,
-            "name": station.name,
-            "stream_url": station.stream_url,
-            "country": station.country,
-            "language": station.language,
-            "is_active": station.is_active,
-            "last_checked": station.last_checked.isoformat()
-        }
-        for station in stations
-    ]
+    try:
+        stations = db.query(RadioStation).all()
+        station_list = []
+        
+        for station in stations:
+            try:
+                # Validate last_checked
+                last_checked = None
+                if station.last_checked and str(station.last_checked) not in ['0', '', 'None', 'null', '0:00:00']:
+                    try:
+                        if isinstance(station.last_checked, datetime):
+                            last_checked = station.last_checked.isoformat()
+                        elif isinstance(station.last_checked, str):
+                            last_checked = datetime.fromisoformat(station.last_checked).isoformat()
+                    except (ValueError, AttributeError):
+                        last_checked = None
+                
+                # Validate last_detection_time
+                last_detection_time = None
+                if station.last_detection_time and str(station.last_detection_time) not in ['0', '', 'None', 'null', '0:00:00']:
+                    try:
+                        if isinstance(station.last_detection_time, datetime):
+                            last_detection_time = station.last_detection_time.isoformat()
+                        elif isinstance(station.last_detection_time, str):
+                            last_detection_time = datetime.fromisoformat(station.last_detection_time).isoformat()
+                    except (ValueError, AttributeError):
+                        last_detection_time = None
+                
+                station_data = {
+                    "id": station.id,
+                    "name": station.name,
+                    "stream_url": station.stream_url,
+                    "country": station.country,
+                    "language": station.language,
+                    "is_active": bool(station.is_active),
+                    "last_checked": last_checked,
+                    "last_detection_time": last_detection_time,
+                    "total_play_time": station.total_play_time,
+                    "status": station.status.value if station.status else "inactive"
+                }
+                station_list.append(station_data)
+                
+            except Exception as e:
+                logger.error(f"Error processing station {station.id}: {str(e)}")
+                continue
+                
+        return station_list
+        
+    except Exception as e:
+        logger.error(f"Error getting stations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/stations/search")
 async def search_stations(name: str, db: Session = Depends(get_db)):
@@ -1448,6 +1479,8 @@ app.include_router(
     tags=["reports"],
     dependencies=[]  # Ensure no authentication dependencies
 )
+app.include_router(channels.router)
+app.include_router(detections.router)
 
 if __name__ == "__main__":
     host = os.getenv('HOST', '0.0.0.0')
