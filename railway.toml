@@ -6,8 +6,8 @@ buildCommand = "pip install -r requirements.txt"
 startCommand = "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 100
-restartPolicyType = "on-failure"
-restartPolicyMaxRetries = 3
+restartPolicy = "on-failure"
+maxRetries = 3
 
 [env]
 PYTHON_VERSION = "3.9" 

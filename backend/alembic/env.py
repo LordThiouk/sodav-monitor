@@ -16,7 +16,7 @@ from models import Base
 config = context.config
 
 # Override sqlalchemy.url with environment variable
-database_url = os.getenv('DATABASE_URL', 'postgresql://user:pass@localhost/dbname')
+database_url = 'postgresql://postgres:xQeSEAydJpFNeqmeRNKPyCVejZphqjut@shinkansen.proxy.rlwy.net:32366/railway'
 if database_url is not None:
     config.set_main_option('sqlalchemy.url', str(database_url))
 
