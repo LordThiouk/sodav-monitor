@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.env
+venv/
+.git/
+.gitignore
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+.DS_Store
+node_modules/
+.env.example
+.history/
+*.sqlite3
+*.db 
+.history
