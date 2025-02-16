@@ -17,8 +17,12 @@ RUN apt-get update && apt-get install -y \
     libopenal1 \
     python3-dev \
     ffmpeg \
-    nginx \
     curl \
+    nginx \
+    libavcodec-dev \
+    libavformat-dev \
+    libavutil-dev \
+    libswscale-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -30,8 +34,10 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # Copy requirements first for better caching
 COPY backend/requirements.txt backend/
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r backend/requirements.txt
+# Install Python dependencies with retry mechanism
+RUN for i in {1..3}; do \
+    pip install --no-cache-dir -r backend/requirements.txt && break || sleep 2; \
+    done
 
 # Copy application code
 COPY backend/ backend/

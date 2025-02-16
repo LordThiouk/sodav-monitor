@@ -18,6 +18,7 @@ numpy>=1.23.5
 ffmpeg-python>=0.2.0
 musicbrainzngs>=0.7.1
 pyacoustid>=1.2.0
+av>=10.0.0
 
 # Database and caching
 psycopg2-binary>=2.9.9
