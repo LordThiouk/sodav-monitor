@@ -44,10 +44,12 @@ app = FastAPI(title="SODAV Media Monitor", version="1.0.0")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "https://sodav-monitor-production.up.railway.app"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # API routes must be mounted before the frontend static files
@@ -182,8 +184,24 @@ async def get_streams(db: Session = Depends(get_db)):
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint avec vérifications détaillées"""
-    return get_system_health()
+    """Health check endpoint with startup grace period"""
+    try:
+        health_data = get_system_health()
+        
+        # During startup, we'll consider the service healthy even if the database
+        # is not fully connected yet
+        is_startup = os.getenv("STARTUP_GRACE_PERIOD", "false").lower() == "true"
+        if is_startup:
+            return {"status": "starting", "message": "Application is starting up"}
+            
+        return health_data
+    except Exception as e:
+        logger.error(f"Health check error: {str(e)}")
+        return {
+            "status": "error",
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e)
+        }
 
 @app.post("/api/detect/{stream_id}")
 async def detect_audio(stream_id: int):

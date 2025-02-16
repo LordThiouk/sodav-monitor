@@ -1,1 +1,3 @@
-export const WS_URL = process.env.REACT_APP_WS_URL || 'wss://sodav-monitor-production.up.railway.app/ws'; 
+export const WS_URL = process.env.NODE_ENV === 'production'
+  ? 'wss://sodav-monitor-production.up.railway.app/ws'
+  : 'ws://localhost:8000/ws'; 

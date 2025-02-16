@@ -47,8 +47,8 @@ RUN for i in {1..3}; do \
     done
 
 # Copy application code
-COPY backend/ backend/
-COPY start.sh .
+COPY backend/ /app/
+COPY start.sh /app/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Create directory for frontend build
@@ -62,7 +62,7 @@ RUN chmod -R 755 /app && chmod +x /app/start.sh
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app/backend
+ENV PYTHONPATH=/app
 ENV PORT=3000
 ENV API_PORT=8000
 ENV DEBUG=False
@@ -71,6 +71,10 @@ ENV NODE_ENV=production
 # Expose the ports
 EXPOSE ${PORT}
 EXPOSE ${API_PORT}
+
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=5 \
+    CMD curl -f http://localhost:${API_PORT}/api/health || exit 1
 
 # Start the application using the start.sh script
 CMD ["./start.sh"] 

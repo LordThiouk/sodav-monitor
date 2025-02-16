@@ -2,7 +2,9 @@ import { RadioStation, Track, TrackDetection, Report, TrackAnalytics } from '../
 import axios from 'axios';
 import { WS_URL } from '../config';
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://sodav-monitor-production.up.railway.app/api'
+  : 'http://localhost:8000/api';
 
 export interface Stream extends RadioStation {
   type: string;
