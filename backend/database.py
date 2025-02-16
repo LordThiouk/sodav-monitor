@@ -10,6 +10,10 @@ load_dotenv()
 # Get database URL from environment variable
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sodav.db")
 
+# Handle special case for postgres:// URLs
+if DATABASE_URL.startswith('postgres://'):
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+
 # Configure engine with appropriate pooling and concurrency settings
 if DATABASE_URL.startswith("sqlite"):
     # SQLite specific settings
@@ -34,7 +38,14 @@ else:
         pool_timeout=30,
         pool_pre_ping=True,
         pool_recycle=3600,
-        poolclass=QueuePool
+        poolclass=QueuePool,
+        connect_args={
+            "connect_timeout": 30,
+            "keepalives": 1,
+            "keepalives_idle": 30,
+            "keepalives_interval": 10,
+            "keepalives_count": 5
+        }
     )
 
 # Optimize SQLite performance

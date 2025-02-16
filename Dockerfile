@@ -1,4 +1,12 @@
-# Use a specific Python version
+# Build stage for frontend
+FROM node:18-alpine AS frontend-build
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm install
+COPY frontend/ ./
+RUN npm run build
+
+# Build stage for backend
 FROM python:3.9.18-slim-bullseye
 
 # Install system dependencies
@@ -9,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     libopenal1 \
     python3-dev \
     ffmpeg \
+    nginx \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -26,6 +35,13 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 # Copy application code
 COPY backend/ backend/
 COPY start.sh .
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Create directory for frontend build
+RUN mkdir -p /app/frontend/build
+
+# Copy frontend build from build stage
+COPY --from=frontend-build /app/frontend/build /app/frontend/build
 
 # Set correct permissions
 RUN chmod -R 755 /app && chmod +x /app/start.sh
@@ -34,10 +50,11 @@ RUN chmod -R 755 /app && chmod +x /app/start.sh
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/backend
 ENV PORT=8000
-ENV DEBUG=True
+ENV DEBUG=False
+ENV NODE_ENV=production
 
 # Expose the port
 EXPOSE ${PORT}
 
-# Start the application
-CMD ["/app/start.sh"] 
+# Start the application using the start.sh script
+CMD ["./start.sh"] 

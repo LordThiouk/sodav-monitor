@@ -1,0 +1,23 @@
+[project]
+name = "divine-reverence"
+id = "37ce8e34-f0e4-42d1-869e-846ac08e6de2"
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+buildCommand = "npm run build"
+
+[deploy]
+startCommand = "serve -s build -l $PORT"
+healthcheckPath = "/"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+numReplicas = 1
+
+[env]
+PORT = "3000"
+NODE_ENV = "production"
+REACT_APP_API_URL = "https://sodav-monitor-production.up.railway.app"
+REACT_APP_WS_URL = "wss://sodav-monitor-production.up.railway.app"
+GENERATE_SOURCEMAP = "false" 

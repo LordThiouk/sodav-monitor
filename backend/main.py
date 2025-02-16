@@ -1,7 +1,8 @@
 from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks, UploadFile, File, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 from typing import List, Optional, Dict, Union
 from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
@@ -48,6 +49,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# API routes must be mounted before the frontend static files
+app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(channels_router)
+app.include_router(reports_router, prefix="/api/reports", tags=["reports"])
+app.include_router(channels.router)
+app.include_router(detections.router)
+
+# Fallback route for API 404s
+@app.exception_handler(404)
+async def not_found_handler(request, exc):
+    if request.url.path.startswith("/api"):
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "API route not found"}
+        )
+    raise exc  # Let nginx handle non-API routes
 
 # Security configurations
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
@@ -1466,18 +1484,6 @@ async def detect_music_all_stations(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error in detect_music_all_stations: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-# Include routers
-app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
-app.include_router(channels_router)
-app.include_router(
-    reports_router, 
-    prefix="/api/reports", 
-    tags=["reports"],
-    dependencies=[]  # Ensure no authentication dependencies
-)
-app.include_router(channels.router)
-app.include_router(detections.router)
 
 if __name__ == "__main__":
     host = os.getenv('HOST', '0.0.0.0')

@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+# Ensure PORT is set
 export PORT=${PORT:-8000}
 echo "Starting application on port $PORT"
 
@@ -53,16 +54,64 @@ for i in {1..30}; do
     sleep 1
 done
 
+# Verify frontend build exists
+if [ ! -d "/app/frontend/build" ]; then
+    echo "ERROR: Frontend build directory not found!"
+    exit 1
+fi
+
+# Verify static directory exists
+if [ ! -d "/app/frontend/build/static" ]; then
+    echo "ERROR: Frontend static directory not found!"
+    exit 1
+fi
+
 cd backend
 
 # Apply database migrations
 echo "Applying database migrations..."
 alembic upgrade head
 
-echo "Starting the application..."
-if [ "$DEBUG" = "True" ]; then
-    echo "Running in DEBUG mode"
-    exec uvicorn main:app --host 0.0.0.0 --port $PORT --reload --log-level debug
+# Stop nginx if it's running
+echo "Stopping nginx if running..."
+nginx -s quit || true
+sleep 2
+
+# Configure nginx
+echo "Configuring nginx..."
+export NGINX_PORT=$PORT
+export API_PORT=8000
+sed -i "s/\$PORT/$NGINX_PORT/g" /etc/nginx/conf.d/default.conf
+
+# Test nginx configuration
+echo "Testing nginx configuration..."
+nginx -t || exit 1
+
+# Start nginx
+echo "Starting nginx..."
+nginx
+
+# Wait for nginx to start
+echo "Waiting for nginx to start..."
+for i in {1..10}; do
+    if curl -s http://127.0.0.1:$NGINX_PORT/health > /dev/null; then
+        echo "Nginx is running!"
+        break
+    fi
+    
+    if [ $i -eq 10 ]; then
+        echo "Error: Nginx did not start properly"
+        exit 1
+    fi
+    
+    echo "Waiting for nginx... attempt $i/10"
+    sleep 1
+done
+
+# Start FastAPI application
+echo "Starting FastAPI application..."
+if [ "$DEBUG" = "true" ]; then
+    uvicorn main:app --host 127.0.0.1 --port $API_PORT --reload
 else
-    exec uvicorn main:app --host 0.0.0.0 --port $PORT --workers 4 
+    uvicorn main:app --host 127.0.0.1 --port $API_PORT
 fi 

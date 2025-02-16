@@ -1,13 +1,51 @@
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
+buildCommand = "npm run build"
+watchPatterns = ["frontend/**/*", "backend/**/*"]
+startCommand = "./start.sh"
+restartPolicy = "on-failure"
+maxRetries = 3
 
 [deploy]
 healthcheckPath = "/api/health"
 healthcheckTimeout = 30
-restartPolicy = "on-failure"
-maxRetries = 3
+startCommand = "./start.sh"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
 
 [env]
 PYTHON_VERSION = "3.9"
-PORT = "8000" 
+PORT = "8000"
+HOST = "0.0.0.0"
+DATABASE_URL = "postgresql://postgres:xQeSEAydJpFNeqmeRNKPyCVejZphqjut@shinkansen.proxy.rlwy.net:32366/railway"
+POSTGRES_USER = "postgres"
+POSTGRES_PASSWORD = "xQeSEAydJpFNeqmeRNKPyCVejZphqjut"
+POSTGRES_DB = "railway"
+POSTGRES_HOST = "shinkansen.proxy.rlwy.net"
+POSTGRES_PORT = "32366"
+DEBUG = "true"
+REDIS_URL = "redis://containers-us-west-198.railway.app:6379"
+ACOUSTID_API_KEY = "cSpUJKpD"
+AUDD_API_KEY = "test"
+SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+MUSICBRAINZ_APP_NAME = "sodav-monitor"
+NODE_ENV = "production"
+REACT_APP_API_URL = "https://sodav-monitor-production.up.railway.app"
+AUDIO_PROCESSING_ENABLED = true
+AUDIO_PROCESSING_INTERVAL = 30
+AUDIO_PROCESSING_DURATION = 10
+AUDIO_PROCESSING_TIMEOUT = 30
+AUDIO_PROCESSING_RETRIES = 3
+AUDIO_PROCESSING_RETRY_DELAY = 5
+REQUEST_TIMEOUT = 10
+CHUNK_SIZE = 8192
+MAX_RETRIES = 3
+MIN_AUDIO_LENGTH = 10
+MAX_AUDIO_LENGTH = 30
+SAMPLE_RATE = 44100
+CHANNELS = 2
+MIN_CONFIDENCE = 50
+MIN_RHYTHM_STRENGTH = 30
+MIN_BASS_ENERGY = 20
+MIN_MID_ENERGY = 15 
