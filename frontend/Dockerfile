@@ -30,7 +30,7 @@ RUN sed -i -e 's/$PORT/'"${PORT}"'/g' /etc/nginx/conf.d/default.conf
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/health || exit 1
+    CMD curl -f http://0.0.0.0:${PORT}/health || exit 1
 
 # Expose port
 EXPOSE ${PORT}
