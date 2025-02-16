@@ -23,7 +23,13 @@ RUN apt-get update && apt-get install -y \
     libavformat-dev \
     libavutil-dev \
     libswscale-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/nginx \
+    && mkdir -p /var/log/nginx \
+    && mkdir -p /var/lib/nginx \
+    && chown -R www-data:www-data /run/nginx \
+    && chown -R www-data:www-data /var/log/nginx \
+    && chown -R www-data:www-data /var/lib/nginx
 
 # Set working directory
 WORKDIR /app

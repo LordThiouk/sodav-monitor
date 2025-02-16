@@ -75,11 +75,15 @@ alembic upgrade head
 
 # Stop nginx if it's running
 echo "Stopping nginx if running..."
-if [ -f "/app/nginx.pid" ]; then
+if [ -f "/run/nginx/nginx.pid" ]; then
     nginx -s quit || true
-    rm -f /app/nginx.pid
+    rm -f /run/nginx/nginx.pid
 fi
 sleep 2
+
+# Ensure nginx directories exist with proper permissions
+mkdir -p /run/nginx /var/log/nginx /var/lib/nginx
+chown -R www-data:www-data /run/nginx /var/log/nginx /var/lib/nginx
 
 # Configure nginx
 echo "Configuring nginx..."
@@ -91,9 +95,10 @@ sed -i "s/127.0.0.1:8001/127.0.0.1:$API_PORT/g" /etc/nginx/conf.d/default.conf
 echo "Testing nginx configuration..."
 nginx -t || exit 1
 
-# Start nginx
+# Start nginx in daemon mode
 echo "Starting nginx..."
-nginx
+nginx -g 'daemon off;' &
+NGINX_PID=$!
 
 # Function to check if a port is open
 check_port() {
