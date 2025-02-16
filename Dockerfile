@@ -56,12 +56,14 @@ RUN chmod -R 755 /app && chmod +x /app/start.sh
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/backend
-ENV PORT=8000
+ENV PORT=3000
+ENV API_PORT=8000
 ENV DEBUG=False
 ENV NODE_ENV=production
 
-# Expose the port
+# Expose the ports
 EXPOSE ${PORT}
+EXPOSE ${API_PORT}
 
 # Start the application using the start.sh script
 CMD ["./start.sh"] 
