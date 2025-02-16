@@ -2,8 +2,9 @@
 set -e
 
 # Ensure PORT is set
-export PORT=${PORT:-8000}
-echo "Starting application on port $PORT"
+export PORT=${PORT:-3000}
+export API_PORT=8080  # Port pour FastAPI
+echo "Starting application (API on $API_PORT, nginx on $PORT)"
 
 # Use DATABASE_PUBLIC_URL if DATABASE_URL is not set
 if [[ -z "${DATABASE_URL}" ]]; then
@@ -80,8 +81,8 @@ sleep 2
 # Configure nginx
 echo "Configuring nginx..."
 export NGINX_PORT=$PORT
-export API_PORT=8000
 sed -i "s/\$PORT/$NGINX_PORT/g" /etc/nginx/conf.d/default.conf
+sed -i "s/127.0.0.1:8001/127.0.0.1:$API_PORT/g" /etc/nginx/conf.d/default.conf
 
 # Test nginx configuration
 echo "Testing nginx configuration..."

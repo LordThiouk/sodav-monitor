@@ -1487,7 +1487,7 @@ async def detect_music_all_stations(db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
     host = os.getenv('HOST', '0.0.0.0')
-    port = int(os.getenv('PORT', '8000'))
+    port = int(os.getenv('API_PORT', '8080'))
     debug = os.getenv('DEBUG', 'False').lower() == 'true'
     
     # Configure uvicorn logging
