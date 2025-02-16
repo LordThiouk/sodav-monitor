@@ -11,6 +11,7 @@ ENV/
 
 # Logs
 *.log
+logs/
 
 # FFmpeg
 FFmpeg-*/
@@ -58,6 +59,7 @@ frontend/.env.production.local
 # Database
 *.db
 *.sqlite3
+dump.sql
 
 # IDE
 .vscode/
@@ -65,6 +67,7 @@ frontend/.env.production.local
 *.swp
 *.swo
 .history/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -84,6 +87,10 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Backup files
+*_backup/
+versions_backup/
 
 # IDEs and editors
 *.swp

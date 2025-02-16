@@ -1,59 +1,43 @@
-# Utiliser une image Python stable et légère
-FROM python:3.12-slim
+# Use a specific Python version
+FROM python:3.9.18-slim-bullseye
 
-# Définir le répertoire de travail
-WORKDIR /app
-
-# Installer les dépendances système nécessaires
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    python3-distutils \
-    python3-pip \
-    gcc \
+    postgresql-client \
     libpq-dev \
+    gcc \
+    libopenal1 \
+    python3-dev \
     ffmpeg \
-    libsndfile1 \
-    build-essential \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Mettre à jour pip avant d'installer les dépendances
-RUN pip install --upgrade pip setuptools wheel
+# Set working directory
+WORKDIR /app
 
-# Copier uniquement le fichier des dépendances pour un build plus rapide
-COPY requirements.txt /app/
+# Update pip and install build tools
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Installer les dépendances sans cache
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy requirements first for better caching
+COPY backend/requirements.txt backend/
 
-# Copier le reste des fichiers du projet
-COPY . /app/
+# Install Python dependencies
+RUN pip install --no-cache-dir -r backend/requirements.txt
 
-# S'assurer que tous les fichiers ont les bonnes permissions
-RUN chmod -R 755 /app
+# Copy application code
+COPY backend/ backend/
+COPY start.sh .
 
-# Définir le répertoire de travail pour le backend
-WORKDIR /app/backend
+# Set correct permissions
+RUN chmod -R 755 /app && chmod +x /app/start.sh
 
-# Script de démarrage pour gérer le port et les vérifications
-COPY <<EOF /app/start.sh
-#!/bin/bash
-export PORT=\${PORT:-8000}
-echo "Starting application on port \$PORT"
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/backend
+ENV PORT=8000
+ENV DEBUG=True
 
-# Attendre que PostgreSQL soit prêt
-until curl -s "\$DATABASE_URL" >/dev/null 2>&1; do
-  echo "Waiting for PostgreSQL to be ready..."
-  sleep 2
-done
+# Expose the port
+EXPOSE ${PORT}
 
-# Démarrer l'application
-exec uvicorn main:app --host 0.0.0.0 --port \$PORT
-EOF
-
-RUN chmod +x /app/start.sh
-
-# Exposer le port pour Railway
-EXPOSE 8000
-
-# Commande de démarrage
+# Start the application
 CMD ["/app/start.sh"] 
