@@ -142,6 +142,19 @@ processor = AudioProcessor(db_session=db_session, music_recognizer=music_recogni
 # Store active connections
 active_connections: List[WebSocket] = []
 
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    active_connections.append(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Message received: {data}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {str(e)}")
+    finally:
+        active_connections.remove(websocket)
+
 # Cleanup on shutdown
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -538,92 +551,6 @@ async def get_reports(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error generating reports: {e}")
         raise HTTPException(status_code=500, detail="Error generating reports")
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time updates"""
-    from utils.websocket import active_connections
-    
-    await websocket.accept()
-    active_connections.append(websocket)
-    
-    try:
-        # Send initial data
-        from models import TrackDetection, RadioStation
-        from sqlalchemy import desc
-        
-        # Get database session
-        db = SessionLocal()
-        try:
-            # Get all stations
-            stations = db.query(RadioStation).all()
-            active_station_count = len([s for s in stations if s.is_active])
-            
-            # Get recent detections
-            recent_detections = (
-                db.query(TrackDetection)
-                .order_by(desc(TrackDetection.detected_at))
-                .limit(50)
-                .all()
-            )
-            
-            # Convert to dict
-            detections = []
-            for detection in recent_detections:
-                track = {
-                    "id": detection.track.id if detection.track else None,
-                    "title": detection.track.title if detection.track else None,
-                    "artist": detection.track.artist if detection.track else None,
-                    "isrc": detection.track.isrc if detection.track else None,
-                    "label": detection.track.label if detection.track else None,
-                    "album": detection.track.album if detection.track else None,
-                    "release_date": detection.track.release_date.isoformat() if detection.track and detection.track.release_date else None,
-                    "play_count": detection.track.play_count if detection.track else 0,
-                    "total_play_time": str(detection.track.total_play_time) if detection.track and detection.track.total_play_time else "0:00:00",
-                    "last_played": detection.track.last_played.isoformat() if detection.track and detection.track.last_played else None,
-                    "external_ids": detection.track.external_ids if detection.track else {},
-                    "created_at": detection.track.created_at.isoformat() if detection.track and detection.track.created_at else None
-                }
-                
-                detections.append({
-                    "id": detection.id,
-                    "station_id": detection.station_id,
-                    "track_id": detection.track_id,
-                    "station_name": detection.station.name if detection.station else None,
-                    "track_title": detection.track.title if detection.track else None,
-                    "artist": detection.track.artist if detection.track else None,
-                    "detected_at": detection.detected_at.isoformat(),
-                    "confidence": detection.confidence,
-                    "play_duration": str(detection.play_duration) if detection.play_duration else "0:00:15",  # Default to 15 seconds if not set
-                    "track": track
-                })
-            
-            # Send initial data
-            await websocket.send_json({
-                "type": "initial_data",
-                "timestamp": datetime.now().isoformat(),
-                "data": {
-                    "active_stations": active_station_count,
-                    "recent_detections": detections
-                }
-            })
-        finally:
-            db.close()
-            
-        # Keep connection alive and handle pings
-        while True:
-            data = await websocket.receive_text()
-            if data == "ping":
-                await websocket.send_json({
-                    "type": "pong",
-                    "timestamp": datetime.now().isoformat()
-                })
-                
-    except Exception as e:
-        logger.error(f"WebSocket error: {str(e)}")
-    finally:
-        if websocket in active_connections:
-            active_connections.remove(websocket)
 
 async def broadcast_track_detection(track_data: Dict):
     """Broadcast track detection to all connected clients"""
