@@ -27,8 +27,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copier le reste des fichiers du projet
 COPY . /app/
 
+# S'assurer que tous les fichiers ont les bonnes permissions
+RUN chmod -R 755 /app
+
+# Définir le répertoire de travail pour le backend
+WORKDIR /app/backend
+
 # Exposer le port pour Railway
 EXPOSE 8000
 
-# Commande de démarrage (ajustée pour le chemin backend)
-CMD ["sh", "-c", "cd backend && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"] 
+# Commande de démarrage (utilisant directement uvicorn sans shell)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"] 
