@@ -2,19 +2,24 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "Dockerfile"
+    "dockerfilePath": "Dockerfile",
+    "watchPatterns": [
+      "frontend/**/*"
+    ]
   },
   "deploy": {
     "healthcheckPath": "/health",
-    "healthcheckTimeout": 60,
+    "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10,
+    "restartPolicyMaxRetries": 3,
     "numReplicas": 1,
-    "healthcheckInterval": 30,
+    "healthcheckInterval": 15,
     "startCommand": "nginx -g 'daemon off;'",
     "env": {
       "PORT": "3000",
-      "NODE_ENV": "production"
+      "NODE_ENV": "production",
+      "REACT_APP_API_URL": "https://sodav-monitor-production.up.railway.app",
+      "REACT_APP_WS_URL": "wss://sodav-monitor-production.up.railway.app"
     }
   }
 } 

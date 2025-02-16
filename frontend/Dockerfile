@@ -5,6 +5,8 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 RUN npm run build
+# Verify build output
+RUN ls -la /app/build
 
 # Production stage
 FROM nginx:alpine
@@ -23,14 +25,15 @@ COPY --from=builder /app/build .
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Configure nginx for Railway
-RUN sed -i -e 's/$PORT/3000/g' /etc/nginx/conf.d/default.conf
+ENV PORT=3000
+RUN sed -i -e 's/$PORT/'"${PORT}"'/g' /etc/nginx/conf.d/default.conf
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
+    CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Expose port
-EXPOSE 3000
+EXPOSE ${PORT}
 
 # Start nginx
-CMD ["nginx", "-g", "daemon off;"] 
+CMD sed -i -e 's/$PORT/'"$PORT"'/g' /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;' 

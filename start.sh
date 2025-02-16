@@ -94,18 +94,27 @@ nginx
 # Wait for nginx to start
 echo "Waiting for nginx to start..."
 for i in {1..10}; do
-    if curl -s http://127.0.0.1:$NGINX_PORT/health > /dev/null; then
-        echo "Nginx is running!"
-        break
+    if command -v curl >/dev/null 2>&1; then
+        if curl -s http://127.0.0.1:$NGINX_PORT/health > /dev/null; then
+            echo "Nginx is running!"
+            break
+        fi
+    else
+        if nc -z 127.0.0.1 $NGINX_PORT; then
+            echo "Nginx is running! (checked with netcat)"
+            break
+        fi
     fi
     
     if [ $i -eq 10 ]; then
         echo "Error: Nginx did not start properly"
+        echo "Nginx error log:"
+        cat /var/log/nginx/error.log
         exit 1
     fi
     
     echo "Waiting for nginx... attempt $i/10"
-    sleep 1
+    sleep 2
 done
 
 # Start FastAPI application
