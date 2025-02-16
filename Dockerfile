@@ -1,3 +1,4 @@
+# Updated Dockerfile to trigger rebuild
 # Build stage for frontend
 FROM node:18-alpine AS frontend-build
 WORKDIR /app/frontend
