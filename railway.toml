@@ -16,7 +16,8 @@ restartPolicyMaxRetries = 3
 
 [env]
 PYTHON_VERSION = "3.9"
-PORT = "8000"
+PORT = "3000"
+API_PORT = "8000"
 HOST = "0.0.0.0"
 DATABASE_URL = "postgresql://postgres:xQeSEAydJpFNeqmeRNKPyCVejZphqjut@shinkansen.proxy.rlwy.net:32366/railway"
 POSTGRES_USER = "postgres"
@@ -32,6 +33,7 @@ SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
 MUSICBRAINZ_APP_NAME = "sodav-monitor"
 NODE_ENV = "production"
 REACT_APP_API_URL = "https://sodav-monitor-production.up.railway.app"
+REACT_APP_WS_URL = "wss://sodav-monitor-production.up.railway.app/ws"
 AUDIO_PROCESSING_ENABLED = true
 AUDIO_PROCESSING_INTERVAL = 30
 AUDIO_PROCESSING_DURATION = 10
