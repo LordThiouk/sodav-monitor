@@ -91,30 +91,50 @@ nginx -t || exit 1
 echo "Starting nginx..."
 nginx
 
+# Function to check if a port is open
+check_port() {
+    local port=$1
+    if command -v nc >/dev/null 2>&1; then
+        nc -z 127.0.0.1 "$port" >/dev/null 2>&1
+        return $?
+    elif command -v curl >/dev/null 2>&1; then
+        curl -s -o /dev/null "http://127.0.0.1:$port/health"
+        return $?
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q --spider "http://127.0.0.1:$port/health"
+        return $?
+    else
+        # If no tools are available, try a basic TCP connection using bash
+        (echo > "/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1
+        return $?
+    fi
+}
+
 # Wait for nginx to start
 echo "Waiting for nginx to start..."
-for i in {1..10}; do
-    if command -v curl >/dev/null 2>&1; then
-        if curl -s http://127.0.0.1:$NGINX_PORT/health > /dev/null; then
-            echo "Nginx is running!"
-            break
-        fi
-    else
-        if nc -z 127.0.0.1 $NGINX_PORT; then
-            echo "Nginx is running! (checked with netcat)"
-            break
-        fi
+max_attempts=10
+attempt=1
+while [ $attempt -le $max_attempts ]; do
+    if check_port "$NGINX_PORT"; then
+        echo "✅ Nginx is running on port $NGINX_PORT!"
+        break
     fi
     
-    if [ $i -eq 10 ]; then
-        echo "Error: Nginx did not start properly"
-        echo "Nginx error log:"
-        cat /var/log/nginx/error.log
+    if [ $attempt -eq $max_attempts ]; then
+        echo "❌ Error: Nginx did not start properly"
+        echo "📋 Nginx error log:"
+        if [ -f "/var/log/nginx/error.log" ]; then
+            cat /var/log/nginx/error.log
+        else
+            echo "No error log found at /var/log/nginx/error.log"
+        fi
+        nginx -t
         exit 1
     fi
     
-    echo "Waiting for nginx... attempt $i/10"
+    echo "⏳ Waiting for nginx... attempt $attempt/$max_attempts"
     sleep 2
+    attempt=$((attempt + 1))
 done
 
 # Start FastAPI application
