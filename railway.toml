@@ -4,9 +4,10 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 healthcheckPath = "/api/health"
-healthcheckTimeout = 100
+healthcheckTimeout = 30
 restartPolicy = "on-failure"
 maxRetries = 3
 
 [env]
-PYTHON_VERSION = "3.9" 
+PYTHON_VERSION = "3.9"
+PORT = "8000" 

@@ -33,8 +33,9 @@ RUN chmod -R 755 /app
 # Définir le répertoire de travail pour le backend
 WORKDIR /app/backend
 
-# Exposer le port pour Railway
-EXPOSE 8000
+# Exposer le port pour Railway (utiliser la variable PORT)
+ENV PORT=8000
+EXPOSE ${PORT}
 
-# Commande de démarrage (utilisant directement uvicorn sans shell)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"] 
+# Commande de démarrage avec la variable PORT
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"] 
