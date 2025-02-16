@@ -75,13 +75,16 @@ alembic upgrade head
 
 # Stop nginx if it's running
 echo "Stopping nginx if running..."
-nginx -s quit || true
+if [ -f "/app/nginx.pid" ]; then
+    nginx -s quit || true
+    rm -f /app/nginx.pid
+fi
 sleep 2
 
 # Configure nginx
 echo "Configuring nginx..."
 export NGINX_PORT=$PORT
-sed -i "s/\$PORT/$NGINX_PORT/g" /etc/nginx/conf.d/default.conf
+sed -i "s/listen [0-9]* default_server/listen $NGINX_PORT default_server/g" /etc/nginx/conf.d/default.conf
 sed -i "s/127.0.0.1:8001/127.0.0.1:$API_PORT/g" /etc/nginx/conf.d/default.conf
 
 # Test nginx configuration
