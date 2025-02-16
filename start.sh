@@ -3,7 +3,7 @@ set -e
 
 # Ensure PORT is set
 export PORT=${PORT:-3000}
-export API_PORT=8080  # Port pour FastAPI
+export API_PORT=8000  # Port pour FastAPI
 echo "Starting application (API on $API_PORT, nginx on $PORT)"
 
 # Use DATABASE_PUBLIC_URL if DATABASE_URL is not set
