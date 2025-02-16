@@ -1,4 +1,5 @@
 import { TrackDetection } from '../types';
+import { WS_URL } from '../config';
 
 type WebSocketInitialData = {
   active_stations: number;
@@ -18,8 +19,11 @@ class WebSocketService {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private callbacks: WebSocketCallback[] = [];
   private pingInterval: NodeJS.Timeout | null = null;
+  private url: string;
 
-  constructor(private url: string = 'ws://localhost:8000/ws') {}
+  constructor() {
+    this.url = WS_URL;
+  }
 
   connect() {
     this.ws = new WebSocket(this.url);

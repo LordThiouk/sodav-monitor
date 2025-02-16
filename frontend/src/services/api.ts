@@ -1,5 +1,6 @@
 import { RadioStation, Track, TrackDetection, Report, TrackAnalytics } from '../types';
 import axios from 'axios';
+import { WS_URL } from '../config';
 
 const API_BASE_URL = '/api';
 
@@ -130,7 +131,7 @@ export interface WebSocketCleanup {
 }
 
 export const connectWebSocket = (onMessage: (data: WebSocketMessage) => void): WebSocketCleanup => {
-  const ws = new WebSocket('ws://localhost:8000/ws');
+  const ws = new WebSocket(WS_URL);
   
   ws.onmessage = (event) => {
     try {
