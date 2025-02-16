@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsndfile1 \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Mettre à jour pip avant d'installer les dépendances
@@ -33,9 +34,26 @@ RUN chmod -R 755 /app
 # Définir le répertoire de travail pour le backend
 WORKDIR /app/backend
 
-# Exposer le port pour Railway (utiliser la variable PORT)
-ENV PORT=8000
-EXPOSE ${PORT}
+# Script de démarrage pour gérer le port et les vérifications
+COPY <<EOF /app/start.sh
+#!/bin/bash
+export PORT=\${PORT:-8000}
+echo "Starting application on port \$PORT"
 
-# Commande de démarrage avec la variable PORT
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"] 
+# Attendre que PostgreSQL soit prêt
+until curl -s "\$DATABASE_URL" >/dev/null 2>&1; do
+  echo "Waiting for PostgreSQL to be ready..."
+  sleep 2
+done
+
+# Démarrer l'application
+exec uvicorn main:app --host 0.0.0.0 --port \$PORT
+EOF
+
+RUN chmod +x /app/start.sh
+
+# Exposer le port pour Railway
+EXPOSE 8000
+
+# Commande de démarrage
+CMD ["/app/start.sh"] 

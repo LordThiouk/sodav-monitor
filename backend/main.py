@@ -27,6 +27,7 @@ from routers.channels import router as channels_router
 from routers.reports import router as reports_router
 from routers import channels, detections
 from utils.logging_config import setup_logging
+from health_check import get_system_health
 
 # Load environment variables
 load_dotenv()
@@ -150,12 +151,8 @@ async def get_streams(db: Session = Depends(get_db)):
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "connections": len(active_connections)
-    }
+    """Health check endpoint avec vérifications détaillées"""
+    return get_system_health()
 
 @app.post("/api/detect/{stream_id}")
 async def detect_audio(stream_id: int):
