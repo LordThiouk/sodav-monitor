@@ -67,10 +67,12 @@ export STARTUP_GRACE_PERIOD=true
 export PYTHONPATH=/app/backend:$PYTHONPATH
 
 # Start the FastAPI application
-cd /app/backend && python3 -m uvicorn main:app --host 0.0.0.0 --port $API_PORT &
+cd /app/backend
+echo "Starting FastAPI application..."
+python3 -m uvicorn main:app --host 0.0.0.0 --port $API_PORT &
 FASTAPI_PID=$!
 
-# Wait for backend to start
+# Wait for FastAPI to start
 echo "Waiting for FastAPI to start..."
 for i in {1..30}; do
     if curl -s "http://127.0.0.1:$API_PORT/api/health" > /dev/null; then
@@ -80,6 +82,9 @@ for i in {1..30}; do
     
     if [ $i -eq 30 ]; then
         echo "❌ Error: FastAPI did not start properly"
+        if [ -n "$FASTAPI_PID" ]; then
+            kill $FASTAPI_PID || true
+        fi
         exit 1
     fi
     
@@ -133,6 +138,9 @@ for i in {1..30}; do
         if [ -n "$NGINX_PID" ]; then
             kill $NGINX_PID || true
         fi
+        if [ -n "$FASTAPI_PID" ]; then
+            kill $FASTAPI_PID || true
+        fi
         exit 1
     fi
     
@@ -144,11 +152,17 @@ done
 while true; do
     if ! kill -0 $FASTAPI_PID 2>/dev/null; then
         echo "❌ FastAPI process died"
+        if [ -n "$NGINX_PID" ]; then
+            kill $NGINX_PID || true
+        fi
         exit 1
     fi
     
     if ! kill -0 $NGINX_PID 2>/dev/null; then
         echo "❌ Nginx process died"
+        if [ -n "$FASTAPI_PID" ]; then
+            kill $FASTAPI_PID || true
+        fi
         exit 1
     fi
     
