@@ -8,10 +8,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
 
-# Configuration du logging
+# Configuration du logging avec plus de détails
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -29,10 +29,10 @@ def check_database_connection() -> Dict[str, bool]:
     """Vérifie la connexion à la base de données."""
     try:
         database_url = os.getenv("DATABASE_URL")
-        logger.info(f"Checking database connection...")
+        logger.info(f"Checking database connection with URL type: {database_url.split('://')[0] if database_url else 'None'}")
         
         if not database_url:
-            error_msg = "DATABASE_URL not set"
+            error_msg = "DATABASE_URL not set in environment"
             logger.error(error_msg)
             return {"connected": False, "error": error_msg}
         
@@ -41,10 +41,10 @@ def check_database_connection() -> Dict[str, bool]:
             database_url = database_url.replace('postgres://', 'postgresql://', 1)
             logger.info("URL converted from postgres:// to postgresql://")
         
-        logger.info("Creating database engine...")
-        engine = create_engine(database_url)
+        logger.info("Creating database engine with URL type: %s", database_url.split('://')[0])
+        engine = create_engine(database_url, pool_pre_ping=True)
         
-        logger.info("Testing database connection...")
+        logger.info("Testing database connection with SELECT 1 query...")
         with engine.connect() as connection:
             result = connection.execute(text("SELECT 1")).scalar()
             logger.info(f"Database connection successful, test query returned: {result}")
@@ -62,7 +62,7 @@ def check_database_connection() -> Dict[str, bool]:
 def check_system_resources() -> Dict[str, float]:
     """Vérifie les ressources système."""
     try:
-        logger.info("Checking system resources...")
+        logger.info("Starting system resources check...")
         
         cpu = psutil.cpu_percent(interval=1)
         memory = psutil.virtual_memory()
@@ -76,7 +76,7 @@ def check_system_resources() -> Dict[str, float]:
             "disk_free": disk.free / 1024 / 1024 / 1024,  # GB
         }
         
-        logger.info(f"System resources - CPU: {cpu}%, Memory: {memory.percent}% ({resources['memory_available']:.1f}MB free), Disk: {disk.percent}% ({resources['disk_free']:.1f}GB free)")
+        logger.info(f"System resources check completed - CPU: {cpu}%, Memory: {memory.percent}% ({resources['memory_available']:.1f}MB free), Disk: {disk.percent}% ({resources['disk_free']:.1f}GB free)")
         
         return resources
     except Exception as e:
@@ -94,26 +94,29 @@ def check_system_resources() -> Dict[str, float]:
 def get_system_health() -> Dict:
     """Obtient l'état de santé complet du système."""
     try:
-        logger.info("Starting system health check...")
+        logger.info("Starting comprehensive system health check...")
         
         # Vérifier si nous sommes en période de démarrage
         is_startup = os.getenv("STARTUP_GRACE_PERIOD", "false").lower() == "true"
+        startup_message = "System is in startup grace period" if is_startup else "System is in normal operation mode"
+        logger.info(startup_message)
+        
         if is_startup:
-            logger.info("System is in startup grace period")
             return {
                 "status": "starting",
-                "message": "Application is starting up",
+                "message": "Application is in startup grace period",
                 "timestamp": datetime.now().isoformat(),
-                "uptime": get_uptime()
+                "uptime": get_uptime(),
+                "startup_time_remaining": float(os.getenv("HEALTHCHECK_START_PERIOD", "180")) - get_uptime()
             }
         
         # Vérifier la base de données
         db_status = check_database_connection()
-        logger.info(f"Database status: {db_status}")
+        logger.info(f"Database health check completed: {db_status}")
         
         # Vérifier les ressources système
         resources = check_system_resources()
-        logger.info(f"System resources: {resources}")
+        logger.info(f"System resources check completed: {resources}")
         
         # Vérifier l'espace disque critique
         disk_critical = resources.get("disk_percent", 0) > 90 or resources.get("disk_free", 0) < 1
@@ -150,7 +153,9 @@ def get_system_health() -> Dict:
                 "python_version": os.getenv("PYTHON_VERSION", "3.9"),
                 "api_port": os.getenv("API_PORT", "8000"),
                 "port": os.getenv("PORT", "3000"),
-                "startup_grace_period": is_startup
+                "startup_grace_period": is_startup,
+                "database_url_type": os.getenv("DATABASE_URL", "").split("://")[0] if os.getenv("DATABASE_URL") else None,
+                "redis_configured": bool(os.getenv("REDIS_URL"))
             }
         }
         
