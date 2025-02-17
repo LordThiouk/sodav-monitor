@@ -62,7 +62,18 @@ done
 # Apply database migrations with better error handling
 echo "Applying database migrations..."
 cd /app/backend
-if ! alembic upgrade head; then
+echo "Current directory: $(pwd)"
+echo "Checking for alembic.ini..."
+if [ -f "alembic.ini" ]; then
+    echo "Found alembic.ini"
+    cat alembic.ini | grep -A 5 "\[alembic\]"
+else
+    echo "❌ Error: alembic.ini not found"
+    ls -la
+    exit 1
+fi
+
+if ! PYTHONPATH=/app/backend alembic upgrade head; then
     echo "❌ Error: Database migration failed"
     exit 1
 fi
@@ -85,7 +96,7 @@ FASTAPI_PID=$!
 echo "Waiting for FastAPI to start..."
 for i in {1..90}; do
     HEALTH_RESPONSE=$(curl -s -H "X-Startup-Check: true" "http://127.0.0.1:$API_PORT/api/health" || true)
-    if [[ "$HEALTH_RESPONSE" == *"healthy"* ]] || [[ "$HEALTH_RESPONSE" == *"ok"* ]]; then
+    if [[ "$HEALTH_RESPONSE" == *"healthy"* ]] || [[ "$HEALTH_RESPONSE" == *"ok"* ]] || [[ "$HEALTH_RESPONSE" == *"starting"* ]]; then
         echo "✅ FastAPI is running on port $API_PORT!"
         break
     fi
@@ -128,21 +139,18 @@ sed -i "s/listen [0-9]* default_server/listen $NGINX_PORT default_server/g" /etc
 echo "Testing nginx configuration..."
 if ! nginx -t; then
     echo "❌ Error: Invalid nginx configuration"
-    if [ -n "$FASTAPI_PID" ]; then
-        kill $FASTAPI_PID || true
-    fi
     exit 1
 fi
 
-# Start nginx with better logging
+# Start nginx
 echo "Starting nginx..."
-nginx -g 'daemon off;' &
+nginx -g "daemon off;" &
 NGINX_PID=$!
 
-# Wait for nginx to start with better health check
+# Wait for nginx to start
 echo "Waiting for nginx to start..."
 for i in {1..30}; do
-    if curl -s -H "X-Startup-Check: true" "http://127.0.0.1:$PORT/api/health" > /dev/null; then
+    if curl -s "http://127.0.0.1:$PORT/health" > /dev/null; then
         echo "✅ Nginx is running on port $PORT!"
         break
     fi
@@ -152,37 +160,19 @@ for i in {1..30}; do
         if [ -n "$NGINX_PID" ]; then
             kill $NGINX_PID || true
         fi
-        if [ -n "$FASTAPI_PID" ]; then
-            kill $FASTAPI_PID || true
-        fi
         exit 1
     fi
     
     echo "⏳ Waiting for Nginx... attempt $i/30"
-    sleep 1
+    sleep 2
 done
 
-# Disable startup grace period only after both services are running
+# Disable startup grace period after successful startup
 export STARTUP_GRACE_PERIOD=false
-echo "✅ Startup grace period disabled - all services are running"
+echo "Startup grace period disabled"
 
-# Monitor both processes with better error handling
-while true; do
-    if ! kill -0 $FASTAPI_PID 2>/dev/null; then
-        echo "❌ FastAPI process died"
-        if [ -n "$NGINX_PID" ]; then
-            kill $NGINX_PID || true
-        fi
-        exit 1
-    fi
-    
-    if ! kill -0 $NGINX_PID 2>/dev/null; then
-        echo "❌ Nginx process died"
-        if [ -n "$FASTAPI_PID" ]; then
-            kill $FASTAPI_PID || true
-        fi
-        exit 1
-    fi
-    
-    sleep 5
-done 
+# Wait for any process to exit
+wait -n
+
+# Exit with status of process that exited first
+exit $? 

@@ -46,8 +46,9 @@ RUN for i in {1..3}; do \
     pip install --no-cache-dir -r backend/requirements.txt && break || sleep 2; \
     done
 
-# Copy application code
+# Copy application code and configuration files
 COPY backend/ /app/
+COPY backend/alembic.ini /app/backend/alembic.ini
 COPY start.sh /app/start.sh
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
