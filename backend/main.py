@@ -192,16 +192,22 @@ async def health_check():
         # is not fully connected yet
         is_startup = os.getenv("STARTUP_GRACE_PERIOD", "false").lower() == "true"
         if is_startup:
-            return {"status": "starting", "message": "Application is starting up"}
+            return {"status": "healthy", "message": "Application is starting up"}
+            
+        if health_data.get("status") == "error":
+            raise HTTPException(status_code=503, detail=health_data)
             
         return health_data
     except Exception as e:
         logger.error(f"Health check error: {str(e)}")
-        return {
-            "status": "error",
-            "timestamp": datetime.now().isoformat(),
-            "error": str(e)
-        }
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "error",
+                "timestamp": datetime.now().isoformat(),
+                "error": str(e)
+            }
+        )
 
 @app.post("/api/detect/{stream_id}")
 async def detect_audio(stream_id: int):
@@ -1432,7 +1438,7 @@ async def detect_music_all_stations(db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
     host = os.getenv('HOST', '0.0.0.0')
-    port = int(os.getenv('API_PORT', '8080'))
+    port = int(os.getenv('API_PORT', '8000'))  # Changed default port to 8000
     debug = os.getenv('DEBUG', 'False').lower() == 'true'
     
     # Configure uvicorn logging
@@ -1441,10 +1447,12 @@ if __name__ == "__main__":
     
     # Run the server
     uvicorn.run(
-        "main:app",
+        app,  # Changed from "main:app" to app
         host=host,
         port=port,
         reload=debug,
         log_config=log_config,
-        log_level="debug" if debug else "info"
+        log_level="debug" if debug else "info",
+        access_log=True,
+        workers=1  # Ensure single worker for WebSocket support
     )
