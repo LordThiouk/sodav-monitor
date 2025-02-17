@@ -1,4 +1,4 @@
-# Updated Dockerfile to trigger rebuild
+# Updated Dockerfile to trigger rebuild - v2
 # Build stage for frontend
 FROM node:18-alpine AS frontend-build
 WORKDIR /app/frontend
@@ -33,44 +33,40 @@ RUN apt-get update && apt-get install -y \
     && chown -R www-data:www-data /var/lib/nginx
 
 # Set working directory
-WORKDIR /app
+WORKDIR /app/backend
 
 # Update pip and install build tools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Copy requirements first for better caching
-COPY backend/requirements.txt backend/
+COPY backend/requirements.txt ./
 
 # Install Python dependencies with retry mechanism
 RUN for i in {1..3}; do \
-    pip install --no-cache-dir -r backend/requirements.txt && break || sleep 2; \
+    pip install --no-cache-dir -r requirements.txt && break || sleep 2; \
     done
 
-# Copy application code and configuration files
-COPY backend/ /app/
-COPY backend/alembic.ini /app/backend/alembic.ini
+# Copy backend files
+COPY backend/ ./
 
-# Create and setup migrations directory
-RUN mkdir -p /app/backend/migrations && \
-    cp -r backend/migrations/* /app/backend/migrations/ || true
-
-COPY start.sh /app/start.sh
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Create directory for frontend build
-RUN mkdir -p /app/frontend/build
+# Ensure migrations directory exists and has correct permissions
+RUN mkdir -p migrations && \
+    chmod -R 755 migrations
 
 # Copy frontend build from build stage
 COPY --from=frontend-build /app/frontend/build /app/frontend/build
 
+# Copy configuration files
+COPY start.sh /app/start.sh
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
 # Set correct permissions and ensure Unix line endings
-RUN chmod -R 755 /app && \
-    chmod +x /app/start.sh && \
+RUN chmod +x /app/start.sh && \
     sed -i 's/\r$//' /app/start.sh
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/backend
 ENV PORT=3000
 ENV API_PORT=8000
 ENV DEBUG=False
@@ -85,4 +81,5 @@ HEALTHCHECK --interval=30s --timeout=60s --start-period=120s --retries=3 \
     CMD curl -f -H "X-Startup-Check: true" "http://localhost:${PORT}/api/health" || exit 1
 
 # Start the application using the start.sh script
+WORKDIR /app
 CMD ["./start.sh"] 
