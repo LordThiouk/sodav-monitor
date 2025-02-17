@@ -26,8 +26,20 @@ echo "Database URL found. Attempting connection..."
 
 # Convert postgres:// to postgresql:// if needed
 if [[ $DATABASE_URL == postgres://* ]]; then
+    echo "Converting postgres:// to postgresql:// in DATABASE_URL"
     export DATABASE_URL=$(echo $DATABASE_URL | sed 's/postgres:\/\//postgresql:\/\//')
-    echo "Converted postgres:// to postgresql:// in DATABASE_URL"
+    if [[ $? -ne 0 ]]; then
+        echo "❌ Error: Failed to convert DATABASE_URL format"
+        exit 1
+    fi
+    echo "✅ Successfully converted DATABASE_URL format"
+fi
+
+# Validate DATABASE_URL format
+if [[ ! $DATABASE_URL =~ ^postgresql://[^:]+:[^@]+@[^:]+:[0-9]+/[^/]+$ ]]; then
+    echo "❌ Error: Invalid DATABASE_URL format"
+    echo "Expected format: postgresql://user:password@host:port/dbname"
+    exit 1
 fi
 
 # Extract database connection details from DATABASE_URL
@@ -155,7 +167,9 @@ fi
 # Configure nginx with better error handling
 echo "Configuring nginx..."
 export NGINX_PORT=$PORT
-sed -i "s/listen [0-9]* default_server/listen $NGINX_PORT default_server/g" /etc/nginx/conf.d/default.conf
+# Use envsubst to replace the port in the nginx configuration
+envsubst '$PORT' < /etc/nginx/conf.d/default.conf > /etc/nginx/conf.d/default.conf.tmp
+mv /etc/nginx/conf.d/default.conf.tmp /etc/nginx/conf.d/default.conf
 
 # Test nginx configuration
 echo "Testing nginx configuration..."

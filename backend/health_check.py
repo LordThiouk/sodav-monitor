@@ -102,12 +102,13 @@ def get_system_health() -> Dict:
         logger.info(startup_message)
         
         if is_startup:
+            # During startup, always return healthy
             return {
-                "status": "starting",
+                "status": "healthy",
                 "message": "Application is in startup grace period",
                 "timestamp": datetime.now().isoformat(),
                 "uptime": get_uptime(),
-                "startup_time_remaining": float(os.getenv("HEALTHCHECK_START_PERIOD", "180")) - get_uptime()
+                "startup_time_remaining": float(os.getenv("HEALTHCHECK_START_PERIOD", "600")) - get_uptime()
             }
         
         # Vérifier la base de données

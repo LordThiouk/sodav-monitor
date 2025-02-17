@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     curl \
     nginx \
+    gettext-base \
     libavcodec-dev \
     libavformat-dev \
     libavutil-dev \
@@ -46,12 +47,10 @@ RUN for i in {1..3}; do \
     pip install --no-cache-dir -r requirements.txt && break || sleep 2; \
     done
 
-# Copy backend files
+# Copy backend files with explicit handling of migrations
 COPY backend/ ./
-
-# Ensure migrations directory exists and has correct permissions
-RUN mkdir -p migrations && \
-    chmod -R 755 migrations
+COPY backend/migrations ./migrations/
+RUN chmod -R 755 migrations
 
 # Copy frontend build from build stage
 COPY --from=frontend-build /app/frontend/build /app/frontend/build
