@@ -74,10 +74,9 @@ ENV NODE_ENV=production
 EXPOSE ${PORT}
 EXPOSE ${API_PORT}
 
-# Add healthcheck
+# Add healthcheck with improved configuration
 HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=5 \
-    CMD curl -f http://localhost:${PORT}/health && \
-        curl -f http://localhost:${API_PORT}/api/health || exit 1
+    CMD curl -f -H "X-Startup-Check: true" "http://localhost:${PORT}/api/health" || exit 1
 
 # Start the application using the start.sh script
 CMD ["./start.sh"] 

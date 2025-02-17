@@ -6,6 +6,10 @@ export PORT=${PORT:-3000}
 export API_PORT=8000
 echo "Starting application (API on $API_PORT, nginx on $PORT)"
 
+# Set startup grace period
+export STARTUP_GRACE_PERIOD=true
+echo "Startup grace period enabled"
+
 # Use DATABASE_PUBLIC_URL if DATABASE_URL is not set
 if [[ -z "${DATABASE_URL}" ]]; then
     if [[ -z "${DATABASE_PUBLIC_URL}" ]]; then
@@ -60,9 +64,6 @@ echo "Applying database migrations..."
 cd /app/backend
 alembic upgrade head
 
-# Set startup grace period
-export STARTUP_GRACE_PERIOD=true
-
 # Set Python path
 export PYTHONPATH=/app/backend:$PYTHONPATH
 
@@ -79,7 +80,7 @@ FASTAPI_PID=$!
 # Wait for FastAPI to start with increased timeout and better health check
 echo "Waiting for FastAPI to start..."
 for i in {1..60}; do
-    HEALTH_RESPONSE=$(curl -s "http://127.0.0.1:$API_PORT/api/health")
+    HEALTH_RESPONSE=$(curl -s -H "X-Startup-Check: true" "http://127.0.0.1:$API_PORT/api/health")
     if [[ "$HEALTH_RESPONSE" == *"healthy"* ]] || [[ "$HEALTH_RESPONSE" == *"ok"* ]]; then
         echo "✅ FastAPI is running on port $API_PORT!"
         break
@@ -97,9 +98,6 @@ for i in {1..60}; do
     echo "Waiting for FastAPI... attempt $i/60"
     sleep 2
 done
-
-# Disable startup grace period
-export STARTUP_GRACE_PERIOD=false
 
 # Ensure nginx directories exist with proper permissions
 echo "Setting up nginx directories..."
@@ -134,7 +132,7 @@ NGINX_PID=$!
 # Wait for nginx to start with better health check
 echo "Waiting for nginx to start..."
 for i in {1..30}; do
-    if curl -s "http://127.0.0.1:$PORT/health" > /dev/null; then
+    if curl -s -H "X-Startup-Check: true" "http://127.0.0.1:$PORT/api/health" > /dev/null; then
         echo "✅ Nginx is running on port $PORT!"
         break
     fi
@@ -153,6 +151,10 @@ for i in {1..30}; do
     echo "Waiting for Nginx... attempt $i/30"
     sleep 1
 done
+
+# Disable startup grace period only after both services are running
+export STARTUP_GRACE_PERIOD=false
+echo "Startup grace period disabled"
 
 # Monitor both processes
 while true; do
