@@ -1,4 +1,5 @@
 #!/bin/bash
+# Force new deployment - $(date)
 set -e
 
 # Ensure PORT is set
@@ -64,15 +65,30 @@ echo "Applying database migrations..."
 cd /app/backend
 echo "Current directory: $(pwd)"
 echo "Checking for alembic.ini..."
-if [ -f "alembic.ini" ]; then
-    echo "Found alembic.ini"
-    cat alembic.ini | grep -A 5 "\[alembic\]"
-else
+
+if [ ! -f "alembic.ini" ]; then
     echo "❌ Error: alembic.ini not found"
     ls -la
     exit 1
 fi
 
+echo "Found alembic.ini"
+cat alembic.ini | grep -A 5 "\[alembic\]"
+
+echo "Checking migrations directory..."
+if [ ! -d "migrations" ]; then
+    echo "❌ Error: migrations directory not found"
+    exit 1
+fi
+
+echo "Checking migrations/env.py..."
+if [ ! -f "migrations/env.py" ]; then
+    echo "❌ Error: migrations/env.py not found"
+    ls -la migrations/
+    exit 1
+fi
+
+echo "Running database migrations..."
 if ! PYTHONPATH=/app/backend alembic upgrade head; then
     echo "❌ Error: Database migration failed"
     exit 1
@@ -89,19 +105,19 @@ pkill nginx || true
 # Start the FastAPI application with better logging
 cd /app/backend
 echo "Starting FastAPI application..."
-python3 -m uvicorn main:app --host 0.0.0.0 --port $API_PORT --workers 1 --log-level debug &
+python3 -m uvicorn main:app --host 0.0.0.0 --port $API_PORT --workers 1 --log-level debug --timeout-keep-alive 120 &
 FASTAPI_PID=$!
 
 # Wait for FastAPI to start with increased timeout and better health check
 echo "Waiting for FastAPI to start..."
-for i in {1..90}; do
+for i in {1..120}; do
     HEALTH_RESPONSE=$(curl -s -H "X-Startup-Check: true" "http://127.0.0.1:$API_PORT/api/health" || true)
     if [[ "$HEALTH_RESPONSE" == *"healthy"* ]] || [[ "$HEALTH_RESPONSE" == *"ok"* ]] || [[ "$HEALTH_RESPONSE" == *"starting"* ]]; then
         echo "✅ FastAPI is running on port $API_PORT!"
         break
     fi
     
-    if [ $i -eq 90 ]; then
+    if [ $i -eq 120 ]; then
         echo "❌ Error: FastAPI did not start properly"
         echo "Health check response: $HEALTH_RESPONSE"
         if [ -n "$FASTAPI_PID" ]; then
@@ -110,9 +126,15 @@ for i in {1..90}; do
         exit 1
     fi
     
-    echo "⏳ Waiting for FastAPI... attempt $i/90"
+    echo "⏳ Waiting for FastAPI... attempt $i/120"
     sleep 2
 done
+
+# Verify FastAPI is actually running
+if ! ps -p $FASTAPI_PID > /dev/null; then
+    echo "❌ Error: FastAPI process is not running"
+    exit 1
+fi
 
 # Ensure nginx directories exist with proper permissions
 echo "Setting up nginx directories..."
@@ -149,13 +171,13 @@ NGINX_PID=$!
 
 # Wait for nginx to start
 echo "Waiting for nginx to start..."
-for i in {1..30}; do
-    if curl -s "http://127.0.0.1:$PORT/health" > /dev/null; then
+for i in {1..60}; do
+    if curl -s -H "X-Startup-Check: true" "http://127.0.0.1:$PORT/api/health" > /dev/null; then
         echo "✅ Nginx is running on port $PORT!"
         break
     fi
     
-    if [ $i -eq 30 ]; then
+    if [ $i -eq 60 ]; then
         echo "❌ Error: Nginx did not start properly"
         if [ -n "$NGINX_PID" ]; then
             kill $NGINX_PID || true
@@ -163,16 +185,30 @@ for i in {1..30}; do
         exit 1
     fi
     
-    echo "⏳ Waiting for Nginx... attempt $i/30"
+    echo "⏳ Waiting for Nginx... attempt $i/60"
     sleep 2
 done
+
+# Final health check through Nginx
+FINAL_HEALTH_CHECK=$(curl -s -H "X-Startup-Check: true" "http://127.0.0.1:$PORT/api/health")
+if [[ "$FINAL_HEALTH_CHECK" != *"healthy"* ]] && [[ "$FINAL_HEALTH_CHECK" != *"starting"* ]]; then
+    echo "❌ Final health check failed: $FINAL_HEALTH_CHECK"
+    exit 1
+fi
+
+echo "✅ Application started successfully!"
+echo "FastAPI running on port $API_PORT"
+echo "Nginx running on port $PORT"
 
 # Disable startup grace period after successful startup
 export STARTUP_GRACE_PERIOD=false
 echo "Startup grace period disabled"
 
-# Wait for any process to exit
-wait -n
-
-# Exit with status of process that exited first
-exit $? 
+# Monitor both processes
+while true; do
+    if ! ps -p $FASTAPI_PID > /dev/null || ! ps -p $NGINX_PID > /dev/null; then
+        echo "❌ One of the processes died"
+        exit 1
+    fi
+    sleep 10
+done
