@@ -75,7 +75,7 @@ EXPOSE ${PORT}
 EXPOSE ${API_PORT}
 
 # Add healthcheck with improved configuration
-HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=5 \
+HEALTHCHECK --interval=30s --timeout=60s --start-period=120s --retries=3 \
     CMD curl -f -H "X-Startup-Check: true" "http://localhost:${PORT}/api/health" || exit 1
 
 # Start the application using the start.sh script
