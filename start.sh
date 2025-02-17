@@ -72,15 +72,15 @@ echo "Starting FastAPI application..."
 python3 -m uvicorn main:app --host 0.0.0.0 --port $API_PORT &
 FASTAPI_PID=$!
 
-# Wait for FastAPI to start
+# Wait for FastAPI to start with increased timeout
 echo "Waiting for FastAPI to start..."
-for i in {1..30}; do
+for i in {1..60}; do
     if curl -s "http://127.0.0.1:$API_PORT/api/health" > /dev/null; then
         echo "✅ FastAPI is running on port $API_PORT!"
         break
     fi
     
-    if [ $i -eq 30 ]; then
+    if [ $i -eq 60 ]; then
         echo "❌ Error: FastAPI did not start properly"
         if [ -n "$FASTAPI_PID" ]; then
             kill $FASTAPI_PID || true
@@ -88,9 +88,19 @@ for i in {1..30}; do
         exit 1
     fi
     
-    echo "Waiting for FastAPI... attempt $i/30"
-    sleep 1
+    echo "Waiting for FastAPI... attempt $i/60"
+    sleep 2
 done
+
+# Verify FastAPI is responding correctly
+HEALTH_RESPONSE=$(curl -s "http://127.0.0.1:$API_PORT/api/health")
+if [[ "$HEALTH_RESPONSE" != *"healthy"* ]] && [[ "$HEALTH_RESPONSE" != *"ok"* ]]; then
+    echo "❌ Error: FastAPI health check returned unexpected response: $HEALTH_RESPONSE"
+    if [ -n "$FASTAPI_PID" ]; then
+        kill $FASTAPI_PID || true
+    fi
+    exit 1
+fi
 
 # Disable startup grace period
 export STARTUP_GRACE_PERIOD=false

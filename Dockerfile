@@ -74,7 +74,8 @@ EXPOSE ${API_PORT}
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=5 \
-    CMD curl -f http://localhost:${API_PORT}/api/health || exit 1
+    CMD curl -f http://localhost:${PORT}/health && \
+        curl -f http://localhost:${API_PORT}/api/health || exit 1
 
 # Start the application using the start.sh script
 CMD ["./start.sh"] 
