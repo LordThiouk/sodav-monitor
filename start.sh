@@ -64,60 +64,31 @@ alembic upgrade head
 export STARTUP_GRACE_PERIOD=true
 
 # Set Python path
-export PYTHONPATH=/app:$PYTHONPATH
+export PYTHONPATH=/app/backend:$PYTHONPATH
 
-# Start the application
-cd /app && python3 -m uvicorn main:app --host 0.0.0.0 --port $API_PORT &
+# Start the FastAPI application
+cd /app/backend && python3 -m uvicorn main:app --host 0.0.0.0 --port $API_PORT &
+FASTAPI_PID=$!
 
 # Wait for backend to start
-sleep 30
+echo "Waiting for FastAPI to start..."
+for i in {1..30}; do
+    if curl -s "http://127.0.0.1:$API_PORT/api/health" > /dev/null; then
+        echo "✅ FastAPI is running on port $API_PORT!"
+        break
+    fi
+    
+    if [ $i -eq 30 ]; then
+        echo "❌ Error: FastAPI did not start properly"
+        exit 1
+    fi
+    
+    echo "Waiting for FastAPI... attempt $i/30"
+    sleep 1
+done
 
 # Disable startup grace period
 export STARTUP_GRACE_PERIOD=false
-
-# Keep the script running
-wait
-
-# Function to check if a port is open with timeout
-check_port() {
-    local port=$1
-    local timeout=$2
-    local start_time=$(date +%s)
-    
-    while true; do
-        if command -v curl >/dev/null 2>&1; then
-            if curl -s -o /dev/null "http://127.0.0.1:$port/health"; then
-                return 0
-            fi
-        elif command -v wget >/dev/null 2>&1; then
-            if wget -q --spider "http://127.0.0.1:$port/health"; then
-                return 0
-            fi
-        elif command -v nc >/dev/null 2>&1; then
-            if nc -z 127.0.0.1 "$port"; then
-                return 0
-            fi
-        else
-            if (echo > "/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1; then
-                return 0
-            fi
-        fi
-        
-        current_time=$(date +%s)
-        if [ $((current_time - start_time)) -ge $timeout ]; then
-            return 1
-        fi
-        sleep 1
-    done
-}
-
-# Wait for FastAPI to start with increased timeout
-echo "Waiting for FastAPI to start..."
-if ! check_port "$API_PORT" 30; then
-    echo "❌ Error: FastAPI did not start properly"
-    exit 1
-fi
-echo "✅ FastAPI is running on port $API_PORT!"
 
 # Ensure nginx directories exist with proper permissions
 echo "Setting up nginx directories..."
@@ -144,24 +115,38 @@ sed -i "s/listen [0-9]* default_server/listen $NGINX_PORT default_server/g" /etc
 echo "Testing nginx configuration..."
 nginx -t || exit 1
 
-# Start nginx with proper error handling
+# Start nginx
 echo "Starting nginx..."
 nginx -g 'daemon off;' &
 NGINX_PID=$!
 
 # Wait for nginx to start
 echo "Waiting for nginx to start..."
-if ! check_port "$PORT" 30; then
-    echo "❌ Error: Nginx did not start properly"
-    if [ -n "$NGINX_PID" ]; then
-        kill $NGINX_PID || true
+for i in {1..30}; do
+    if curl -s "http://127.0.0.1:$PORT" > /dev/null; then
+        echo "✅ Nginx is running on port $PORT!"
+        break
     fi
-    exit 1
-fi
-echo "✅ Nginx is running on port $PORT!"
+    
+    if [ $i -eq 30 ]; then
+        echo "❌ Error: Nginx did not start properly"
+        if [ -n "$NGINX_PID" ]; then
+            kill $NGINX_PID || true
+        fi
+        exit 1
+    fi
+    
+    echo "Waiting for Nginx... attempt $i/30"
+    sleep 1
+done
 
 # Monitor both processes
 while true; do
+    if ! kill -0 $FASTAPI_PID 2>/dev/null; then
+        echo "❌ FastAPI process died"
+        exit 1
+    fi
+    
     if ! kill -0 $NGINX_PID 2>/dev/null; then
         echo "❌ Nginx process died"
         exit 1
