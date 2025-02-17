@@ -48,7 +48,7 @@ RUN for i in {1..3}; do \
 
 # Copy application code
 COPY backend/ /app/
-COPY start.sh /app/
+COPY start.sh /app/start.sh
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Create directory for frontend build
@@ -57,8 +57,10 @@ RUN mkdir -p /app/frontend/build
 # Copy frontend build from build stage
 COPY --from=frontend-build /app/frontend/build /app/frontend/build
 
-# Set correct permissions
-RUN chmod -R 755 /app && chmod +x /app/start.sh
+# Set correct permissions and ensure Unix line endings
+RUN chmod -R 755 /app && \
+    chmod +x /app/start.sh && \
+    sed -i 's/\r$//' /app/start.sh
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
