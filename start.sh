@@ -66,22 +66,28 @@ export STARTUP_GRACE_PERIOD=true
 # Set Python path
 export PYTHONPATH=/app/backend:$PYTHONPATH
 
+# Kill any existing processes
+pkill -f "uvicorn main:app" || true
+pkill nginx || true
+
 # Start the FastAPI application
 cd /app/backend
 echo "Starting FastAPI application..."
-python3 -m uvicorn main:app --host 0.0.0.0 --port $API_PORT &
+python3 -m uvicorn main:app --host 0.0.0.0 --port $API_PORT --workers 1 &
 FASTAPI_PID=$!
 
-# Wait for FastAPI to start with increased timeout
+# Wait for FastAPI to start with increased timeout and better health check
 echo "Waiting for FastAPI to start..."
 for i in {1..60}; do
-    if curl -s "http://127.0.0.1:$API_PORT/api/health" > /dev/null; then
+    HEALTH_RESPONSE=$(curl -s "http://127.0.0.1:$API_PORT/api/health")
+    if [[ "$HEALTH_RESPONSE" == *"healthy"* ]] || [[ "$HEALTH_RESPONSE" == *"ok"* ]]; then
         echo "✅ FastAPI is running on port $API_PORT!"
         break
     fi
     
     if [ $i -eq 60 ]; then
         echo "❌ Error: FastAPI did not start properly"
+        echo "Health check response: $HEALTH_RESPONSE"
         if [ -n "$FASTAPI_PID" ]; then
             kill $FASTAPI_PID || true
         fi
@@ -91,16 +97,6 @@ for i in {1..60}; do
     echo "Waiting for FastAPI... attempt $i/60"
     sleep 2
 done
-
-# Verify FastAPI is responding correctly
-HEALTH_RESPONSE=$(curl -s "http://127.0.0.1:$API_PORT/api/health")
-if [[ "$HEALTH_RESPONSE" != *"healthy"* ]] && [[ "$HEALTH_RESPONSE" != *"ok"* ]]; then
-    echo "❌ Error: FastAPI health check returned unexpected response: $HEALTH_RESPONSE"
-    if [ -n "$FASTAPI_PID" ]; then
-        kill $FASTAPI_PID || true
-    fi
-    exit 1
-fi
 
 # Disable startup grace period
 export STARTUP_GRACE_PERIOD=false
@@ -135,10 +131,10 @@ echo "Starting nginx..."
 nginx -g 'daemon off;' &
 NGINX_PID=$!
 
-# Wait for nginx to start
+# Wait for nginx to start with better health check
 echo "Waiting for nginx to start..."
 for i in {1..30}; do
-    if curl -s "http://127.0.0.1:$PORT" > /dev/null; then
+    if curl -s "http://127.0.0.1:$PORT/health" > /dev/null; then
         echo "✅ Nginx is running on port $PORT!"
         break
     fi
