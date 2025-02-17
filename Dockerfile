@@ -49,6 +49,11 @@ RUN for i in {1..3}; do \
 # Copy application code and configuration files
 COPY backend/ /app/
 COPY backend/alembic.ini /app/backend/alembic.ini
+
+# Create and setup migrations directory
+RUN mkdir -p /app/backend/migrations && \
+    cp -r backend/migrations/* /app/backend/migrations/ || true
+
 COPY start.sh /app/start.sh
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
