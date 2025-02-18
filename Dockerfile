@@ -39,17 +39,23 @@ WORKDIR /app/backend
 # Update pip and install build tools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
+# Install essential Python packages first
+RUN pip install --no-cache-dir \
+    python-dotenv>=1.0.0 \
+    alembic>=1.13.1 \
+    psycopg2-binary>=2.9.9 \
+    SQLAlchemy>=2.0.15
+
 # Copy requirements first for better caching
 COPY backend/requirements.txt ./
 
-# Install Python dependencies with retry mechanism
+# Install remaining Python dependencies with retry mechanism
 RUN for i in {1..3}; do \
     pip install --no-cache-dir -r requirements.txt && break || sleep 2; \
     done
 
-# Install Alembic globally
-RUN pip install --no-cache-dir alembic>=1.13.1 && \
-    ln -s /usr/local/bin/alembic /usr/bin/alembic
+# Ensure Alembic is in PATH
+RUN ln -s /usr/local/bin/alembic /usr/bin/alembic
 
 # Copy backend files with explicit handling of migrations
 COPY backend/ ./
