@@ -29,6 +29,10 @@ from routers.reports import router as reports_router
 from routers import channels, detections
 from utils.logging_config import setup_logging
 from health_check import get_system_health
+from redis_config import init_redis, close_redis
+from utils.websocket import manager
+import uuid
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -144,24 +148,64 @@ processor = AudioProcessor(db_session=db_session, music_recognizer=music_recogni
 # Store active connections
 active_connections: List[WebSocket] = []
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    active_connections.append(websocket)
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup"""
     try:
-        while True:
-            data = await websocket.receive_text()
-            await websocket.send_text(f"Message received: {data}")
+        # Initialize Redis
+        await init_redis()
+        logger.info("Redis initialized successfully")
+        
+        # Start WebSocket listener
+        asyncio.create_task(manager.start_listener())
+        logger.info("WebSocket listener started")
+        
     except Exception as e:
-        logger.error(f"WebSocket error: {str(e)}")
-    finally:
-        active_connections.remove(websocket)
+        logger.error(f"Error during startup: {str(e)}")
+        raise
 
-# Cleanup on shutdown
 @app.on_event("shutdown")
 async def shutdown_event():
-    if SessionLocal():
-        SessionLocal().close()
+    """Cleanup on shutdown"""
+    try:
+        # Close Redis connection
+        await close_redis()
+        logger.info("Redis connection closed")
+        
+        # Stop WebSocket listener
+        await manager.stop_listener()
+        logger.info("WebSocket listener stopped")
+        
+        # Close database connection
+        if SessionLocal():
+            SessionLocal().close()
+            logger.info("Database connection closed")
+            
+    except Exception as e:
+        logger.error(f"Error during shutdown: {str(e)}")
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint with Redis support"""
+    client_id = str(uuid.uuid4())
+    try:
+        await manager.connect(websocket, client_id)
+        
+        while True:
+            data = await websocket.receive_text()
+            # Broadcast received message
+            await manager.broadcast({
+                "type": "message",
+                "client_id": client_id,
+                "data": data,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+    except WebSocketDisconnect:
+        await manager.disconnect(client_id)
+    except Exception as e:
+        logger.error(f"WebSocket error for client {client_id}: {str(e)}")
+        await manager.disconnect(client_id)
 
 @app.get("/api/streams")
 async def get_streams(db: Session = Depends(get_db)):

@@ -27,7 +27,12 @@
       "HEALTHCHECK_TIMEOUT": "300",
       "HEALTHCHECK_INTERVAL": "120",
       "HEALTHCHECK_START_PERIOD": "600",
-      "HEALTHCHECK_RETRIES": "10"
+      "HEALTHCHECK_RETRIES": "10",
+      "REDIS_URL": "redis://default:etnietpRknUwURAumSPXMVVgFwurrddy@hopper.proxy.rlwy.net:11709",
+      "REDIS_HOST": "hopper.proxy.rlwy.net",
+      "REDIS_PORT": "11709",
+      "REDIS_PASSWORD": "etnietpRknUwURAumSPXMVVgFwurrddy",
+      "REDIS_DB": "0"
     }
   }
 } 
