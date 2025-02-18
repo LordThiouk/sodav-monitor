@@ -26,6 +26,11 @@ RUN apt-get update && apt-get install -y \
     libavutil-dev \
     libswscale-dev \
     procps \
+    libsndfile1 \
+    libsndfile1-dev \
+    libportaudio2 \
+    portaudio19-dev \
+    python3-scipy \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run/nginx \
     && mkdir -p /var/log/nginx \
@@ -42,6 +47,12 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Copy requirements first for better caching
 COPY backend/requirements.txt ./
+
+# Install scientific computing dependencies first
+RUN pip install --no-cache-dir \
+    numpy>=1.23.5 \
+    scipy>=1.11.0 \
+    pandas>=2.0.3
 
 # Install all Python dependencies with retry mechanism
 RUN for i in {1..3}; do \
@@ -62,13 +73,11 @@ RUN for i in {1..3}; do \
     pydantic>=1.10.8 \
     librosa>=0.10.0 \
     pydub>=0.25.1 \
-    numpy>=1.23.5 \
     ffmpeg-python>=0.2.0 \
     musicbrainzngs>=0.7.1 \
     pyacoustid>=1.2.0 \
     av>=10.0.0 \
     redis>=5.0.1 \
-    pandas>=2.0.3 \
     aiohttp>=3.9.1 \
     prometheus-client>=0.19.0 \
     typing-extensions>=4.5.0 \
@@ -76,8 +85,10 @@ RUN for i in {1..3}; do \
     -r requirements.txt && break || sleep 2; \
     done
 
-# Ensure Alembic is in PATH
-RUN ln -s /usr/local/bin/alembic /usr/bin/alembic
+# Install Alembic globally and ensure it's in PATH
+RUN pip install --no-cache-dir alembic>=1.13.1 && \
+    ln -sf $(which alembic) /usr/local/bin/alembic && \
+    chmod +x /usr/local/bin/alembic
 
 # Copy backend files with explicit handling of migrations
 COPY backend/ ./
