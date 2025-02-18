@@ -3,6 +3,7 @@ import os
 from typing import Optional
 import logging
 from urllib.parse import urlparse
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -40,24 +41,32 @@ async def init_redis() -> Optional[aioredis.Redis]:
                 protocol, password = prefix.rsplit(":", 1)
                 masked_url = f"{protocol}:***@{rest}"
         logger.info(f"Connecting to Redis at {masked_url}")
-        
+
         # Configure Redis client with retry options
-        redis = aioredis.from_url(
-            redis_url,
-            decode_responses=True,
-            encoding="utf-8",
-            socket_timeout=5.0,
-            socket_connect_timeout=5.0,
-            retry_on_timeout=True,
-            max_connections=10,
-            retry=aioredis.Retry(3, backoff=1)
-        )
-        
-        # Test the connection
-        await redis.ping()
-        logger.info("Successfully connected to Redis")
-        return redis
-        
+        for retry_count in range(3):
+            try:
+                redis = aioredis.from_url(
+                    redis_url,
+                    decode_responses=True,
+                    encoding="utf-8",
+                    socket_timeout=5.0,
+                    socket_connect_timeout=5.0,
+                    retry_on_timeout=True,
+                    max_connections=10
+                )
+                
+                # Test the connection
+                await redis.ping()
+                logger.info("Successfully connected to Redis")
+                return redis
+            except (aioredis.ConnectionError, aioredis.TimeoutError) as e:
+                if retry_count < 2:
+                    wait_time = (retry_count + 1) * 2
+                    logger.warning(f"Redis connection attempt {retry_count + 1} failed, retrying in {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise
+                
     except aioredis.ConnectionError as e:
         logger.error(f"Redis connection error: {str(e)}")
         logger.warning("Application will start without Redis functionality")

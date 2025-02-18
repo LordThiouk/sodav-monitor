@@ -148,8 +148,11 @@ processor = AudioProcessor(db_session=db_session, music_recognizer=music_recogni
 async def initialize_music_recognition():
     """Initialize music recognition service"""
     try:
-        await music_recognizer.initialize()
-        logger.info("Music recognition service initialized")
+        logger.info("Initializing MusicRecognizer")
+        music_recognizer = MusicRecognizer()
+        await music_recognizer.setup()  # Using setup instead of initialize
+        logger.info("MusicRecognizer initialized successfully")
+        return music_recognizer
     except Exception as e:
         logger.error(f"Error initializing music recognition: {str(e)}")
         raise
@@ -157,8 +160,12 @@ async def initialize_music_recognition():
 async def initialize_audio_processor():
     """Initialize audio processor service"""
     try:
-        await processor.initialize()
-        logger.info("Audio processor service initialized")
+        max_concurrent = int(os.getenv("MAX_CONCURRENT_STATIONS", "10"))
+        logger.info(f"Initializing AudioProcessor with max {max_concurrent} concurrent stations")
+        audio_processor = AudioProcessor(max_concurrent_stations=max_concurrent)
+        await audio_processor.setup()
+        logger.info("AudioProcessor initialized successfully")
+        return audio_processor
     except Exception as e:
         logger.error(f"Error initializing audio processor: {str(e)}")
         raise
@@ -168,22 +175,31 @@ active_connections: List[WebSocket] = []
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize services on startup"""
+    """Application startup event handler"""
     try:
         # Initialize Redis
-        redis_instance = await init_redis()
-        if not redis_instance:
+        app.state.redis = await init_redis()
+        if not app.state.redis:
             logger.warning("Redis is not available. Some features may be limited.")
-        
-        # Initialize other services
-        await initialize_music_recognition()
-        await initialize_audio_processor()
-        
-        logger.info("Application startup completed successfully")
-        
+
+        # Initialize services with graceful degradation
+        try:
+            app.state.music_recognizer = await initialize_music_recognition()
+        except Exception as e:
+            logger.error(f"Error initializing music recognition: {str(e)}")
+            app.state.music_recognizer = None
+
+        try:
+            app.state.audio_processor = await initialize_audio_processor()
+        except Exception as e:
+            logger.error(f"Error initializing audio processor: {str(e)}")
+            app.state.audio_processor = None
+
+        if not app.state.music_recognizer or not app.state.audio_processor:
+            logger.warning("Application will start with limited functionality")
+
     except Exception as e:
         logger.error(f"Error during startup: {str(e)}")
-        # Don't raise the exception, allow the application to start with limited functionality
         logger.warning("Application will start with limited functionality")
 
 @app.on_event("shutdown")
