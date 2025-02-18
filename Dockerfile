@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     libpq-dev \
     gcc \
-    libopenal1 \
     python3-dev \
+    libopenal1 \
     ffmpeg \
     curl \
     nginx \
@@ -50,7 +50,7 @@ ENV PYTHONPATH=/app/backend
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONIOENCODING=utf-8
-ENV PATH="/usr/local/bin:${PATH}"
+ENV PATH="/usr/local/bin:/root/.local/bin:${PATH}"
 
 # Update pip and install build tools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
@@ -102,11 +102,18 @@ RUN for i in {1..3}; do \
     -r requirements.txt && break || sleep 2; \
     done
 
-# Install and verify Alembic installation
-RUN pip install --no-cache-dir alembic==1.13.1 && \
+# Install and verify Alembic with all dependencies
+RUN pip install --no-cache-dir \
+    alembic==1.13.1 \
+    psycopg2-binary>=2.9.9 \
+    SQLAlchemy>=2.0.15 \
+    python-dotenv>=1.0.0 && \
     pip show alembic && \
-    ln -s $(which alembic) /usr/local/bin/alembic && \
-    chmod +x /usr/local/bin/alembic
+    mkdir -p ~/.local/bin && \
+    echo "export PATH=/usr/local/bin:/root/.local/bin:${PATH}" >> ~/.bashrc && \
+    . ~/.bashrc && \
+    which alembic && \
+    alembic --version
 
 # Verify installations
 RUN python -c "import librosa; print('librosa version:', librosa.__version__)" && \

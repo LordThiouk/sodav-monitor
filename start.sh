@@ -2,18 +2,35 @@
 # Force new deployment - $(date)
 set -e
 
+# Ensure correct PATH
+export PATH="/usr/local/bin:/root/.local/bin:${PATH}"
+
 # Check if Alembic is installed and available
 if ! command -v alembic &> /dev/null
 then
     echo "❌ Alembic not found! Installing..."
-    pip install --no-cache-dir alembic==1.13.1
+    pip install --no-cache-dir --upgrade pip setuptools wheel
+    pip install --no-cache-dir \
+        alembic==1.13.1 \
+        psycopg2-binary>=2.9.9 \
+        SQLAlchemy>=2.0.15 \
+        python-dotenv>=1.0.0
+    
+    # Verify installation
     if ! command -v alembic &> /dev/null
     then
-        echo "❌ Failed to install Alembic. Exiting."
+        echo "❌ Failed to install Alembic. Checking installation details..."
+        pip show alembic
+        echo "Current PATH: $PATH"
+        echo "Alembic location: $(find / -name alembic 2>/dev/null)"
         exit 1
     fi
     echo "✅ Alembic installed successfully!"
 fi
+
+# Verify Alembic version
+ALEMBIC_VERSION=$(alembic --version)
+echo "Using Alembic version: $ALEMBIC_VERSION"
 
 # Ensure PORT is set
 export PORT=${PORT:-3000}
