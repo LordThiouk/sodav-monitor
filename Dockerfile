@@ -10,8 +10,8 @@ RUN npm run build
 # Build stage for backend
 FROM python:3.9.18-slim-bullseye
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies in a single layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     libpq-dev \
     gcc \
@@ -58,26 +58,29 @@ RUN mkdir -p /app/backend/logs && chmod 777 /app/backend/logs
 # Update pip and install build tools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install core dependencies with better error handling
+# Install core dependencies in a single layer with explicit versions
 RUN echo "Installing core dependencies..." && \
-    pip install --no-cache-dir uvicorn==0.22.0 && \
-    pip install --no-cache-dir fastapi==0.95.2 && \
-    pip install --no-cache-dir python-dotenv==1.0.0 && \
-    pip install --no-cache-dir alembic==1.13.1 && \
-    pip install --no-cache-dir SQLAlchemy==2.0.15 && \
-    pip install --no-cache-dir psycopg2-binary==2.9.9 && \
-    pip install --no-cache-dir websockets==12.0 && \
-    pip install --no-cache-dir "python-jose[cryptography]==3.3.0" && \
-    pip install --no-cache-dir "passlib[bcrypt]==1.7.4" && \
-    pip install --no-cache-dir python-multipart==0.0.6 && \
-    pip install --no-cache-dir pydub==0.25.1 && \
-    pip install --no-cache-dir ffmpeg-python==0.2.0 && \
-    echo "Verifying installations..." && \
-    python3 -m pip show uvicorn && \
-    python3 -c "import uvicorn; print(f'uvicorn version: {uvicorn.__version__}')" && \
-    python3 -c "import fastapi; print(f'fastapi version: {fastapi.__version__}')" && \
-    python3 -c "import pydub; print(f'pydub version: {pydub.__version__}')" && \
-    echo "Core dependencies installed successfully"
+    pip install --no-cache-dir \
+    uvicorn==0.22.0 \
+    fastapi==0.95.2 \
+    python-dotenv==1.0.0 \
+    alembic==1.13.1 \
+    SQLAlchemy==2.0.15 \
+    psycopg2-binary==2.9.9 \
+    websockets==12.0 \
+    "python-jose[cryptography]==3.3.0" \
+    "passlib[bcrypt]==1.7.4" \
+    python-multipart==0.0.6 \
+    pydub==0.25.1 \
+    ffmpeg-python==0.2.0 \
+    && echo "Verifying core installations..." \
+    && python3 -m pip show uvicorn \
+    && python3 -c "import uvicorn; print(f'uvicorn version: {uvicorn.__version__}')" \
+    && python3 -c "import fastapi; print(f'fastapi version: {fastapi.__version__}')" \
+    && python3 -c "import alembic; print(f'alembic version: {alembic.__version__}')" \
+    && python3 -c "import jose; print(f'python-jose version: {jose.__version__}')" \
+    && python3 -c "import passlib; print(f'passlib version: {passlib.__version__}')" \
+    && echo "Core dependencies installed successfully"
 
 # Install scientific computing dependencies
 RUN pip install --no-cache-dir \
@@ -95,10 +98,6 @@ RUN for i in {1..3}; do \
     email-validator>=2.0.0 \
     requests>=2.31.0 \
     pydantic>=1.10.8 \
-    pydub>=0.25.1 \
-    ffmpeg-python>=0.2.0 \
-    musicbrainzngs>=0.7.1 \
-    pyacoustid>=1.2.0 \
     av>=10.0.0 \
     redis>=5.0.1 \
     aiohttp>=3.9.1 \
@@ -118,6 +117,7 @@ RUN mkdir -p ~/.local/bin && \
     python3 -c "import fastapi; print('fastapi version:', fastapi.__version__)" && \
     python3 -c "import alembic; print('alembic version:', alembic.__version__)" && \
     python3 -c "import sqlalchemy; print('sqlalchemy version:', sqlalchemy.__version__)" && \
+    python3 -c "import jose; print('python-jose version:', jose.__version__)" && \
     alembic --version
 
 # Copy backend files

@@ -5,38 +5,73 @@ set -e
 # Ensure correct PATH
 export PATH="/usr/local/bin:/root/.local/bin:${PATH}"
 
-# Check core dependencies
-echo "Checking core dependencies..."
-for pkg in uvicorn fastapi alembic sqlalchemy jose passlib pydub; do
+# Function to verify package installation
+verify_package() {
+    local pkg=$1
+    local version_cmd=$2
+    echo "Verifying $pkg installation..."
     if ! python3 -c "import $pkg" &> /dev/null; then
-        echo "❌ $pkg not found! Installing core dependencies..."
-        echo "Installing core dependencies one by one..."
-        pip install --no-cache-dir uvicorn==0.22.0 || true
-        pip install --no-cache-dir fastapi==0.95.2 || true
-        pip install --no-cache-dir python-dotenv==1.0.0 || true
-        pip install --no-cache-dir alembic==1.13.1 || true
-        pip install --no-cache-dir SQLAlchemy==2.0.15 || true
-        pip install --no-cache-dir psycopg2-binary==2.9.9 || true
-        pip install --no-cache-dir websockets==12.0 || true
-        pip install --no-cache-dir "python-jose[cryptography]==3.3.0" || true
-        pip install --no-cache-dir "passlib[bcrypt]==1.7.4" || true
-        pip install --no-cache-dir python-multipart==0.0.6 || true
-        pip install --no-cache-dir pydub==0.25.1 || true
-        pip install --no-cache-dir ffmpeg-python==0.2.0 || true
-        
-        # Verify installations
-        echo "Verifying installations..."
-        for pkg in uvicorn fastapi alembic sqlalchemy jose passlib pydub; do
-            if ! python3 -c "import $pkg" &> /dev/null; then
-                echo "❌ Failed to install $pkg"
-                pip show $pkg || true
-            else
-                echo "✅ $pkg installed successfully"
-            fi
-        done
+        echo "❌ $pkg not found!"
+        return 1
+    fi
+    if [ -n "$version_cmd" ]; then
+        echo "✅ $pkg version: $(python3 -c "$version_cmd" 2>/dev/null || echo 'version check failed')"
+    else
+        echo "✅ $pkg is installed"
+    fi
+    return 0
+}
+
+# Check core dependencies with better error handling
+echo "Checking core dependencies..."
+PACKAGES=(
+    "uvicorn:print(__import__('uvicorn').__version__)"
+    "fastapi:print(__import__('fastapi').__version__)"
+    "alembic:print(__import__('alembic').__version__)"
+    "sqlalchemy:print(__import__('sqlalchemy').__version__)"
+    "jose:print(__import__('jose').__version__)"
+    "passlib:print(__import__('passlib').__version__)"
+    "pydub:print(__import__('pydub').__version__)"
+)
+
+INSTALL_NEEDED=false
+for pkg_info in "${PACKAGES[@]}"; do
+    pkg="${pkg_info%%:*}"
+    version_cmd="${pkg_info#*:}"
+    if ! verify_package "$pkg" "$version_cmd"; then
+        INSTALL_NEEDED=true
         break
     fi
 done
+
+if [ "$INSTALL_NEEDED" = true ]; then
+    echo "Installing missing dependencies..."
+    pip install --no-cache-dir \
+        uvicorn==0.22.0 \
+        fastapi==0.95.2 \
+        python-dotenv==1.0.0 \
+        alembic==1.13.1 \
+        SQLAlchemy==2.0.15 \
+        psycopg2-binary==2.9.9 \
+        websockets==12.0 \
+        "python-jose[cryptography]==3.3.0" \
+        "passlib[bcrypt]==1.7.4" \
+        python-multipart==0.0.6 \
+        pydub==0.25.1 \
+        ffmpeg-python==0.2.0
+    
+    # Verify installations again
+    echo "Verifying installations after install..."
+    for pkg_info in "${PACKAGES[@]}"; do
+        pkg="${pkg_info%%:*}"
+        version_cmd="${pkg_info#*:}"
+        if ! verify_package "$pkg" "$version_cmd"; then
+            echo "❌ Failed to install $pkg"
+            pip show $pkg || true
+            exit 1
+        fi
+    done
+fi
 
 # Verify uvicorn installation
 if ! command -v uvicorn &> /dev/null; then
