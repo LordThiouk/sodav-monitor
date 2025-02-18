@@ -5,6 +5,32 @@ set -e
 # Ensure correct PATH
 export PATH="/usr/local/bin:/root/.local/bin:${PATH}"
 
+# Check core dependencies
+echo "Checking core dependencies..."
+for pkg in uvicorn fastapi alembic sqlalchemy; do
+    if ! python3 -c "import $pkg" &> /dev/null; then
+        echo "❌ $pkg not found! Installing core dependencies..."
+        pip install --no-cache-dir \
+            uvicorn==0.22.0 \
+            fastapi==0.95.2 \
+            python-dotenv==1.0.0 \
+            alembic==1.13.1 \
+            SQLAlchemy==2.0.15 \
+            psycopg2-binary==2.9.9 \
+            websockets==12.0
+        break
+    fi
+done
+
+# Verify uvicorn installation
+if ! command -v uvicorn &> /dev/null; then
+    echo "❌ uvicorn command not found. Checking installation..."
+    pip show uvicorn
+    echo "Current PATH: $PATH"
+    echo "uvicorn location: $(find / -name uvicorn 2>/dev/null)"
+    exit 1
+fi
+
 # Check if Alembic is installed and available
 if ! command -v alembic &> /dev/null
 then

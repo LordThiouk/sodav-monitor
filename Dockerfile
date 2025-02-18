@@ -55,15 +55,17 @@ ENV PATH="/usr/local/bin:/root/.local/bin:${PATH}"
 # Update pip and install build tools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Copy backend files first to ensure proper module resolution
-COPY backend/ ./
-COPY backend/migrations ./migrations/
-RUN chmod -R 755 migrations
+# Install core dependencies first
+RUN pip install --no-cache-dir \
+    uvicorn==0.22.0 \
+    fastapi==0.95.2 \
+    python-dotenv==1.0.0 \
+    alembic==1.13.1 \
+    SQLAlchemy==2.0.15 \
+    psycopg2-binary==2.9.9 \
+    websockets==12.0
 
-# Copy requirements and install dependencies
-COPY backend/requirements.txt ./
-
-# Install scientific computing dependencies first with specific versions
+# Install scientific computing dependencies
 RUN pip install --no-cache-dir \
     numpy==1.23.5 \
     scipy==1.11.0 \
@@ -72,16 +74,9 @@ RUN pip install --no-cache-dir \
     librosa==0.10.0 \
     llvmlite==0.39.1
 
-# Install all Python dependencies with retry mechanism
+# Install remaining dependencies with retry mechanism
 RUN for i in {1..3}; do \
     pip install --no-cache-dir \
-    python-dotenv>=1.0.0 \
-    alembic==1.13.1 \
-    psycopg2-binary>=2.9.9 \
-    SQLAlchemy>=2.0.15 \
-    uvicorn>=0.22.0 \
-    fastapi>=0.95.2 \
-    websockets>=12.0 \
     python-jose[cryptography]>=3.3.0 \
     passlib[bcrypt]>=1.7.4 \
     aioredis>=2.0.0 \
@@ -101,6 +96,21 @@ RUN for i in {1..3}; do \
     psutil>=5.9.0 \
     -r requirements.txt && break || sleep 2; \
     done
+
+# Verify core installations
+RUN python -c "import uvicorn; print('uvicorn version:', uvicorn.__version__)" && \
+    python -c "import fastapi; print('fastapi version:', fastapi.__version__)" && \
+    python -c "import alembic; print('alembic version:', alembic.__version__)" && \
+    python -c "import sqlalchemy; print('sqlalchemy version:', sqlalchemy.__version__)" && \
+    alembic --version
+
+# Copy backend files first to ensure proper module resolution
+COPY backend/ ./
+COPY backend/migrations ./migrations/
+RUN chmod -R 755 migrations
+
+# Copy requirements and install dependencies
+COPY backend/requirements.txt ./
 
 # Install and verify Alembic with all dependencies
 RUN pip install --no-cache-dir \
