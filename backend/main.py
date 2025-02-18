@@ -153,34 +153,27 @@ async def startup_event():
     """Initialize services on startup"""
     try:
         # Initialize Redis
-        await init_redis()
-        logger.info("Redis initialized successfully")
+        redis_instance = await init_redis()
+        if not redis_instance:
+            logger.warning("Redis is not available. Some features may be limited.")
         
-        # Start WebSocket listener
-        asyncio.create_task(manager.start_listener())
-        logger.info("WebSocket listener started")
+        # Initialize other services
+        await initialize_music_recognition()
+        await initialize_audio_processor()
+        
+        logger.info("Application startup completed successfully")
         
     except Exception as e:
         logger.error(f"Error during startup: {str(e)}")
-        raise
+        # Don't raise the exception, allow the application to start with limited functionality
+        logger.warning("Application will start with limited functionality")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
     try:
-        # Close Redis connection
         await close_redis()
-        logger.info("Redis connection closed")
-        
-        # Stop WebSocket listener
-        await manager.stop_listener()
-        logger.info("WebSocket listener stopped")
-        
-        # Close database connection
-        if SessionLocal():
-            SessionLocal().close()
-            logger.info("Database connection closed")
-            
+        logger.info("Application shutdown completed")
     except Exception as e:
         logger.error(f"Error during shutdown: {str(e)}")
 
