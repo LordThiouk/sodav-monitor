@@ -66,7 +66,10 @@ RUN pip install --no-cache-dir \
     alembic==1.13.1 \
     SQLAlchemy==2.0.15 \
     psycopg2-binary==2.9.9 \
-    websockets==12.0 && \
+    websockets==12.0 \
+    python-jose[cryptography]==3.3.0 \
+    passlib[bcrypt]==1.7.4 \
+    python-multipart==0.0.6 && \
     python3 -m pip show uvicorn && \
     python3 -c "import uvicorn; print(f'uvicorn version: {uvicorn.__version__}')" && \
     python3 -c "import fastapi; print(f'fastapi version: {fastapi.__version__}')"
@@ -83,10 +86,7 @@ RUN pip install --no-cache-dir \
 # Install remaining dependencies with retry mechanism
 RUN for i in {1..3}; do \
     pip install --no-cache-dir \
-    python-jose[cryptography]>=3.3.0 \
-    passlib[bcrypt]>=1.7.4 \
     aioredis>=2.0.0 \
-    python-multipart>=0.0.6 \
     email-validator>=2.0.0 \
     requests>=2.31.0 \
     pydantic>=1.10.8 \
