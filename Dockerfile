@@ -42,9 +42,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /run/nginx \
     && mkdir -p /var/log/nginx \
     && mkdir -p /var/lib/nginx \
-    && chown -R www-data:www-data /run/nginx \
-    && chown -R www-data:www-data /var/log/nginx \
-    && chown -R www-data:www-data /var/lib/nginx
+    && groupadd -r nginx \
+    && useradd -r -g nginx nginx \
+    && chown -R nginx:nginx /run/nginx \
+    && chown -R nginx:nginx /var/log/nginx \
+    && chown -R nginx:nginx /var/lib/nginx
 
 # Set working directory and Python environment
 WORKDIR /app/backend
