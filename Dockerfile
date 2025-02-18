@@ -52,10 +52,13 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONIOENCODING=utf-8
 ENV PATH="/usr/local/bin:/root/.local/bin:${PATH}"
 
+# Create log directory
+RUN mkdir -p /app/backend/logs && chmod 777 /app/backend/logs
+
 # Update pip and install build tools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install core dependencies first
+# Install core dependencies first with explicit versions
 RUN pip install --no-cache-dir \
     uvicorn==0.22.0 \
     fastapi==0.95.2 \
@@ -63,7 +66,10 @@ RUN pip install --no-cache-dir \
     alembic==1.13.1 \
     SQLAlchemy==2.0.15 \
     psycopg2-binary==2.9.9 \
-    websockets==12.0
+    websockets==12.0 && \
+    python3 -m pip show uvicorn && \
+    python3 -c "import uvicorn; print(f'uvicorn version: {uvicorn.__version__}')" && \
+    python3 -c "import fastapi; print(f'fastapi version: {fastapi.__version__}')"
 
 # Install scientific computing dependencies
 RUN pip install --no-cache-dir \
@@ -97,44 +103,25 @@ RUN for i in {1..3}; do \
     -r requirements.txt && break || sleep 2; \
     done
 
-# Verify core installations
-RUN python -c "import uvicorn; print('uvicorn version:', uvicorn.__version__)" && \
-    python -c "import fastapi; print('fastapi version:', fastapi.__version__)" && \
-    python -c "import alembic; print('alembic version:', alembic.__version__)" && \
-    python -c "import sqlalchemy; print('sqlalchemy version:', sqlalchemy.__version__)" && \
+# Verify core installations and create necessary directories
+RUN mkdir -p ~/.local/bin && \
+    echo "export PATH=/usr/local/bin:/root/.local/bin:${PATH}" >> ~/.bashrc && \
+    echo "export PATH=/usr/local/bin:/root/.local/bin:${PATH}" >> ~/.profile && \
+    . ~/.bashrc && \
+    python3 -m pip show uvicorn && \
+    python3 -c "import uvicorn; print('uvicorn version:', uvicorn.__version__)" && \
+    python3 -c "import fastapi; print('fastapi version:', fastapi.__version__)" && \
+    python3 -c "import alembic; print('alembic version:', alembic.__version__)" && \
+    python3 -c "import sqlalchemy; print('sqlalchemy version:', sqlalchemy.__version__)" && \
     alembic --version
 
-# Copy backend files first to ensure proper module resolution
+# Copy backend files
 COPY backend/ ./
 COPY backend/migrations ./migrations/
 RUN chmod -R 755 migrations
 
-# Copy requirements and install dependencies
-COPY backend/requirements.txt ./
-
-# Install and verify Alembic with all dependencies
-RUN pip install --no-cache-dir \
-    alembic==1.13.1 \
-    psycopg2-binary>=2.9.9 \
-    SQLAlchemy>=2.0.15 \
-    python-dotenv>=1.0.0 && \
-    pip show alembic && \
-    mkdir -p ~/.local/bin && \
-    echo "export PATH=/usr/local/bin:/root/.local/bin:${PATH}" >> ~/.bashrc && \
-    . ~/.bashrc && \
-    which alembic && \
-    alembic --version
-
-# Verify installations
-RUN python -c "import librosa; print('librosa version:', librosa.__version__)" && \
-    python -c "import numpy; print('numpy version:', numpy.__version__)" && \
-    python -c "import scipy; print('scipy version:', scipy.__version__)" && \
-    alembic --version
-
-# Copy frontend build from build stage
+# Copy frontend build and configuration files
 COPY --from=frontend-build /app/frontend/build /app/frontend/build
-
-# Copy configuration files
 COPY start.sh /app/start.sh
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
@@ -142,20 +129,20 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN chmod +x /app/start.sh && \
     sed -i 's/\r$//' /app/start.sh
 
-# Set remaining environment variables
+# Set environment variables
 ENV PORT=3000
 ENV API_PORT=8000
 ENV DEBUG=False
 ENV NODE_ENV=production
 
-# Expose the ports
+# Expose ports
 EXPOSE ${PORT}
 EXPOSE ${API_PORT}
 
-# Add healthcheck with improved configuration
+# Add healthcheck
 HEALTHCHECK --interval=30s --timeout=60s --start-period=120s --retries=3 \
     CMD curl -f -H "X-Startup-Check: true" "http://localhost:${PORT}/api/health" || exit 1
 
-# Start the application using the start.sh script
+# Start the application
 WORKDIR /app
 CMD ["./start.sh"] 

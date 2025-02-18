@@ -24,12 +24,21 @@ done
 
 # Verify uvicorn installation
 if ! command -v uvicorn &> /dev/null; then
-    echo "❌ uvicorn command not found. Checking installation..."
-    pip show uvicorn
-    echo "Current PATH: $PATH"
-    echo "uvicorn location: $(find / -name uvicorn 2>/dev/null)"
-    exit 1
+    echo "❌ uvicorn command not found. Installing..."
+    pip install --no-cache-dir uvicorn==0.22.0
+    
+    if ! command -v uvicorn &> /dev/null; then
+        echo "❌ Failed to install uvicorn. Checking installation details..."
+        pip show uvicorn
+        echo "Current PATH: $PATH"
+        echo "Python executable: $(which python3)"
+        echo "Pip executable: $(which pip)"
+        echo "uvicorn location: $(find / -name uvicorn 2>/dev/null)"
+        exit 1
+    fi
 fi
+
+echo "✅ uvicorn is installed and available"
 
 # Check if Alembic is installed and available
 if ! command -v alembic &> /dev/null
@@ -166,43 +175,58 @@ echo "✅ Database migrations applied successfully"
 # Set Python path
 export PYTHONPATH=/app/backend:$PYTHONPATH
 
-# Kill any existing processes
-pkill -f "uvicorn main:app" || true
-pkill nginx || true
+# Kill any existing processes more gracefully
+echo "Checking for existing processes..."
+if pgrep -f "uvicorn main:app" > /dev/null; then
+    echo "🔄 Stopping existing Uvicorn process..."
+    pkill -f "uvicorn main:app" || true
+    sleep 2
+fi
 
-# Start the FastAPI application with better logging
+if pgrep nginx > /dev/null; then
+    echo "🔄 Stopping existing Nginx process..."
+    pkill nginx || true
+    sleep 2
+fi
+
+# Start the FastAPI application with better logging and error handling
 cd /app/backend
 echo "Starting FastAPI application..."
 python3 -m uvicorn main:app --host 0.0.0.0 --port $API_PORT --workers 1 --log-level debug --timeout-keep-alive 120 &
 FASTAPI_PID=$!
 
-# Wait for FastAPI to start with increased timeout and better health check
+# Wait for FastAPI to start with improved health check
 echo "Waiting for FastAPI to start..."
-for i in {1..120}; do
+HEALTH_CHECK_TIMEOUT=120
+HEALTH_CHECK_INTERVAL=2
+ATTEMPTS=$((HEALTH_CHECK_TIMEOUT / HEALTH_CHECK_INTERVAL))
+
+for i in $(seq 1 $ATTEMPTS); do
+    if ! ps -p $FASTAPI_PID > /dev/null; then
+        echo "❌ Error: FastAPI process died unexpectedly"
+        exit 1
+    fi
+    
     HEALTH_RESPONSE=$(curl -s -H "X-Startup-Check: true" "http://127.0.0.1:$API_PORT/api/health" || true)
     if [[ "$HEALTH_RESPONSE" == *"healthy"* ]] || [[ "$HEALTH_RESPONSE" == *"ok"* ]] || [[ "$HEALTH_RESPONSE" == *"starting"* ]]; then
         echo "✅ FastAPI is running on port $API_PORT!"
         break
     fi
     
-    if [ $i -eq 120 ]; then
-        echo "❌ Error: FastAPI did not start properly"
+    if [ $i -eq $ATTEMPTS ]; then
+        echo "❌ Error: FastAPI did not start properly after $HEALTH_CHECK_TIMEOUT seconds"
         echo "Health check response: $HEALTH_RESPONSE"
+        echo "FastAPI logs:"
+        tail -n 50 /app/backend/logs/fastapi.log || true
         if [ -n "$FASTAPI_PID" ]; then
             kill $FASTAPI_PID || true
         fi
         exit 1
     fi
     
-    echo "⏳ Waiting for FastAPI... attempt $i/120"
-    sleep 2
+    echo "⏳ Waiting for FastAPI... attempt $i/$ATTEMPTS"
+    sleep $HEALTH_CHECK_INTERVAL
 done
-
-# Verify FastAPI is actually running
-if ! ps -p $FASTAPI_PID > /dev/null; then
-    echo "❌ Error: FastAPI process is not running"
-    exit 1
-fi
 
 # Ensure nginx directories exist with proper permissions
 echo "Setting up nginx directories..."
