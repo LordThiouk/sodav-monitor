@@ -48,7 +48,8 @@ RUN pip install --no-cache-dir \
     SQLAlchemy>=2.0.15 \
     uvicorn>=0.22.0 \
     fastapi>=0.95.2 \
-    websockets>=12.0
+    websockets>=12.0 \
+    python-jose[cryptography]>=3.3.0
 
 # Copy requirements first for better caching
 COPY backend/requirements.txt ./
