@@ -145,6 +145,24 @@ db_session = SessionLocal()
 music_recognizer = MusicRecognizer(db_session=db_session)
 processor = AudioProcessor(db_session=db_session, music_recognizer=music_recognizer)
 
+async def initialize_music_recognition():
+    """Initialize music recognition service"""
+    try:
+        await music_recognizer.initialize()
+        logger.info("Music recognition service initialized")
+    except Exception as e:
+        logger.error(f"Error initializing music recognition: {str(e)}")
+        raise
+
+async def initialize_audio_processor():
+    """Initialize audio processor service"""
+    try:
+        await processor.initialize()
+        logger.info("Audio processor service initialized")
+    except Exception as e:
+        logger.error(f"Error initializing audio processor: {str(e)}")
+        raise
+
 # Store active connections
 active_connections: List[WebSocket] = []
 

@@ -2,13 +2,14 @@ import aioredis
 import os
 from typing import Optional
 import logging
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
 # Global Redis instance
 redis: Optional[aioredis.Redis] = None
 
-async def init_redis() -> aioredis.Redis:
+async def init_redis() -> Optional[aioredis.Redis]:
     """Initialize Redis connection"""
     global redis
     try:
@@ -26,10 +27,21 @@ async def init_redis() -> aioredis.Redis:
             else:
                 redis_url = f"redis://{redis_host}:{redis_port}/{redis_db}"
 
+        # Parse Redis URL to validate format
+        parsed_url = urlparse(redis_url)
+        if not all([parsed_url.hostname, parsed_url.port]):
+            raise ValueError("Invalid Redis URL format")
+
         # Mask password for logging
-        masked_url = redis_url.replace(os.getenv("REDIS_PASSWORD", ""), "***") if os.getenv("REDIS_PASSWORD") else redis_url
+        masked_url = redis_url
+        if "@" in redis_url:
+            prefix, rest = redis_url.split("@", 1)
+            if ":" in prefix:
+                protocol, password = prefix.rsplit(":", 1)
+                masked_url = f"{protocol}:***@{rest}"
         logger.info(f"Connecting to Redis at {masked_url}")
         
+        # Configure Redis client with retry options
         redis = aioredis.from_url(
             redis_url,
             decode_responses=True,
@@ -37,7 +49,8 @@ async def init_redis() -> aioredis.Redis:
             socket_timeout=5.0,
             socket_connect_timeout=5.0,
             retry_on_timeout=True,
-            max_connections=10
+            max_connections=10,
+            retry=aioredis.Retry(3, backoff=1)
         )
         
         # Test the connection
@@ -45,17 +58,27 @@ async def init_redis() -> aioredis.Redis:
         logger.info("Successfully connected to Redis")
         return redis
         
+    except aioredis.ConnectionError as e:
+        logger.error(f"Redis connection error: {str(e)}")
+        logger.warning("Application will start without Redis functionality")
+        return None
     except Exception as e:
         logger.error(f"Failed to connect to Redis: {str(e)}")
-        # Don't raise the exception, allow the application to start without Redis
         logger.warning("Application will start without Redis functionality")
         return None
 
 async def get_redis() -> Optional[aioredis.Redis]:
     """Get Redis instance, initialize if not exists"""
+    global redis
     if redis is None:
         return await init_redis()
-    return redis
+    try:
+        # Test if connection is still alive
+        await redis.ping()
+        return redis
+    except:
+        # Connection lost, try to reconnect
+        return await init_redis()
 
 async def close_redis():
     """Close Redis connection"""
