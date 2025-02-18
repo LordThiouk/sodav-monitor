@@ -144,74 +144,43 @@ def get_db():
     finally:
         db.close()
 
-# Initialize MusicRecognizer and AudioProcessor
-db_session = SessionLocal()
-music_recognizer = MusicRecognizer(db_session=db_session)
-processor = AudioProcessor(db_session=db_session, music_recognizer=music_recognizer)
-
-async def initialize_music_recognition():
-    """Initialize music recognition service"""
-    try:
-        logger.info("Initializing MusicRecognizer")
-        db = SessionLocal()
-        music_recognizer = MusicRecognizer(db_session=db)
-        # Initialize directly since setup() doesn't exist
-        await music_recognizer.initialize()
-        logger.info("MusicRecognizer initialized successfully")
-        return music_recognizer
-    except Exception as e:
-        logger.error(f"Error initializing music recognition: {str(e)}")
-        raise
-
-async def initialize_audio_processor(music_recognizer):
-    """Initialize audio processor service"""
-    try:
-        logger.info(f"Initializing AudioProcessor")
-        db = SessionLocal()
-        audio_processor = AudioProcessor(db_session=db, music_recognizer=music_recognizer)
-        # Initialize directly since setup() doesn't exist
-        await audio_processor.initialize()
-        logger.info("AudioProcessor initialized successfully")
-        return audio_processor
-    except Exception as e:
-        logger.error(f"Error initializing audio processor: {str(e)}")
-        raise
-
-# Store active connections
-active_connections: List[WebSocket] = []
+# Initialize services
+db = SessionLocal()
+music_recognizer = None
+processor = None
 
 @app.on_event("startup")
 async def startup_event():
     """Application startup event handler"""
     try:
+        global music_recognizer, processor
+        
         # Initialize Redis
         app.state.redis = await init_redis()
         if not app.state.redis:
             logger.warning("Redis is not available. Some features may be limited.")
 
-        # Initialize services with graceful degradation
+        # Initialize MusicRecognizer
         try:
-            app.state.music_recognizer = await initialize_music_recognition()
+            db = SessionLocal()
+            music_recognizer = MusicRecognizer(db_session=db)
+            await music_recognizer.initialize()
+            logger.info("MusicRecognizer initialized successfully")
         except Exception as e:
-            logger.error(f"Error initializing music recognition: {str(e)}")
-            app.state.music_recognizer = None
+            logger.error(f"Error initializing MusicRecognizer: {str(e)}")
+            raise
 
+        # Initialize AudioProcessor
         try:
-            if app.state.music_recognizer:
-                app.state.audio_processor = await initialize_audio_processor(app.state.music_recognizer)
-            else:
-                logger.warning("Skipping AudioProcessor initialization due to missing MusicRecognizer")
-                app.state.audio_processor = None
+            processor = AudioProcessor(db_session=db, music_recognizer=music_recognizer)
+            logger.info("AudioProcessor initialized successfully")
         except Exception as e:
-            logger.error(f"Error initializing audio processor: {str(e)}")
-            app.state.audio_processor = None
-
-        if not app.state.music_recognizer or not app.state.audio_processor:
-            logger.warning("Application will start with limited functionality")
+            logger.error(f"Error initializing AudioProcessor: {str(e)}")
+            raise
 
     except Exception as e:
         logger.error(f"Error during startup: {str(e)}")
-        logger.warning("Application will start with limited functionality")
+        raise
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -1500,6 +1469,12 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
 async def detect_music_all_stations(db: Session = Depends(get_db)):
     """Detect music from all active stations"""
     try:
+        if not processor or not music_recognizer:
+            raise HTTPException(
+                status_code=500,
+                detail="Audio processing services not initialized"
+            )
+            
         # Initialize RadioManager with AudioProcessor
         radio_manager = RadioManager(db_session=db, audio_processor=processor)
         
