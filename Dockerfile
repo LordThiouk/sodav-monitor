@@ -73,6 +73,8 @@ RUN echo "Installing core dependencies..." && \
     python-multipart==0.0.6 \
     pydub==0.25.1 \
     ffmpeg-python==0.2.0 \
+    musicbrainzngs==0.7.1 \
+    pyacoustid==1.2.0 \
     && echo "Verifying core installations..." \
     && python3 -m pip show uvicorn \
     && python3 -c "import uvicorn; print(f'uvicorn version: {uvicorn.__version__}')" \
@@ -80,6 +82,7 @@ RUN echo "Installing core dependencies..." && \
     && python3 -c "import alembic; print(f'alembic version: {alembic.__version__}')" \
     && python3 -c "import jose; print(f'python-jose version: {jose.__version__}')" \
     && python3 -c "import passlib; print(f'passlib version: {passlib.__version__}')" \
+    && python3 -c "import musicbrainzngs; print(f'musicbrainzngs version: {musicbrainzngs.__version__}')" \
     && echo "Core dependencies installed successfully"
 
 # Install scientific computing dependencies

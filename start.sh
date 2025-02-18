@@ -32,6 +32,7 @@ PACKAGES=(
     "jose:print(__import__('jose').__version__)"
     "passlib:print(__import__('passlib').__version__)"
     "pydub:print(__import__('pydub').__version__)"
+    "musicbrainzngs:print(__import__('musicbrainzngs').__version__)"
 )
 
 INSTALL_NEEDED=false
@@ -58,7 +59,9 @@ if [ "$INSTALL_NEEDED" = true ]; then
         "passlib[bcrypt]==1.7.4" \
         python-multipart==0.0.6 \
         pydub==0.25.1 \
-        ffmpeg-python==0.2.0
+        ffmpeg-python==0.2.0 \
+        musicbrainzngs==0.7.1 \
+        pyacoustid==1.2.0
     
     # Verify installations again
     echo "Verifying installations after install..."
