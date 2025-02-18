@@ -44,5 +44,4 @@ psutil>=5.9.0
 
 # Redis
 aioredis>=2.0.0
-fastapi-redis>=0.4.0
 redis>=4.5.1
