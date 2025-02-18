@@ -5,12 +5,14 @@ from typing import List, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 from models import RadioStation
+from audio_processor import AudioProcessor
 
 class RadioManager:
-    def __init__(self, db_session: Session):
+    def __init__(self, db_session: Session, audio_processor: AudioProcessor = None):
         self.db_session = db_session
         self.api_base_url = "https://de1.api.radio-browser.info/json"
         self.logger = logging.getLogger(__name__)
+        self.audio_processor = audio_processor
 
     async def update_station_list(self, country: str = None, language: str = None) -> None:
         """Update the radio station list from RadioBrowser API."""
@@ -89,3 +91,41 @@ class RadioManager:
         station.is_active = is_active
         station.last_checked = datetime.utcnow()
         self.db_session.commit()
+
+    async def detect_music(self, station_id: int = None) -> Dict:
+        """Detect music from a station or all active stations."""
+        try:
+            if station_id:
+                station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
+                if not station:
+                    raise ValueError("Station not found")
+                stations = [station]
+            else:
+                stations = await self.get_active_stations()
+
+            results = []
+            for station in stations:
+                try:
+                    if not self.audio_processor:
+                        raise ValueError("AudioProcessor not initialized")
+                        
+                    result = await self.audio_processor.analyze_stream(station.stream_url, station.id)
+                    if result:
+                        results.append({
+                            "station_id": station.id,
+                            "station_name": station.name,
+                            "detection": result
+                        })
+                except Exception as e:
+                    self.logger.error(f"Error detecting music for station {station.name}: {str(e)}")
+                    continue
+
+            return {
+                "status": "success",
+                "message": f"Analyzed {len(stations)} stations",
+                "detections": results
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error in detect_music: {str(e)}")
+            raise

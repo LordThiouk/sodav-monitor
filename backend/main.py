@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks, UploadFile, File, Depends, status
+from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks, UploadFile, File, Depends, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -562,6 +562,8 @@ async def get_detections(
     station_id: Optional[int] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
+    limit: Optional[int] = Query(10, ge=1, le=100, description="Number of detections to return"),
+    offset: Optional[int] = Query(0, ge=0, description="Number of detections to skip"),
     db: Session = Depends(get_db)
 ):
     """Get track detections, optionally filtered by station and date range"""
@@ -580,11 +582,22 @@ async def get_detections(
         if end_date:
             query = query.filter(TrackDetection.detected_at <= end_date)
         
-        # Get detections ordered by most recent first
-        detections = query.order_by(TrackDetection.detected_at.desc()).all()
+        # Get total count before pagination
+        total_count = query.count()
+        
+        # Apply pagination
+        query = query.order_by(TrackDetection.detected_at.desc())\
+                    .offset(offset)\
+                    .limit(limit)
+        
+        # Get detections
+        detections = query.all()
         
         # Format response
         return {
+            "total": total_count,
+            "offset": offset,
+            "limit": limit,
             "detections": [
                 {
                     "id": d.id,
@@ -1487,32 +1500,12 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
 async def detect_music_all_stations(db: Session = Depends(get_db)):
     """Detect music from all active stations"""
     try:
-        # Get all active stations
-        stations = db.query(RadioStation).filter(RadioStation.is_active == True).all()
+        # Initialize RadioManager with AudioProcessor
+        radio_manager = RadioManager(db_session=db, audio_processor=processor)
         
-        if not stations:
-            raise HTTPException(status_code=404, detail="No active stations found")
-        
-        results = []
-        for station in stations:
-            try:
-                # Analyze stream
-                result = await processor.analyze_stream(station.stream_url, station.id)
-                if result:
-                    results.append({
-                        "station_id": station.id,
-                        "station_name": station.name,
-                        "detection": result
-                    })
-            except Exception as e:
-                logger.error(f"Error detecting music for station {station.name}: {str(e)}")
-                continue
-        
-        return {
-            "status": "success",
-            "message": f"Analyzed {len(stations)} stations",
-            "detections": results
-        }
+        # Detect music using RadioManager
+        results = await radio_manager.detect_music()
+        return results
         
     except Exception as e:
         logger.error(f"Error in detect_music_all_stations: {str(e)}")
