@@ -39,13 +39,22 @@ RUN apt-get update && apt-get install -y \
     && chown -R www-data:www-data /var/log/nginx \
     && chown -R www-data:www-data /var/lib/nginx
 
-# Set working directory
+# Set working directory and Python environment
 WORKDIR /app/backend
+ENV PYTHONPATH=/app/backend
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONIOENCODING=utf-8
 
 # Update pip and install build tools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Copy requirements first for better caching
+# Copy backend files first to ensure proper module resolution
+COPY backend/ ./
+COPY backend/migrations ./migrations/
+RUN chmod -R 755 migrations
+
+# Copy requirements and install dependencies
 COPY backend/requirements.txt ./
 
 # Install scientific computing dependencies first
@@ -90,10 +99,10 @@ RUN pip install --no-cache-dir alembic>=1.13.1 && \
     ln -sf $(which alembic) /usr/local/bin/alembic && \
     chmod +x /usr/local/bin/alembic
 
-# Copy backend files with explicit handling of migrations
-COPY backend/ ./
-COPY backend/migrations ./migrations/
-RUN chmod -R 755 migrations
+# Verify Python environment
+RUN python -c "import sys; print(sys.path)" && \
+    python -c "import os; print(os.environ.get('PYTHONPATH'))" && \
+    python -c "import main" || echo "Main module not found"
 
 # Copy frontend build from build stage
 COPY --from=frontend-build /app/frontend/build /app/frontend/build
@@ -106,9 +115,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN chmod +x /app/start.sh && \
     sed -i 's/\r$//' /app/start.sh
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app/backend
+# Set remaining environment variables
 ENV PORT=3000
 ENV API_PORT=8000
 ENV DEBUG=False
