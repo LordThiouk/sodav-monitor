@@ -27,6 +27,7 @@ class MusicRecognizer:
         """Initialize music recognizer with API key"""
         self.db_session = db_session
         self.audd_api_key = audd_api_key or os.getenv('AUDD_API_KEY')
+        self.initialized = False
         logger.info("Initializing MusicRecognizer")
         
         # Initialize MusicBrainz
@@ -38,7 +39,65 @@ class MusicRecognizer:
         
         if not self.audd_api_key:
             logger.warning("AudD API key not found")
-    
+
+    async def initialize(self) -> None:
+        """Initialize the music recognizer service"""
+        try:
+            if self.initialized:
+                logger.info("MusicRecognizer already initialized")
+                return
+
+            logger.info("Starting MusicRecognizer initialization...")
+            
+            # Test AudD API connection
+            if self.audd_api_key:
+                logger.info("Testing AudD API connection...")
+                try:
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(f'https://api.audd.io/test/?api_token={self.audd_api_key}') as response:
+                            if response.status == 200:
+                                logger.info("✅ AudD API connection successful")
+                            else:
+                                logger.warning(f"⚠️ AudD API test failed with status code: {response.status}")
+                except Exception as e:
+                    logger.error(f"❌ AudD API connection error: {str(e)}")
+                    # Don't raise here, we can still function with local database
+            else:
+                logger.warning("⚠️ No AudD API key provided, will use local database only")
+            
+            # Test MusicBrainz connection
+            logger.info("Testing MusicBrainz connection...")
+            try:
+                # Test with a known artist ID (Michael Jackson)
+                test_artist_id = 'f27ec8db-af05-4f36-916e-3d57f91ecf5e'
+                artist_info = musicbrainzngs.get_artist_by_id(test_artist_id)
+                if artist_info and artist_info.get('artist', {}).get('name'):
+                    logger.info("✅ MusicBrainz connection successful")
+                else:
+                    logger.warning("⚠️ MusicBrainz response format unexpected")
+            except Exception as e:
+                logger.error(f"❌ MusicBrainz test failed: {str(e)}")
+                # Don't raise here, we can still function with AudD
+            
+            # Test database connection
+            logger.info("Testing database connection...")
+            try:
+                # Try to query the Track table
+                self.db_session.query(Track).limit(1).all()
+                logger.info("✅ Database connection successful")
+            except Exception as e:
+                logger.error(f"❌ Database connection error: {str(e)}")
+                raise  # Database is critical, so we raise this error
+            
+            self.initialized = True
+            logger.info("✅ MusicRecognizer initialization completed successfully")
+            
+        except Exception as e:
+            error_msg = f"❌ Error during MusicRecognizer initialization: {str(e)}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
     @staticmethod
     def _calculate_audio_hash(audio_data: bytes) -> str:
         """Calculate a hash of the audio data for caching"""
