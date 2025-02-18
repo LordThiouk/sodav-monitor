@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y \
     libavformat-dev \
     libavutil-dev \
     libswscale-dev \
+    procps \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run/nginx \
     && mkdir -p /var/log/nginx \
@@ -44,7 +45,10 @@ RUN pip install --no-cache-dir \
     python-dotenv>=1.0.0 \
     alembic>=1.13.1 \
     psycopg2-binary>=2.9.9 \
-    SQLAlchemy>=2.0.15
+    SQLAlchemy>=2.0.15 \
+    uvicorn>=0.22.0 \
+    fastapi>=0.95.2 \
+    websockets>=12.0
 
 # Copy requirements first for better caching
 COPY backend/requirements.txt ./
