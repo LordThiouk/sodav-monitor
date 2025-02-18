@@ -10,7 +10,7 @@ RUN npm run build
 # Build stage for backend
 FROM python:3.9.18-slim-bullseye
 
-# Install system dependencies in a single layer
+# Install system dependencies in a single layer with better error handling
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     libpq-dev \
@@ -36,6 +36,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatlas-base-dev \
     gfortran \
     pkg-config \
+    build-essential \
+    libffi-dev \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run/nginx \
     && mkdir -p /var/log/nginx \
@@ -58,7 +60,7 @@ RUN mkdir -p /app/backend/logs && chmod 777 /app/backend/logs
 # Update pip and install build tools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install core dependencies in a single layer with explicit versions
+# Install core dependencies in a single layer with explicit versions and better error handling
 RUN echo "Installing core dependencies..." && \
     pip install --no-cache-dir \
     uvicorn==0.22.0 \
@@ -75,28 +77,12 @@ RUN echo "Installing core dependencies..." && \
     ffmpeg-python==0.2.0 \
     musicbrainzngs==0.7.1 \
     pyacoustid==1.2.0 \
-    && echo "Verifying core installations..." \
-    && python3 -m pip show uvicorn \
-    && python3 -c "import uvicorn; print(f'uvicorn version: {uvicorn.__version__}')" \
-    && python3 -c "import fastapi; print(f'fastapi version: {fastapi.__version__}')" \
-    && python3 -c "import alembic; print(f'alembic version: {alembic.__version__}')" \
-    && python3 -c "import jose; print(f'python-jose version: {jose.__version__}')" \
-    && python3 -c "import passlib; print(f'passlib version: {passlib.__version__}')" \
-    && python3 -c "import musicbrainzngs; print(f'musicbrainzngs version: {musicbrainzngs.__version__}')" \
-    && echo "Core dependencies installed successfully"
-
-# Install scientific computing dependencies
-RUN pip install --no-cache-dir \
     numpy==1.23.5 \
     scipy==1.11.0 \
     pandas==2.0.3 \
     numba==0.56.4 \
     librosa==0.10.0 \
-    llvmlite==0.39.1
-
-# Install remaining dependencies with retry mechanism
-RUN for i in {1..3}; do \
-    pip install --no-cache-dir \
+    llvmlite==0.39.1 \
     aioredis>=2.0.0 \
     email-validator>=2.0.0 \
     requests>=2.31.0 \
@@ -107,21 +93,17 @@ RUN for i in {1..3}; do \
     prometheus-client>=0.19.0 \
     typing-extensions>=4.5.0 \
     psutil>=5.9.0 \
-    -r requirements.txt && break || sleep 2; \
-    done
-
-# Verify core installations and create necessary directories
-RUN mkdir -p ~/.local/bin && \
-    echo "export PATH=/usr/local/bin:/root/.local/bin:${PATH}" >> ~/.bashrc && \
-    echo "export PATH=/usr/local/bin:/root/.local/bin:${PATH}" >> ~/.profile && \
-    . ~/.bashrc && \
-    python3 -m pip show uvicorn && \
-    python3 -c "import uvicorn; print('uvicorn version:', uvicorn.__version__)" && \
-    python3 -c "import fastapi; print('fastapi version:', fastapi.__version__)" && \
-    python3 -c "import alembic; print('alembic version:', alembic.__version__)" && \
-    python3 -c "import sqlalchemy; print('sqlalchemy version:', sqlalchemy.__version__)" && \
-    python3 -c "import jose; print('python-jose version:', jose.__version__)" && \
-    alembic --version
+    && echo "Core dependencies installed successfully" \
+    && python3 -m pip show uvicorn \
+    && python3 -c "import uvicorn; print(f'uvicorn version: {uvicorn.__version__}')" \
+    && python3 -c "import fastapi; print(f'fastapi version: {fastapi.__version__}')" \
+    && python3 -c "import alembic; print(f'alembic version: {alembic.__version__}')" \
+    && python3 -c "import jose; print(f'python-jose version: {jose.__version__}')" \
+    && python3 -c "import passlib; print(f'passlib version: {passlib.__version__}')" \
+    && python3 -c "import musicbrainzngs; print(f'musicbrainzngs version: {musicbrainzngs.__version__}')" \
+    && python3 -c "import numpy; print(f'numpy version: {numpy.__version__}')" \
+    && python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" \
+    && python3 -c "import librosa; print(f'librosa version: {librosa.__version__}')"
 
 # Copy backend files
 COPY backend/ ./

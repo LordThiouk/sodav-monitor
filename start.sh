@@ -33,6 +33,11 @@ PACKAGES=(
     "passlib:print(__import__('passlib').__version__)"
     "pydub:print(__import__('pydub').__version__)"
     "musicbrainzngs:print(__import__('musicbrainzngs').__version__)"
+    "numpy:print(__import__('numpy').__version__)"
+    "scipy:print(__import__('scipy').__version__)"
+    "librosa:print(__import__('librosa').__version__)"
+    "pandas:print(__import__('pandas').__version__)"
+    "numba:print(__import__('numba').__version__)"
 )
 
 INSTALL_NEEDED=false
@@ -61,7 +66,13 @@ if [ "$INSTALL_NEEDED" = true ]; then
         pydub==0.25.1 \
         ffmpeg-python==0.2.0 \
         musicbrainzngs==0.7.1 \
-        pyacoustid==1.2.0
+        pyacoustid==1.2.0 \
+        numpy==1.23.5 \
+        scipy==1.11.0 \
+        pandas==2.0.3 \
+        numba==0.56.4 \
+        librosa==0.10.0 \
+        llvmlite==0.39.1
     
     # Verify installations again
     echo "Verifying installations after install..."
