@@ -3,20 +3,19 @@
 FROM node:18-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci --only=production
 COPY frontend/ ./
 RUN npm run build
 
 # Build stage for backend
 FROM python:3.9.18-slim-bullseye
 
-# Install system dependencies in a single layer with better error handling
+# Install system dependencies and configure nginx in a single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     libpq-dev \
     gcc \
     python3-dev \
-    libopenal1 \
     ffmpeg \
     curl \
     nginx \
@@ -27,40 +26,37 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libswscale-dev \
     procps \
     libsndfile1 \
-    libsndfile1-dev \
     libportaudio2 \
-    portaudio19-dev \
     python3-scipy \
     libblas-dev \
     liblapack-dev \
     libatlas-base-dev \
-    gfortran \
-    pkg-config \
-    build-essential \
-    libffi-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /run/nginx \
-    && mkdir -p /var/log/nginx \
-    && mkdir -p /var/lib/nginx \
+    && mkdir -p /run/nginx /var/log/nginx /var/lib/nginx /var/cache/nginx /var/run/nginx \
     && groupadd -r nginx \
     && useradd -r -g nginx nginx \
-    && chown -R nginx:nginx /run/nginx \
-    && chown -R nginx:nginx /var/log/nginx \
-    && chown -R nginx:nginx /var/lib/nginx
+    && chown -R nginx:nginx /run/nginx /var/log/nginx /var/lib/nginx /var/cache/nginx /var/run/nginx \
+    && chmod -R 755 /run/nginx /var/log/nginx /var/lib/nginx /var/cache/nginx /var/run/nginx
 
-# Set working directory and Python environment
+# Set working directory and environment
 WORKDIR /app/backend
-ENV PYTHONPATH=/app/backend
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONIOENCODING=utf-8
-ENV PATH="/usr/local/bin:/root/.local/bin:${PATH}"
+ENV PYTHONPATH=/app/backend \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=utf-8 \
+    PATH="/usr/local/bin:/root/.local/bin:${PATH}" \
+    PORT=3000 \
+    API_PORT=8000 \
+    DEBUG=False \
+    NODE_ENV=production
 
 # Create log directory
 RUN mkdir -p /app/backend/logs && chmod 777 /app/backend/logs
 
-# Update pip and install build tools
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+# Install Python dependencies in a single layer
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Install core dependencies in a single layer with explicit versions and better error handling
 RUN echo "Installing core dependencies..." && \
@@ -115,25 +111,13 @@ RUN chmod -R 755 migrations
 # Copy frontend build and configuration files
 COPY --from=frontend-build /app/frontend/build /app/frontend/build
 COPY start.sh /app/start.sh
-
-# Copy NGINX configuration files
+RUN chmod +x /app/start.sh && \
+    sed -i 's/\r$//' /app/start.sh  # Fix line endings for Windows
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY default.conf /etc/nginx/conf.d/default.conf
 
-# Create required NGINX directories and set permissions
-RUN mkdir -p /var/log/nginx /var/cache/nginx /var/run/nginx && \
-    chown -R nginx:nginx /var/log/nginx /var/cache/nginx /var/run/nginx && \
-    chmod -R 755 /var/log/nginx /var/cache/nginx /var/run/nginx
-
-# Set environment variables
-ENV PORT=3000
-ENV API_PORT=8000
-ENV DEBUG=False
-ENV NODE_ENV=production
-
 # Expose ports
-EXPOSE ${PORT}
-EXPOSE ${API_PORT}
+EXPOSE ${PORT} ${API_PORT}
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=60s --start-period=120s --retries=3 \
