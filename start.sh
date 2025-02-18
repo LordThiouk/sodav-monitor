@@ -101,7 +101,7 @@ if [ ! -f "migrations/env.py" ]; then
 fi
 
 echo "Running database migrations..."
-if ! PYTHONPATH=/app/backend python -m alembic upgrade head; then
+if ! PYTHONPATH=/app/backend alembic upgrade head; then
     echo "❌ Error: Database migration failed"
     exit 1
 fi

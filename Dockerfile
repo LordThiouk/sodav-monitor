@@ -42,12 +42,14 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # Copy requirements first for better caching
 COPY backend/requirements.txt ./
 
-# Install Python dependencies with retry mechanism and explicit Alembic installation
+# Install Python dependencies with retry mechanism
 RUN for i in {1..3}; do \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir alembic>=1.13.1 && \
-    break || sleep 2; \
+    pip install --no-cache-dir -r requirements.txt && break || sleep 2; \
     done
+
+# Install Alembic globally
+RUN pip install --no-cache-dir alembic>=1.13.1 && \
+    ln -s /usr/local/bin/alembic /usr/bin/alembic
 
 # Copy backend files with explicit handling of migrations
 COPY backend/ ./
@@ -72,9 +74,6 @@ ENV PORT=3000
 ENV API_PORT=8000
 ENV DEBUG=False
 ENV NODE_ENV=production
-
-# Add Alembic to PATH
-ENV PATH="/app/backend/.local/bin:${PATH}"
 
 # Expose the ports
 EXPOSE ${PORT}
