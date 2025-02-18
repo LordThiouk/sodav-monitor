@@ -31,6 +31,11 @@ RUN apt-get update && apt-get install -y \
     libportaudio2 \
     portaudio19-dev \
     python3-scipy \
+    libblas-dev \
+    liblapack-dev \
+    libatlas-base-dev \
+    gfortran \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run/nginx \
     && mkdir -p /var/log/nginx \
@@ -45,6 +50,7 @@ ENV PYTHONPATH=/app/backend
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONIOENCODING=utf-8
+ENV PATH="/usr/local/bin:${PATH}"
 
 # Update pip and install build tools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
@@ -57,17 +63,20 @@ RUN chmod -R 755 migrations
 # Copy requirements and install dependencies
 COPY backend/requirements.txt ./
 
-# Install scientific computing dependencies first
+# Install scientific computing dependencies first with specific versions
 RUN pip install --no-cache-dir \
-    numpy>=1.23.5 \
-    scipy>=1.11.0 \
-    pandas>=2.0.3
+    numpy==1.23.5 \
+    scipy==1.11.0 \
+    pandas==2.0.3 \
+    numba==0.56.4 \
+    librosa==0.10.0 \
+    llvmlite==0.39.1
 
 # Install all Python dependencies with retry mechanism
 RUN for i in {1..3}; do \
     pip install --no-cache-dir \
     python-dotenv>=1.0.0 \
-    alembic>=1.13.1 \
+    alembic==1.13.1 \
     psycopg2-binary>=2.9.9 \
     SQLAlchemy>=2.0.15 \
     uvicorn>=0.22.0 \
@@ -80,7 +89,6 @@ RUN for i in {1..3}; do \
     email-validator>=2.0.0 \
     requests>=2.31.0 \
     pydantic>=1.10.8 \
-    librosa>=0.10.0 \
     pydub>=0.25.1 \
     ffmpeg-python>=0.2.0 \
     musicbrainzngs>=0.7.1 \
@@ -94,15 +102,19 @@ RUN for i in {1..3}; do \
     -r requirements.txt && break || sleep 2; \
     done
 
-# Install Alembic globally and ensure it's in PATH
-RUN pip install --no-cache-dir alembic>=1.13.1 && \
+# Install and configure Alembic
+RUN pip install --no-cache-dir alembic==1.13.1 && \
+    mkdir -p /usr/local/bin && \
     ln -sf $(which alembic) /usr/local/bin/alembic && \
-    chmod +x /usr/local/bin/alembic
+    chmod +x /usr/local/bin/alembic && \
+    echo "export PATH=/usr/local/bin:\$PATH" >> /etc/profile && \
+    . /etc/profile
 
-# Verify Python environment
-RUN python -c "import sys; print(sys.path)" && \
-    python -c "import os; print(os.environ.get('PYTHONPATH'))" && \
-    python -c "import main" || echo "Main module not found"
+# Verify installations
+RUN python -c "import librosa; print('librosa version:', librosa.__version__)" && \
+    python -c "import numpy; print('numpy version:', numpy.__version__)" && \
+    python -c "import scipy; print('scipy version:', scipy.__version__)" && \
+    alembic --version
 
 # Copy frontend build from build stage
 COPY --from=frontend-build /app/frontend/build /app/frontend/build
