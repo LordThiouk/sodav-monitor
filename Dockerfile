@@ -102,16 +102,11 @@ RUN for i in {1..3}; do \
     -r requirements.txt && break || sleep 2; \
     done
 
-# Install and configure Alembic with proper permissions
+# Install and verify Alembic installation
 RUN pip install --no-cache-dir alembic==1.13.1 && \
-    mkdir -p /usr/local/bin && \
-    which alembic > /tmp/alembic_path && \
-    ln -sf $(cat /tmp/alembic_path) /usr/local/bin/alembic && \
-    chmod +x /usr/local/bin/alembic && \
-    rm /tmp/alembic_path && \
-    echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc && \
-    echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.profile && \
-    . ~/.bashrc
+    pip show alembic && \
+    ln -s $(which alembic) /usr/local/bin/alembic && \
+    chmod +x /usr/local/bin/alembic
 
 # Verify installations
 RUN python -c "import librosa; print('librosa version:', librosa.__version__)" && \

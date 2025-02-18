@@ -2,6 +2,19 @@
 # Force new deployment - $(date)
 set -e
 
+# Check if Alembic is installed and available
+if ! command -v alembic &> /dev/null
+then
+    echo "❌ Alembic not found! Installing..."
+    pip install --no-cache-dir alembic==1.13.1
+    if ! command -v alembic &> /dev/null
+    then
+        echo "❌ Failed to install Alembic. Exiting."
+        exit 1
+    fi
+    echo "✅ Alembic installed successfully!"
+fi
+
 # Ensure PORT is set
 export PORT=${PORT:-3000}
 export API_PORT=8000
