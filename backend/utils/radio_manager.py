@@ -7,13 +7,28 @@ from sqlalchemy import or_
 from models import RadioStation, StationStatus, Track, TrackDetection, TrackStats, ArtistStats, StationTrackStats
 from .radio_fetcher import RadioFetcher
 from .websocket import broadcast_track_detection  # Import broadcast_track_detection function
+from audio_processor import AudioProcessor
 
 logger = logging.getLogger(__name__)
 
 class RadioManager:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, audio_processor: AudioProcessor = None):
+        """Initialize RadioManager with database session and audio processor.
+        
+        Args:
+            db (Session): SQLAlchemy database session
+            audio_processor (AudioProcessor, optional): Instance of AudioProcessor for music detection
+        
+        Raises:
+            ValueError: If audio_processor is not provided
+        """
+        if not audio_processor:
+            raise ValueError("AudioProcessor is required for RadioManager initialization")
+            
         self.db = db
         self.fetcher = RadioFetcher()
+        self.audio_processor = audio_processor
+        logger.info("RadioManager initialized successfully with AudioProcessor")
     
     def update_senegal_stations(self) -> Dict:
         """Update Senegalese radio stations in the database"""
