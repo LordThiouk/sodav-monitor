@@ -100,7 +100,7 @@ RUN echo "Installing core dependencies..." && \
     && python3 -c "import alembic; print(f'alembic version: {alembic.__version__}')" \
     && python3 -c "import jose; print(f'python-jose version: {jose.__version__}')" \
     && python3 -c "import passlib; print(f'passlib version: {passlib.__version__}')" \
-    && python3 -c "import musicbrainzngs; print(f'musicbrainzngs version: {musicbrainzngs.__version__}')" \
+    && python3 -m pip show musicbrainzngs | grep "Version:" \
     && python3 -c "import numpy; print(f'numpy version: {numpy.__version__}')" \
     && python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" \
     && python3 -c "import librosa; print(f'librosa version: {librosa.__version__}')"

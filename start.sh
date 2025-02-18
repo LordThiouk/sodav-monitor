@@ -32,7 +32,7 @@ PACKAGES=(
     "jose:print(__import__('jose').__version__)"
     "passlib:print(__import__('passlib').__version__)"
     "pydub:print(__import__('pydub').__version__)"
-    "musicbrainzngs:print(__import__('musicbrainzngs').__version__)"
+    "musicbrainzngs:import musicbrainzngs; print('Version: ' + str(__import__('pip')._vendor.pkg_resources.get_distribution('musicbrainzngs').version))"
     "numpy:print(__import__('numpy').__version__)"
     "scipy:print(__import__('scipy').__version__)"
     "librosa:print(__import__('librosa').__version__)"
