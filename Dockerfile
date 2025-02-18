@@ -113,11 +113,15 @@ RUN chmod -R 755 migrations
 # Copy frontend build and configuration files
 COPY --from=frontend-build /app/frontend/build /app/frontend/build
 COPY start.sh /app/start.sh
-COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Set correct permissions and ensure Unix line endings
-RUN chmod +x /app/start.sh && \
-    sed -i 's/\r$//' /app/start.sh
+# Copy NGINX configuration files
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY default.conf /etc/nginx/conf.d/default.conf
+
+# Create required NGINX directories and set permissions
+RUN mkdir -p /var/log/nginx /var/cache/nginx /var/run/nginx && \
+    chown -R nginx:nginx /var/log/nginx /var/cache/nginx /var/run/nginx && \
+    chmod -R 755 /var/log/nginx /var/cache/nginx /var/run/nginx
 
 # Set environment variables
 ENV PORT=3000
