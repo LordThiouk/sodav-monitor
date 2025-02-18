@@ -1500,32 +1500,12 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
 async def detect_music_all_stations(db: Session = Depends(get_db)):
     """Detect music from all active stations"""
     try:
-        # Get all active stations
-        stations = db.query(RadioStation).filter(RadioStation.is_active == True).all()
+        # Initialize RadioManager with AudioProcessor
+        radio_manager = RadioManager(db_session=db, audio_processor=processor)
         
-        if not stations:
-            raise HTTPException(status_code=404, detail="No active stations found")
-        
-        results = []
-        for station in stations:
-            try:
-                # Analyze stream
-                result = await processor.analyze_stream(station.stream_url, station.id)
-                if result:
-                    results.append({
-                        "station_id": station.id,
-                        "station_name": station.name,
-                        "detection": result
-                    })
-            except Exception as e:
-                logger.error(f"Error detecting music for station {station.name}: {str(e)}")
-                continue
-        
-        return {
-            "status": "success",
-            "message": f"Analyzed {len(stations)} stations",
-            "detections": results
-        }
+        # Detect music using RadioManager
+        results = await radio_manager.detect_music()
+        return results
         
     except Exception as e:
         logger.error(f"Error in detect_music_all_stations: {str(e)}")
