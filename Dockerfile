@@ -69,10 +69,13 @@ RUN pip install --no-cache-dir \
     websockets==12.0 \
     python-jose[cryptography]==3.3.0 \
     passlib[bcrypt]==1.7.4 \
-    python-multipart==0.0.6 && \
+    python-multipart==0.0.6 \
+    pydub==0.25.1 \
+    ffmpeg-python==0.2.0 && \
     python3 -m pip show uvicorn && \
     python3 -c "import uvicorn; print(f'uvicorn version: {uvicorn.__version__}')" && \
-    python3 -c "import fastapi; print(f'fastapi version: {fastapi.__version__}')"
+    python3 -c "import fastapi; print(f'fastapi version: {fastapi.__version__}')" && \
+    python3 -c "import pydub; print(f'pydub version: {pydub.__version__}')"
 
 # Install scientific computing dependencies
 RUN pip install --no-cache-dir \

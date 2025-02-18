@@ -7,7 +7,7 @@ export PATH="/usr/local/bin:/root/.local/bin:${PATH}"
 
 # Check core dependencies
 echo "Checking core dependencies..."
-for pkg in uvicorn fastapi alembic sqlalchemy jose passlib; do
+for pkg in uvicorn fastapi alembic sqlalchemy jose passlib pydub; do
     if ! python3 -c "import $pkg" &> /dev/null; then
         echo "❌ $pkg not found! Installing core dependencies..."
         pip install --no-cache-dir \
@@ -20,7 +20,9 @@ for pkg in uvicorn fastapi alembic sqlalchemy jose passlib; do
             websockets==12.0 \
             python-jose[cryptography]==3.3.0 \
             passlib[bcrypt]==1.7.4 \
-            python-multipart==0.0.6
+            python-multipart==0.0.6 \
+            pydub==0.25.1 \
+            ffmpeg-python==0.2.0
         break
     fi
 done
