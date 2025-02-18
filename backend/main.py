@@ -1469,19 +1469,37 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
 async def detect_music_all_stations(db: Session = Depends(get_db)):
     """Detect music from all active stations"""
     try:
+        # Check if services are initialized
         if not processor or not music_recognizer:
             raise HTTPException(
                 status_code=500,
                 detail="Audio processing services not initialized"
             )
-            
+
         # Initialize RadioManager with AudioProcessor
-        radio_manager = RadioManager(db_session=db, audio_processor=processor)
+        try:
+            radio_manager = RadioManager(db_session=db, audio_processor=processor)
+            logger.info("RadioManager initialized with AudioProcessor")
+        except Exception as e:
+            logger.error(f"Error initializing RadioManager: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to initialize RadioManager: {str(e)}"
+            )
         
         # Detect music using RadioManager
-        results = await radio_manager.detect_music()
-        return results
+        try:
+            results = await radio_manager.detect_music()
+            return results
+        except Exception as e:
+            logger.error(f"Error detecting music: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error detecting music: {str(e)}"
+            )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in detect_music_all_stations: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
