@@ -43,17 +43,21 @@ logger = setup_logging(__name__)
 # Create tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="SODAV Media Monitor", version="1.0.0")
+app = FastAPI(
+    title="SODAV Media Monitor",
+    version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json"
+)
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://sodav-monitor-production.up.railway.app"],
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=3600,
 )
 
 # API routes must be mounted before the frontend static files
