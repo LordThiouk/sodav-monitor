@@ -151,7 +151,8 @@ async def initialize_music_recognition():
         logger.info("Initializing MusicRecognizer")
         db = SessionLocal()
         music_recognizer = MusicRecognizer(db_session=db)
-        await music_recognizer.setup()  # Using setup instead of initialize
+        # Initialize directly since setup() doesn't exist
+        await music_recognizer.initialize()
         logger.info("MusicRecognizer initialized successfully")
         return music_recognizer
     except Exception as e:
@@ -164,7 +165,8 @@ async def initialize_audio_processor(music_recognizer):
         logger.info(f"Initializing AudioProcessor")
         db = SessionLocal()
         audio_processor = AudioProcessor(db_session=db, music_recognizer=music_recognizer)
-        await audio_processor.setup()
+        # Initialize directly since setup() doesn't exist
+        await audio_processor.initialize()
         logger.info("AudioProcessor initialized successfully")
         return audio_processor
     except Exception as e:
