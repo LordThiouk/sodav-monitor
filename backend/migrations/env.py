@@ -39,6 +39,12 @@ config.set_main_option("sqlalchemy.url", get_database_url())
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
+# other values from the config, defined by the needs of env.py,
+# can be acquired:
+# my_important_option = config.get_main_option("my_important_option")
+# ... etc.
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -88,4 +94,4 @@ def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online() 
+    run_migrations_online()
