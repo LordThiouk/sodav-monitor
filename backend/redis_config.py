@@ -18,9 +18,9 @@ async def init_redis() -> Optional[aioredis.Redis]:
         redis_url = os.getenv("REDIS_URL")
         if not redis_url:
             # Fallback to constructing URL from individual components
-            redis_host = os.getenv("REDIS_HOST", "localhost")
-            redis_port = os.getenv("REDIS_PORT", "6379")
-            redis_password = os.getenv("REDIS_PASSWORD", "")
+            redis_host = os.getenv("REDIS_HOST", "hopper.proxy.rlwy.net")
+            redis_port = os.getenv("REDIS_PORT", "11709")
+            redis_password = os.getenv("REDIS_PASSWORD", "etnietpRknUwURAumSPXMVVgFwurrddy")
             redis_db = os.getenv("REDIS_DB", "0")
             
             if redis_password:

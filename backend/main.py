@@ -149,7 +149,8 @@ async def initialize_music_recognition():
     """Initialize music recognition service"""
     try:
         logger.info("Initializing MusicRecognizer")
-        music_recognizer = MusicRecognizer()
+        db = SessionLocal()
+        music_recognizer = MusicRecognizer(db_session=db)
         await music_recognizer.setup()  # Using setup instead of initialize
         logger.info("MusicRecognizer initialized successfully")
         return music_recognizer
@@ -157,12 +158,12 @@ async def initialize_music_recognition():
         logger.error(f"Error initializing music recognition: {str(e)}")
         raise
 
-async def initialize_audio_processor():
+async def initialize_audio_processor(music_recognizer):
     """Initialize audio processor service"""
     try:
-        max_concurrent = int(os.getenv("MAX_CONCURRENT_STATIONS", "10"))
-        logger.info(f"Initializing AudioProcessor with max {max_concurrent} concurrent stations")
-        audio_processor = AudioProcessor(max_concurrent_stations=max_concurrent)
+        logger.info(f"Initializing AudioProcessor")
+        db = SessionLocal()
+        audio_processor = AudioProcessor(db_session=db, music_recognizer=music_recognizer)
         await audio_processor.setup()
         logger.info("AudioProcessor initialized successfully")
         return audio_processor
@@ -190,7 +191,11 @@ async def startup_event():
             app.state.music_recognizer = None
 
         try:
-            app.state.audio_processor = await initialize_audio_processor()
+            if app.state.music_recognizer:
+                app.state.audio_processor = await initialize_audio_processor(app.state.music_recognizer)
+            else:
+                logger.warning("Skipping AudioProcessor initialization due to missing MusicRecognizer")
+                app.state.audio_processor = None
         except Exception as e:
             logger.error(f"Error initializing audio processor: {str(e)}")
             app.state.audio_processor = None
