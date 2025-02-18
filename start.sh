@@ -10,19 +10,30 @@ echo "Checking core dependencies..."
 for pkg in uvicorn fastapi alembic sqlalchemy jose passlib pydub; do
     if ! python3 -c "import $pkg" &> /dev/null; then
         echo "❌ $pkg not found! Installing core dependencies..."
-        pip install --no-cache-dir \
-            uvicorn==0.22.0 \
-            fastapi==0.95.2 \
-            python-dotenv==1.0.0 \
-            alembic==1.13.1 \
-            SQLAlchemy==2.0.15 \
-            psycopg2-binary==2.9.9 \
-            websockets==12.0 \
-            python-jose[cryptography]==3.3.0 \
-            passlib[bcrypt]==1.7.4 \
-            python-multipart==0.0.6 \
-            pydub==0.25.1 \
-            ffmpeg-python==0.2.0
+        echo "Installing core dependencies one by one..."
+        pip install --no-cache-dir uvicorn==0.22.0 || true
+        pip install --no-cache-dir fastapi==0.95.2 || true
+        pip install --no-cache-dir python-dotenv==1.0.0 || true
+        pip install --no-cache-dir alembic==1.13.1 || true
+        pip install --no-cache-dir SQLAlchemy==2.0.15 || true
+        pip install --no-cache-dir psycopg2-binary==2.9.9 || true
+        pip install --no-cache-dir websockets==12.0 || true
+        pip install --no-cache-dir "python-jose[cryptography]==3.3.0" || true
+        pip install --no-cache-dir "passlib[bcrypt]==1.7.4" || true
+        pip install --no-cache-dir python-multipart==0.0.6 || true
+        pip install --no-cache-dir pydub==0.25.1 || true
+        pip install --no-cache-dir ffmpeg-python==0.2.0 || true
+        
+        # Verify installations
+        echo "Verifying installations..."
+        for pkg in uvicorn fastapi alembic sqlalchemy jose passlib pydub; do
+            if ! python3 -c "import $pkg" &> /dev/null; then
+                echo "❌ Failed to install $pkg"
+                pip show $pkg || true
+            else
+                echo "✅ $pkg installed successfully"
+            fi
+        done
         break
     fi
 done
