@@ -49,7 +49,8 @@ RUN pip install --no-cache-dir \
     uvicorn>=0.22.0 \
     fastapi>=0.95.2 \
     websockets>=12.0 \
-    python-jose[cryptography]>=3.3.0
+    python-jose[cryptography]>=3.3.0 \
+    passlib[bcrypt]>=1.7.4
 
 # Copy requirements first for better caching
 COPY backend/requirements.txt ./

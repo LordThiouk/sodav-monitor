@@ -10,12 +10,16 @@ sqlalchemy>=2.0.15
 pydantic>=1.10.8
 python-dotenv>=1.0.0
 requests>=2.31.0
+email-validator>=2.0.0
 
 # Audio processing
 librosa>=0.10.0
 pydub>=0.25.1
 numpy>=1.23.5
 ffmpeg-python>=0.2.0
+musicbrainzngs>=0.7.1
+pyacoustid>=1.2.0
+av>=10.0.0
 
 # Database and caching
 psycopg2-binary>=2.9.9
