@@ -40,8 +40,12 @@ WORKDIR /app/backend
 # Update pip and install build tools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install essential Python packages first
-RUN pip install --no-cache-dir \
+# Copy requirements first for better caching
+COPY backend/requirements.txt ./
+
+# Install all Python dependencies with retry mechanism
+RUN for i in {1..3}; do \
+    pip install --no-cache-dir \
     python-dotenv>=1.0.0 \
     alembic>=1.13.1 \
     psycopg2-binary>=2.9.9 \
@@ -50,14 +54,26 @@ RUN pip install --no-cache-dir \
     fastapi>=0.95.2 \
     websockets>=12.0 \
     python-jose[cryptography]>=3.3.0 \
-    passlib[bcrypt]>=1.7.4
-
-# Copy requirements first for better caching
-COPY backend/requirements.txt ./
-
-# Install remaining Python dependencies with retry mechanism
-RUN for i in {1..3}; do \
-    pip install --no-cache-dir -r requirements.txt && break || sleep 2; \
+    passlib[bcrypt]>=1.7.4 \
+    aioredis>=2.0.0 \
+    python-multipart>=0.0.6 \
+    email-validator>=2.0.0 \
+    requests>=2.31.0 \
+    pydantic>=1.10.8 \
+    librosa>=0.10.0 \
+    pydub>=0.25.1 \
+    numpy>=1.23.5 \
+    ffmpeg-python>=0.2.0 \
+    musicbrainzngs>=0.7.1 \
+    pyacoustid>=1.2.0 \
+    av>=10.0.0 \
+    redis>=5.0.1 \
+    pandas>=2.0.3 \
+    aiohttp>=3.9.1 \
+    prometheus-client>=0.19.0 \
+    typing-extensions>=4.5.0 \
+    psutil>=5.9.0 \
+    -r requirements.txt && break || sleep 2; \
     done
 
 # Ensure Alembic is in PATH
