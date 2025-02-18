@@ -9,10 +9,24 @@ from audio_processor import AudioProcessor
 
 class RadioManager:
     def __init__(self, db_session: Session, audio_processor: AudioProcessor = None):
+        """Initialize RadioManager with database session and audio processor.
+        
+        Args:
+            db_session (Session): SQLAlchemy database session
+            audio_processor (AudioProcessor, optional): Instance of AudioProcessor for music detection
+        
+        Raises:
+            ValueError: If audio_processor is not provided
+        """
+        if not audio_processor:
+            raise ValueError("AudioProcessor is required for RadioManager initialization")
+            
         self.db_session = db_session
         self.api_base_url = "https://de1.api.radio-browser.info/json"
         self.logger = logging.getLogger(__name__)
         self.audio_processor = audio_processor
+        
+        self.logger.info("RadioManager initialized successfully with AudioProcessor")
 
     async def update_station_list(self, country: str = None, language: str = None) -> None:
         """Update the radio station list from RadioBrowser API."""
