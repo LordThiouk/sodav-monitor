@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
 from database import get_db
 from models import TrackDetection, Track, RadioStation, StationStatus
+import logging
 
 router = APIRouter(prefix="/api/detections", tags=["detections"])
 
@@ -132,6 +133,53 @@ async def get_detections(
         }
 
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/latest", response_model=dict)
+async def get_latest_detections(
+    limit: int = Query(10, ge=1, le=100, description="Number of detections to return"),
+    db: Session = Depends(get_db)
+):
+    """Get latest detections across all stations"""
+    try:
+        # Get latest detections with station and track info
+        query = db.query(TrackDetection).options(
+            joinedload(TrackDetection.station),
+            joinedload(TrackDetection.track)
+        ).order_by(desc(TrackDetection.detected_at)).limit(limit)
+        
+        detections = query.all()
+        
+        return {
+            "total": len(detections),
+            "detections": [
+                {
+                    "id": d.id,
+                    "station_name": d.station.name if d.station else None,
+                    "track_title": d.track.title if d.track else None,
+                    "artist": d.track.artist if d.track else None,
+                    "detected_at": d.detected_at.isoformat(),
+                    "confidence": d.confidence,
+                    "play_duration": str(d.play_duration) if d.play_duration else "0:00:00",
+                    "track": {
+                        "id": d.track.id if d.track else None,
+                        "title": d.track.title if d.track else None,
+                        "artist": d.track.artist if d.track else None,
+                        "isrc": d.track.isrc if d.track else None,
+                        "label": d.track.label if d.track else None,
+                        "album": d.track.album if d.track else None
+                    },
+                    "station": {
+                        "id": d.station.id if d.station else None,
+                        "name": d.station.name if d.station else None,
+                        "stream_url": d.station.stream_url if d.station else None
+                    }
+                }
+                for d in detections
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting latest detections: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{detection_id}", response_model=DetectionResponse)

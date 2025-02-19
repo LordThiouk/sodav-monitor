@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from typing import List, Dict, Optional
@@ -10,6 +10,7 @@ import asyncio
 from database import get_db
 from models import RadioStation, StationStatus, Track, TrackDetection
 from utils.radio_manager import RadioManager
+from utils.websocket import broadcast_station_update
 import logging
 
 logger = logging.getLogger(__name__)
@@ -36,30 +37,65 @@ class StationStats(BaseModel):
     languages: Dict[str, int]
 
 @router.get("/", response_model=Dict[str, List[StationResponse]])
-def get_channels(db: Session = Depends(get_db)):
-    """Get all radio channels"""
+async def get_channels(db: Session = Depends(get_db)):
+    """Get all radio channels with real-time status"""
     try:
-        manager = RadioManager(db)
-        stations = manager.get_active_stations()
+        # Get all stations
+        stations = db.query(RadioStation).all()
         
-        # Convert stations to dict for proper serialization
+        # Update each station's status in real-time
         station_list = []
         for station in stations:
+            # Check if station is currently active
+            try:
+                manager = RadioManager(db)
+                is_active = manager.check_station_status(station)
+                
+                # Update station status if changed
+                if is_active != station.is_active:
+                    station.is_active = is_active
+                    station.last_checked = datetime.now()
+                    station.status = StationStatus.active if is_active else StationStatus.inactive
+                    db.commit()
+                    
+                    # Broadcast status change
+                    await broadcast_station_update({
+                        "id": station.id,
+                        "name": station.name,
+                        "status": station.status.value,
+                        "is_active": station.is_active,
+                        "last_checked": station.last_checked.isoformat(),
+                        "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None,
+                        "stream_url": station.stream_url,
+                        "country": station.country,
+                        "language": station.language,
+                        "total_play_time": str(station.total_play_time) if station.total_play_time else "0:00:00"
+                    })
+            except Exception as e:
+                logger.warning(f"Error checking station {station.name}: {str(e)}")
+                is_active = False
+            
+            # Add station to response list
             station_dict = {
                 "id": station.id,
                 "name": station.name,
                 "stream_url": station.stream_url,
                 "country": station.country,
                 "language": station.language,
-                "status": station.status,
+                "status": station.status.value if station.status else "inactive",
                 "is_active": station.is_active,
                 "last_checked": station.last_checked.isoformat() if station.last_checked else None,
-                "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None
+                "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None,
+                "total_play_time": str(station.total_play_time) if station.total_play_time else "0:00:00"
             }
             station_list.append(station_dict)
         
         return {
-            "channels": station_list
+            "channels": station_list,
+            "timestamp": datetime.now().isoformat(),
+            "total_count": len(station_list),
+            "active_count": sum(1 for s in station_list if s["is_active"]),
+            "inactive_count": sum(1 for s in station_list if not s["is_active"])
         }
         
     except Exception as e:
@@ -67,11 +103,27 @@ def get_channels(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/refresh")
-def refresh_channels(db: Session = Depends(get_db)):
+async def refresh_channels(db: Session = Depends(get_db)):
     """Refresh the list of radio channels"""
     try:
         manager = RadioManager(db)
         result = manager.update_senegal_stations()
+        
+        # Broadcast updates for each modified station
+        for station in db.query(RadioStation).all():
+            await broadcast_station_update({
+                "id": station.id,
+                "name": station.name,
+                "status": station.status.value if station.status else "inactive",
+                "is_active": station.is_active,
+                "last_checked": station.last_checked.isoformat() if station.last_checked else None,
+                "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None,
+                "stream_url": station.stream_url,
+                "country": station.country,
+                "language": station.language,
+                "total_play_time": str(station.total_play_time) if station.total_play_time else "0:00:00"
+            })
+        
         return {
             "status": "success",
             "message": "Channels refreshed successfully",
@@ -85,7 +137,8 @@ def refresh_channels(db: Session = Depends(get_db)):
 def fetch_senegal_stations(db: Session = Depends(get_db)):
     """Fetch and save Senegalese radio stations"""
     try:
-        manager = RadioManager(db)
+        # Initialize RadioManager without audio processor for station fetching only
+        manager = RadioManager(db, audio_processor=None)
         result = manager.update_senegal_stations()
         
         if result["status"] == "success":
@@ -98,10 +151,11 @@ def fetch_senegal_stations(db: Session = Depends(get_db)):
             raise HTTPException(status_code=500, detail=result["message"])
             
     except Exception as e:
+        logger.error(f"Error fetching Senegalese stations: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{channel_id}/refresh")
-def refresh_channel(channel_id: int, db: Session = Depends(get_db)):
+async def refresh_channel(channel_id: int, db: Session = Depends(get_db)):
     """Refresh a specific channel"""
     try:
         station = db.query(RadioStation).filter(RadioStation.id == channel_id).first()
@@ -110,6 +164,21 @@ def refresh_channel(channel_id: int, db: Session = Depends(get_db)):
             
         manager = RadioManager(db)
         result = manager.update_station(station)
+        
+        # Broadcast the station update
+        await broadcast_station_update({
+            "id": station.id,
+            "name": station.name,
+            "status": station.status.value if station.status else "inactive",
+            "is_active": station.is_active,
+            "last_checked": station.last_checked.isoformat() if station.last_checked else None,
+            "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None,
+            "stream_url": station.stream_url,
+            "country": station.country,
+            "language": station.language,
+            "total_play_time": str(station.total_play_time) if station.total_play_time else "0:00:00"
+        })
+        
         return {
             "status": "success",
             "message": f"Channel {channel_id} refreshed successfully",
@@ -123,9 +192,10 @@ def refresh_channel(channel_id: int, db: Session = Depends(get_db)):
 
 @router.post("/detect-music")
 async def detect_music_all_channels(
+    request: Request,
     background_tasks: BackgroundTasks,
-    max_stations: int = Query(default=None, description="Nombre maximum de stations à traiter simultanément"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    max_stations: int = Query(default=5, description="Maximum number of stations to process simultaneously")
 ):
     """Detect music on all active radio channels"""
     try:
@@ -144,23 +214,67 @@ async def detect_music_all_channels(
                 "message": "No active stations to process",
                 "details": {
                     "total_stations": 0,
-                    "successful_detections": 0,
-                    "failed_detections": 0,
-                    "results": []
+                    "processed_stations": 0,
+                    "status": "completed"
                 }
             }
         
-        # Initialize audio processor with custom concurrency limit if specified
-        manager = RadioManager(db)
-        processor = manager.audio_processor
-        if max_stations:
-            processor.processing_semaphore = asyncio.Semaphore(max_stations)
+        # Get RadioManager from app state
+        manager = request.app.state.radio_manager
+        if not manager:
+            raise HTTPException(
+                status_code=500,
+                detail="RadioManager not initialized. Please check server configuration."
+            )
         
-        # Process all stations in parallel
-        logger.info(f"Processing {len(stations)} active stations")
+        # Verify audio processor is available
+        if not hasattr(manager, 'audio_processor') or not manager.audio_processor:
+            raise HTTPException(
+                status_code=500,
+                detail="Audio processor not initialized. Please check server configuration."
+            )
         
-        # Lancer la détection en arrière-plan
-        background_tasks.add_task(processor.process_all_stations, stations)
+        async def process_stations():
+            """Background task to process stations"""
+            try:
+                logger.info(f"Processing {len(stations)} active stations")
+                results = []
+                
+                # Create a semaphore to limit concurrent processing
+                sem = asyncio.Semaphore(max_stations)
+                
+                async def process_station(station):
+                    async with sem:
+                        try:
+                            result = await manager.detect_music(station.id)
+                            results.append({
+                                "station_id": station.id,
+                                "station_name": station.name,
+                                "status": "success",
+                                "detections": result.get("detections", [])
+                            })
+                        except Exception as e:
+                            logger.error(f"Error processing station {station.name}: {str(e)}")
+                            results.append({
+                                "station_id": station.id,
+                                "station_name": station.name,
+                                "status": "error",
+                                "error": str(e)
+                            })
+                
+                # Create tasks for all stations
+                tasks = [process_station(station) for station in stations]
+                await asyncio.gather(*tasks)
+                
+                logger.info(f"Completed processing {len(stations)} stations")
+                return results
+                
+            except Exception as e:
+                logger.error(f"Error in background processing: {str(e)}")
+                raise
+        
+        # Add the background task
+        background_tasks.add_task(process_stations)
         
         return {
             "status": "success",
@@ -168,10 +282,12 @@ async def detect_music_all_channels(
             "details": {
                 "total_stations": len(stations),
                 "status": "processing",
-                "background_task_id": id(background_tasks)
+                "max_concurrent": max_stations
             }
         }
             
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error in music detection: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -277,7 +393,7 @@ def get_station_stats(station_id: int, db: Session = Depends(get_db)):
         
         # Get hourly detection counts with SQLite compatible datetime handling
         hourly_detections = db.query(
-            func.strftime('%Y-%m-%d %H:00:00', TrackDetection.detected_at).label('hour'),
+            func.date_trunc('hour', TrackDetection.detected_at).label('hour'),
             func.count(TrackDetection.id).label('count'),
             func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0)).label('duration')
         ).filter(

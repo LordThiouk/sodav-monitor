@@ -1,8 +1,11 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Text, Enum, Interval, JSON, ARRAY, LargeBinary
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Text, Enum, Interval, JSON, ARRAY, LargeBinary, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime, timedelta
 import enum
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 Base = declarative_base()
 
@@ -35,6 +38,12 @@ class User(Base):
     role = Column(String, default='user')  # 'admin', 'user', etc.
     
     reports = relationship("Report", back_populates="user")
+
+    def set_password(self, password):
+        self.password_hash = pwd_context.hash(password)
+
+    def verify_password(self, password):
+        return pwd_context.verify(password, self.password_hash)
 
 class Report(Base):
     __tablename__ = "reports"
@@ -78,22 +87,48 @@ class RadioStation(Base):
     stream_url = Column(String)
     country = Column(String)
     language = Column(String)
+    region = Column(String, nullable=True)  # Added region field
+    type = Column(String, default="radio")  # Added type field
     status = Column(Enum(StationStatus), default=StationStatus.inactive)
     is_active = Column(Boolean, default=False)
     last_checked = Column(DateTime)
     last_detection_time = Column(DateTime)
     total_play_time = Column(Interval, default=timedelta(seconds=0))
+    created_at = Column(DateTime, default=datetime.now)  # Added created_at field
 
     detections = relationship("TrackDetection", back_populates="station")
     track_stats = relationship("StationTrackStats", back_populates="station")
+
+class Artist(Base):
+    __tablename__ = 'artists'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False, index=True)
+    country = Column(String, nullable=True)  # Pour les statistiques par pays
+    region = Column(String, nullable=True)   # Pour les statistiques régionales
+    type = Column(String, nullable=True)     # solo, group, band, etc.
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+    total_play_time = Column(Interval, default=timedelta(0))
+    total_plays = Column(Integer, default=0)
+    external_ids = Column(JSON, nullable=True)  # Pour stocker les IDs externes (Spotify, Deezer, etc.)
+    
+    # Relations
+    tracks = relationship("Track", back_populates="artist", cascade="all, delete-orphan")
+    stats = relationship("ArtistStats", back_populates="artist", uselist=False, cascade="all, delete-orphan")
+    daily_stats = relationship("ArtistDaily", back_populates="artist", cascade="all, delete-orphan")
+    monthly_stats = relationship("ArtistMonthly", back_populates="artist", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Artist(name='{self.name}', country='{self.country}', type='{self.type}')>"
 
 class Track(Base):
     __tablename__ = 'tracks'
     
     id = Column(Integer, primary_key=True)
     title = Column(String, nullable=False)
-    artist = Column(String, nullable=False, index=True)
-    isrc = Column(String, nullable=True)  # International Standard Recording Code
+    artist_id = Column(Integer, ForeignKey('artists.id'), nullable=False)  # Changer artist en artist_id
+    isrc = Column(String, nullable=True)
     label = Column(String, nullable=True, index=True)
     album = Column(String, nullable=True)
     release_date = Column(DateTime, nullable=True)
@@ -102,9 +137,11 @@ class Track(Base):
     last_played = Column(DateTime, nullable=True)
     external_ids = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    fingerprint = Column(String, nullable=True)  # Acoustic fingerprint
-    fingerprint_raw = Column(LargeBinary, nullable=True)  # Raw fingerprint data as BLOB
+    fingerprint = Column(String, nullable=True)
+    fingerprint_raw = Column(LargeBinary, nullable=True)
     
+    # Relations
+    artist = relationship("Artist", back_populates="tracks")
     detections = relationship("TrackDetection", back_populates="track")
     stats = relationship("TrackStats", back_populates="track", uselist=False)
 
@@ -132,10 +169,14 @@ class ArtistStats(Base):
     __tablename__ = 'artist_stats'
 
     id = Column(Integer, primary_key=True)
-    artist_name = Column(String)
+    artist_id = Column(Integer, ForeignKey('artists.id'), unique=True)  # Changer artist_name en artist_id
     detection_count = Column(Integer, default=0)
     last_detected = Column(DateTime, nullable=True)
     total_play_time = Column(Interval, default=timedelta(0))
+    average_confidence = Column(Float, default=0.0)
+    
+    # Relation
+    artist = relationship("Artist", back_populates="stats")
 
 class TrackStats(Base):
     __tablename__ = 'track_stats'
@@ -212,17 +253,25 @@ class ArtistDaily(Base):
     __tablename__ = 'artist_daily'
 
     id = Column(Integer, primary_key=True)
-    artist_name = Column(String)
+    artist_id = Column(Integer, ForeignKey('artists.id'))  # Changer artist_name en artist_id
     date = Column(DateTime)
     count = Column(Integer, default=0)
+    total_play_time = Column(Interval, default=timedelta(0))
+    
+    # Relation
+    artist = relationship("Artist", back_populates="daily_stats")
 
 class ArtistMonthly(Base):
     __tablename__ = 'artist_monthly'
 
     id = Column(Integer, primary_key=True)
-    artist_name = Column(String)
+    artist_id = Column(Integer, ForeignKey('artists.id'))  # Changer artist_name en artist_id
     month = Column(DateTime)
     count = Column(Integer, default=0)
+    total_play_time = Column(Interval, default=timedelta(0))
+    
+    # Relation
+    artist = relationship("Artist", back_populates="monthly_stats")
 
 class StationTrackStats(Base):
     __tablename__ = 'station_track_stats'
@@ -237,3 +286,47 @@ class StationTrackStats(Base):
     
     station = relationship("RadioStation", back_populates="track_stats")
     track = relationship("Track")
+
+# Add indexes for analytics queries
+Index('idx_track_detections_detected_at', TrackDetection.detected_at)
+Index('idx_track_detections_track_id', TrackDetection.track_id)
+Index('idx_track_detections_station_id', TrackDetection.station_id)
+Index('idx_track_detections_composite', 
+    TrackDetection.station_id, 
+    TrackDetection.track_id, 
+    TrackDetection.detected_at
+)
+
+Index('idx_artist_stats_artist_id', ArtistStats.artist_id)
+
+Index('idx_track_stats_track_id', TrackStats.track_id)
+Index('idx_track_stats_detection_count', TrackStats.detection_count)
+
+Index('idx_station_track_stats_composite',
+    StationTrackStats.station_id,
+    StationTrackStats.track_id
+)
+
+Index('idx_detection_hourly_hour', DetectionHourly.hour)
+Index('idx_detection_daily_date', DetectionDaily.date)
+Index('idx_detection_monthly_month', DetectionMonthly.month)
+
+Index('idx_track_daily_composite',
+    TrackDaily.track_id,
+    TrackDaily.date
+)
+
+Index('idx_track_monthly_composite',
+    TrackMonthly.track_id,
+    TrackMonthly.month
+)
+
+Index('idx_artist_daily_composite',
+    ArtistDaily.artist_id,
+    ArtistDaily.date
+)
+
+Index('idx_artist_monthly_composite',
+    ArtistMonthly.artist_id,
+    ArtistMonthly.month
+)

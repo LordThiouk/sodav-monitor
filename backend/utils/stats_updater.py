@@ -16,8 +16,41 @@ class StatsUpdater:
         self.db_session = db_session
         self.logger = logger
 
+    def _validate_duration(self, duration: timedelta) -> timedelta:
+        """Validate and normalize duration values"""
+        try:
+            if not isinstance(duration, timedelta):
+                self.logger.warning(f"Invalid duration type: {type(duration)}, converting to timedelta")
+                if isinstance(duration, (int, float)):
+                    duration = timedelta(seconds=float(duration))
+                elif isinstance(duration, str):
+                    # Try to parse string duration
+                    try:
+                        hours, minutes, seconds = map(float, duration.split(':'))
+                        duration = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+                    except:
+                        self.logger.error(f"Could not parse duration string: {duration}")
+                        return timedelta(seconds=15)  # Default duration
+                        
+            # Validate duration range
+            if duration.total_seconds() <= 0:
+                self.logger.warning("Duration is zero or negative, using default")
+                return timedelta(seconds=15)
+            if duration.total_seconds() > 3600:  # Max 1 hour
+                self.logger.warning("Duration exceeds maximum, capping at 1 hour")
+                return timedelta(hours=1)
+                
+            return duration
+            
+        except Exception as e:
+            self.logger.error(f"Error validating duration: {str(e)}", exc_info=True)
+            return timedelta(seconds=15)  # Default duration
+
     def update_all_stats(self, detection_result: dict, station_id: int, track: Track, play_duration: timedelta):
         """Update all statistics after a successful detection"""
+        # Validate duration first
+        play_duration = self._validate_duration(play_duration)
+        
         success_stats = []
         try:
             self.logger.info("Starting stats update", extra={

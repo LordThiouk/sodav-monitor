@@ -1,6 +1,6 @@
 import requests
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from music_recognition import MusicRecognizer
 from models import Track, TrackDetection, RadioStation, StationTrackStats
@@ -13,6 +13,9 @@ import av
 from pydub import AudioSegment
 from utils.logging_config import setup_logging
 from utils.stats_updater import StatsUpdater
+import tempfile
+import os
+import librosa
 
 # Configure logging
 logger = setup_logging(__name__)
@@ -39,6 +42,18 @@ class AudioProcessor:
         self.processing_stations = set()
         
         logger.info(f"Initializing AudioProcessor with max {self.max_concurrent_stations} concurrent stations")
+
+        # Initialize new attributes
+        self.chunk_size = int(os.getenv("CHUNK_SIZE", "8192"))
+        self.sample_rate = int(os.getenv("SAMPLE_RATE", "44100"))
+        self.min_duration = int(os.getenv("MIN_AUDIO_LENGTH", "10"))
+        self.max_duration = int(os.getenv("MAX_AUDIO_LENGTH", "30"))
+        self.min_confidence = float(os.getenv("MIN_CONFIDENCE", "50"))
+        
+        logger.info("AudioProcessor initialized with settings: " + 
+                   f"chunk_size={self.chunk_size}, " +
+                   f"sample_rate={self.sample_rate}, " +
+                   f"duration={self.min_duration}-{self.max_duration}s")
 
     async def process_all_stations(self, stations: List[RadioStation]) -> Dict[str, Any]:
         """Process all stations in parallel with resource management"""
@@ -705,3 +720,116 @@ class AudioProcessor:
         except Exception as e:
             self.logger.error(f"Error calculating sample duration: {str(e)}")
             return 15.0  # Default to 15 seconds if calculation fails
+
+    async def process_stream(self, stream_url: str) -> Optional[Dict]:
+        """Process an audio stream for music detection
+        
+        Args:
+            stream_url (str): URL of the audio stream to process
+            
+        Returns:
+            Optional[Dict]: Detection results if successful, None otherwise
+        """
+        try:
+            async with self.processing_semaphore:
+                logger.info(f"Processing stream: {stream_url}")
+                
+                # Create temporary file for audio data
+                with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+                    try:
+                        # Download audio chunk
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(stream_url) as response:
+                                if response.status != 200:
+                                    raise ValueError(f"Failed to access stream: {response.status}")
+                                
+                                # Read audio data
+                                audio_data = await response.read()
+                                temp_file.write(audio_data)
+                                temp_file.flush()
+                        
+                        # Load and process audio
+                        audio = AudioSegment.from_mp3(temp_file.name)
+                        duration = len(audio) / 1000  # Convert to seconds
+                        
+                        if duration < self.min_duration:
+                            raise ValueError(f"Audio duration too short: {duration}s")
+                            
+                        # Trim to max duration if needed
+                        if duration > self.max_duration:
+                            audio = audio[:self.max_duration * 1000]
+                        
+                        # Convert to numpy array for processing
+                        samples = np.array(audio.get_array_of_samples())
+                        
+                        # Detect music features
+                        features = self._extract_features(samples)
+                        
+                        # Format results
+                        return {
+                            "status": "success",
+                            "tracks": [{
+                                "title": "Music Detected",  # Placeholder - implement actual recognition
+                                "artist": "Unknown Artist",
+                                "confidence": features["confidence"],
+                                "detected_at": datetime.now().isoformat(),
+                                "duration": str(timedelta(seconds=int(duration)))
+                            }] if features["is_music"] else []
+                        }
+                        
+                    finally:
+                        # Clean up temp file
+                        try:
+                            os.unlink(temp_file.name)
+                        except Exception as e:
+                            logger.warning(f"Error cleaning up temp file: {str(e)}")
+                            
+        except Exception as e:
+            logger.error(f"Error processing stream {stream_url}: {str(e)}")
+            return None
+
+    def _extract_features(self, samples: np.ndarray) -> Dict:
+        """Extract audio features to detect music
+        
+        Args:
+            samples (np.ndarray): Audio samples
+            
+        Returns:
+            Dict: Extracted features including confidence
+        """
+        try:
+            # Convert to mono if stereo
+            if len(samples.shape) > 1:
+                samples = np.mean(samples, axis=1)
+            
+            # Normalize samples
+            samples = samples.astype(float) / np.iinfo(samples.dtype).max
+            
+            # Extract features
+            tempo, _ = librosa.beat.beat_track(y=samples, sr=self.sample_rate)
+            spectral_centroid = librosa.feature.spectral_centroid(y=samples, sr=self.sample_rate)
+            rms = librosa.feature.rms(y=samples)
+            
+            # Calculate confidence based on features
+            tempo_confidence = min(100, max(0, (tempo - 60) / 120 * 100))
+            spectral_confidence = min(100, np.mean(spectral_centroid) * 100)
+            rms_confidence = min(100, np.mean(rms) * 1000)
+            
+            # Overall confidence
+            confidence = np.mean([tempo_confidence, spectral_confidence, rms_confidence])
+            
+            return {
+                "is_music": confidence >= self.min_confidence,
+                "confidence": float(confidence),
+                "tempo": float(tempo),
+                "spectral_centroid": float(np.mean(spectral_centroid)),
+                "rms": float(np.mean(rms))
+            }
+            
+        except Exception as e:
+            logger.error(f"Error extracting features: {str(e)}")
+            return {
+                "is_music": False,
+                "confidence": 0.0,
+                "error": str(e)
+            }

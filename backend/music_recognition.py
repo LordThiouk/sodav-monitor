@@ -7,7 +7,7 @@ import os
 from dotenv import load_dotenv
 import numpy as np
 import librosa
-from datetime import datetime
+from datetime import datetime, timedelta
 import musicbrainzngs
 from sqlalchemy.orm import Session
 from models import Track
@@ -323,10 +323,33 @@ class MusicRecognizer:
     def _calculate_play_duration(self, audio_data: bytes) -> float:
         """Calculate the duration of the audio in seconds"""
         try:
+            # First try using AudioSegment
             audio = AudioSegment.from_file(io.BytesIO(audio_data))
-            return len(audio) / 1000.0  # Convert milliseconds to seconds
+            duration = len(audio) / 1000.0  # Convert milliseconds to seconds
+            
+            # Validate duration
+            if duration <= 0 or duration > 3600:  # Max 1 hour
+                raise ValueError(f"Invalid duration: {duration} seconds")
+                
+            # Use librosa as backup validation
+            samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
+            sample_rate = audio.frame_rate
+            librosa_duration = librosa.get_duration(y=samples, sr=sample_rate)
+            
+            # If durations are significantly different, log warning
+            if abs(duration - librosa_duration) > 1.0:  # More than 1 second difference
+                logger.warning(
+                    f"Duration mismatch: AudioSegment={duration:.2f}s, "
+                    f"Librosa={librosa_duration:.2f}s"
+                )
+                # Use the shorter duration to be conservative
+                duration = min(duration, librosa_duration)
+            
+            logger.info(f"Calculated audio duration: {duration:.2f} seconds")
+            return duration
+            
         except Exception as e:
-            logger.error(f"Error calculating play duration: {str(e)}")
+            logger.error(f"Error calculating play duration: {str(e)}", exc_info=True)
             return 15.0  # Default to 15 seconds if calculation fails
 
     async def recognize(self, audio_data: bytes, station_name: str = None) -> dict:
@@ -347,6 +370,10 @@ class MusicRecognizer:
             # First, analyze if it's music
             features = self._analyze_audio_features(audio_data)
             
+            # Calculate duration early
+            duration_seconds = self._calculate_play_duration(audio_data)
+            duration_minutes = duration_seconds / 60.0
+            
             logger.info("Audio analysis completed", extra={
                 'station': {'name': station_name},
                 'step': 'analysis',
@@ -355,7 +382,8 @@ class MusicRecognizer:
                     'spectral_centroid': features.get('spectral_centroid_mean', 0),
                     'rms_energy': features.get('rms_energy_std', 0),
                     'zero_crossing_rate': features.get('zero_crossing_rate_mean', 0),
-                    'spectral_rolloff': features.get('spectral_rolloff_mean', 0)
+                    'spectral_rolloff': features.get('spectral_rolloff_mean', 0),
+                    'duration_seconds': duration_seconds
                 }
             })
             
@@ -372,7 +400,8 @@ class MusicRecognizer:
                     "is_music": False,
                     "confidence": features['music_likelihood'],
                     "station": station_name,
-                    "content_type": "speech"
+                    "content_type": "speech",
+                    "duration_minutes": duration_minutes
                 }
 
             logger.info("Music detected", extra={
@@ -380,12 +409,10 @@ class MusicRecognizer:
                 'step': 'analysis',
                 'detection_data': {
                     'music_likelihood': features['music_likelihood'],
-                    'content_type': 'music'
+                    'content_type': 'music',
+                    'duration_seconds': duration_seconds
                 }
             })
-            
-            # Calculate play duration
-            play_duration = self._calculate_play_duration(audio_data)
             
             # Try local database first
             logger.info("Searching local database", extra={
@@ -403,7 +430,7 @@ class MusicRecognizer:
                         'artist': local_match.artist,
                         'label': local_match.label,
                         'isrc': local_match.isrc,
-                        'duration': str(play_duration)
+                        'duration': str(timedelta(seconds=duration_seconds))
                     }
                 })
                 return {
@@ -413,11 +440,11 @@ class MusicRecognizer:
                         "title": local_match.title,
                         "artist": local_match.artist,
                         "isrc": local_match.isrc,
-                        "label": local_match.label,
-                        "duration_minutes": play_duration / 60
+                        "label": local_match.label
                     },
                     "confidence": 100.0,
-                    "source": "local_db"
+                    "source": "local_db",
+                    "duration_minutes": duration_minutes
                 }
 
             # Try MusicBrainz
@@ -428,6 +455,7 @@ class MusicRecognizer:
             
             mb_result = self._recognize_with_musicbrainz(audio_data)
             if mb_result:
+                mb_result['duration_minutes'] = duration_minutes
                 logger.info("Match found in MusicBrainz", extra={
                     'station': {'name': station_name},
                     'step': 'musicbrainz_search',
@@ -436,16 +464,16 @@ class MusicRecognizer:
                         'artist': mb_result.get('artist'),
                         'isrc': mb_result.get('isrc'),
                         'label': mb_result.get('label'),
-                        'duration': str(play_duration)
+                        'duration': str(timedelta(seconds=duration_seconds))
                     }
                 })
-                mb_result['duration_minutes'] = play_duration / 60
                 return {
                     "is_music": True,
                     "station": station_name,
                     "track": mb_result,
                     "confidence": 90.0,
-                    "source": "musicbrainz"
+                    "source": "musicbrainz",
+                    "duration_minutes": duration_minutes
                 }
 
             # Finally, try AudD
@@ -456,6 +484,7 @@ class MusicRecognizer:
             
             audd_result = self._recognize_with_audd(audio_data)
             if audd_result:
+                audd_result['duration_minutes'] = duration_minutes
                 logger.info("Match found in AudD", extra={
                     'station': {'name': station_name},
                     'step': 'audd_search',
@@ -465,84 +494,36 @@ class MusicRecognizer:
                         'album': audd_result.get('album'),
                         'isrc': audd_result.get('isrc'),
                         'label': audd_result.get('label'),
-                        'duration': str(play_duration)
+                        'duration': str(timedelta(seconds=duration_seconds))
                     }
                 })
-                
-                audd_result['duration_minutes'] = play_duration / 60
-                
-                # Save to database
-                try:
-                    new_track = Track(
-                        title=audd_result.get('title'),
-                        artist=audd_result.get('artist'),
-                        album=audd_result.get('album'),
-                        isrc=audd_result.get('isrc'),
-                        label=audd_result.get('label'),
-                        external_ids=audd_result.get('external_metadata', {}),
-                        created_at=datetime.now()
-                    )
-                    self.db_session.add(new_track)
-                    self.db_session.commit()
-                    logger.info("Track saved to database", extra={
-                        'station': {'name': station_name},
-                        'step': 'database_save',
-                        'detection_data': {
-                            'track_id': new_track.id,
-                            'title': new_track.title,
-                            'artist': new_track.artist,
-                            'isrc': new_track.isrc,
-                            'label': new_track.label
-                        }
-                    })
-                except Exception as e:
-                    logger.error("Error saving to database", extra={
-                        'station': {'name': station_name},
-                        'step': 'database_save',
-                        'error': str(e)
-                    }, exc_info=True)
-                    self.db_session.rollback()
                 
                 return {
                     "is_music": True,
                     "station": station_name,
                     "track": audd_result,
                     "confidence": 85.0,
-                    "source": "audd"
+                    "source": "audd",
+                    "duration_minutes": duration_minutes
                 }
-
-            # No match found
-            logger.info("No matches found", extra={
-                'station': {'name': station_name},
-                'step': 'complete',
-                'detection_data': {
-                    'music_likelihood': features['music_likelihood'],
-                    'duration': str(play_duration),
-                    'content_type': 'unknown_music'
-                }
-            })
             
             return {
                 "is_music": True,
-                "station": station_name,
                 "confidence": features['music_likelihood'],
-                "error": "No matches found",
-                "duration_minutes": play_duration / 60,
-                "content_type": "unknown_music"
-            }
-
-        except Exception as e:
-            logger.error("Error in music detection", extra={
-                'station': {'name': station_name},
-                'step': 'error',
-                'error': str(e)
-            }, exc_info=True)
-            return {
-                "error": str(e),
                 "station": station_name,
+                "content_type": "music",
+                "duration_minutes": duration_minutes,
+                "error": "No matching track found"
+            }
+                
+        except Exception as e:
+            logger.error(f"Error in music recognition: {str(e)}")
+            return {
                 "is_music": False,
-                "confidence": 0.0,
-                "content_type": "error"
+                "confidence": 0,
+                "station": station_name,
+                "error": str(e),
+                "duration_minutes": 0.25  # Default 15 seconds on error
             }
         finally:
             logger.info(f"=== Fin de la détection pour la station: {station_name} ===\n")

@@ -25,10 +25,22 @@ async def test_websocket_connection(ws_url):
             await websocket.send(json.dumps(test_message))
             logger.info("✅ WebSocket message sent successfully")
             
-            # Wait for response
+            # Wait for initial response or heartbeat
             response = await websocket.recv()
+            response_data = json.loads(response)
             logger.info(f"Received WebSocket response: {response}")
+            
+            # Handle heartbeat if received
+            if response_data.get("type") == "ping":
+                await websocket.send(json.dumps({"type": "pong"}))
+                logger.info("✅ Heartbeat acknowledged")
+                
+                # Wait for another message
+                response = await websocket.recv()
+                logger.info(f"Received additional message: {response}")
+            
             return True
+            
     except Exception as e:
         logger.error(f"❌ WebSocket test failed: {str(e)}")
         return False
@@ -70,9 +82,9 @@ async def main():
         # Load environment variables
         load_dotenv()
         
-        # Get API URLs
-        api_url = os.getenv("REACT_APP_API_URL", "http://localhost:3000")
-        ws_url = os.getenv("REACT_APP_WS_URL", "ws://localhost:8000/ws")
+        # Get API URLs for local testing
+        api_url = "http://localhost:8000"
+        ws_url = "ws://localhost:8000/ws"
         
         logger.info(f"Testing API connection to: {api_url}")
         logger.info(f"Testing WebSocket connection to: {ws_url}")
@@ -83,7 +95,7 @@ async def main():
         
         # Test WebSocket connection
         logger.info("\n=== Testing WebSocket Connection ===")
-        ws_result = await test_websocket_connection(ws_url.replace("wss:", "ws:"))
+        ws_result = await test_websocket_connection(ws_url)
         
         # Summary
         logger.info("\n=== Test Summary ===")

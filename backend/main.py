@@ -160,9 +160,11 @@ async def startup_event():
         if not app.state.redis:
             logger.warning("Redis is not available. Some features may be limited.")
 
-        # Initialize MusicRecognizer
+        # Initialize database session
+        db = SessionLocal()
+
+        # Initialize MusicRecognizer first
         try:
-            db = SessionLocal()
             music_recognizer = MusicRecognizer(db_session=db)
             await music_recognizer.initialize()
             logger.info("MusicRecognizer initialized successfully")
@@ -170,12 +172,21 @@ async def startup_event():
             logger.error(f"Error initializing MusicRecognizer: {str(e)}")
             raise
 
-        # Initialize AudioProcessor
+        # Initialize AudioProcessor with music_recognizer
         try:
             processor = AudioProcessor(db_session=db, music_recognizer=music_recognizer)
+            app.state.audio_processor = processor  # Store in app state for access
             logger.info("AudioProcessor initialized successfully")
         except Exception as e:
             logger.error(f"Error initializing AudioProcessor: {str(e)}")
+            raise
+
+        # Initialize RadioManager with audio_processor
+        try:
+            app.state.radio_manager = RadioManager(db_session=db, audio_processor=processor)
+            logger.info("RadioManager initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing RadioManager: {str(e)}")
             raise
 
     except Exception as e:
@@ -193,26 +204,50 @@ async def shutdown_event():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint with Redis support"""
+    """WebSocket endpoint with Redis support and heartbeat"""
     client_id = str(uuid.uuid4())
     try:
         await manager.connect(websocket, client_id)
         
+        # Start heartbeat task
+        heartbeat_task = asyncio.create_task(send_heartbeat(websocket))
+        
         while True:
-            data = await websocket.receive_text()
-            # Broadcast received message
-            await manager.broadcast({
-                "type": "message",
-                "client_id": client_id,
-                "data": data,
-                "timestamp": datetime.now().isoformat()
-            })
-            
-    except WebSocketDisconnect:
-        await manager.disconnect(client_id)
+            try:
+                data = await websocket.receive_text()
+                # Handle heartbeat response
+                if data == "pong":
+                    continue
+                    
+                # Broadcast received message
+                await manager.broadcast({
+                    "type": "message",
+                    "client_id": client_id,
+                    "data": data,
+                    "timestamp": datetime.now().isoformat()
+                })
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                logger.error(f"Error handling WebSocket message: {str(e)}")
+                break
+                
     except Exception as e:
         logger.error(f"WebSocket error for client {client_id}: {str(e)}")
+    finally:
+        # Clean up
+        if 'heartbeat_task' in locals():
+            heartbeat_task.cancel()
         await manager.disconnect(client_id)
+
+async def send_heartbeat(websocket: WebSocket):
+    """Send periodic heartbeat to keep connection alive"""
+    while True:
+        try:
+            await websocket.send_json({"type": "ping", "timestamp": datetime.now().isoformat()})
+            await asyncio.sleep(30)  # Send heartbeat every 30 seconds
+        except Exception:
+            break
 
 @app.get("/api/streams")
 async def get_streams(db: Session = Depends(get_db)):
@@ -1476,20 +1511,9 @@ async def detect_music_all_stations(db: Session = Depends(get_db)):
                 detail="Audio processing services not initialized"
             )
 
-        # Initialize RadioManager with AudioProcessor
-        try:
-            radio_manager = RadioManager(db_session=db, audio_processor=processor)
-            logger.info("RadioManager initialized with AudioProcessor")
-        except Exception as e:
-            logger.error(f"Error initializing RadioManager: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to initialize RadioManager: {str(e)}"
-            )
-        
         # Detect music using RadioManager
         try:
-            results = await radio_manager.detect_music()
+            results = await app.state.radio_manager.detect_music()
             return results
         except Exception as e:
             logger.error(f"Error detecting music: {str(e)}")

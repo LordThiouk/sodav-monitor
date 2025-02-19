@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from fastapi import WebSocket
 import json
@@ -13,12 +13,14 @@ class WebSocketManager:
         self.active_connections: Dict[str, WebSocket] = {}
         self.redis = None
         self.pubsub = None
+        self.last_heartbeat: Dict[str, datetime] = {}
         
     async def connect(self, websocket: WebSocket, client_id: str):
         """Connect a new WebSocket client"""
         try:
             await websocket.accept()
             self.active_connections[client_id] = websocket
+            self.last_heartbeat[client_id] = datetime.now()
             
             # Store client info in Redis
             self.redis = await get_redis()
@@ -26,8 +28,9 @@ class WebSocketManager:
                 "websocket_clients",
                 client_id,
                 json.dumps({
-                    "connected_at": asyncio.datetime.now().isoformat(),
-                    "client_id": client_id
+                    "connected_at": datetime.now().isoformat(),
+                    "client_id": client_id,
+                    "last_heartbeat": datetime.now().isoformat()
                 })
             )
             
@@ -43,6 +46,9 @@ class WebSocketManager:
             if client_id in self.active_connections:
                 await self.active_connections[client_id].close()
                 del self.active_connections[client_id]
+                
+            if client_id in self.last_heartbeat:
+                del self.last_heartbeat[client_id]
             
             # Remove client info from Redis
             if self.redis:
@@ -56,6 +62,10 @@ class WebSocketManager:
     async def broadcast(self, message: dict):
         """Broadcast message to all connected clients"""
         try:
+            # Skip broadcasting heartbeat messages
+            if message.get("type") == "ping":
+                return
+                
             # Publish message to Redis channel
             self.redis = await get_redis()
             await self.redis.publish(
@@ -67,6 +77,14 @@ class WebSocketManager:
             disconnected_clients = []
             for client_id, connection in self.active_connections.items():
                 try:
+                    # Check if client is still active (had recent heartbeat)
+                    if client_id in self.last_heartbeat:
+                        last_beat = self.last_heartbeat[client_id]
+                        if datetime.now() - last_beat > timedelta(minutes=2):
+                            logger.warning(f"Client {client_id} heartbeat timeout")
+                            disconnected_clients.append(client_id)
+                            continue
+                            
                     await connection.send_json(message)
                 except Exception as e:
                     logger.error(f"Error sending to client {client_id}: {str(e)}")
@@ -78,6 +96,42 @@ class WebSocketManager:
                 
         except Exception as e:
             logger.error(f"Error broadcasting message: {str(e)}")
+    
+    async def update_heartbeat(self, client_id: str):
+        """Update client's last heartbeat time"""
+        try:
+            self.last_heartbeat[client_id] = datetime.now()
+            if self.redis:
+                client_info = json.loads(await self.redis.hget("websocket_clients", client_id))
+                client_info["last_heartbeat"] = datetime.now().isoformat()
+                await self.redis.hset(
+                    "websocket_clients",
+                    client_id,
+                    json.dumps(client_info)
+                )
+        except Exception as e:
+            logger.error(f"Error updating heartbeat for client {client_id}: {str(e)}")
+            
+    async def cleanup_stale_connections(self):
+        """Clean up stale connections based on heartbeat"""
+        while True:
+            try:
+                now = datetime.now()
+                disconnected_clients = []
+                
+                for client_id, last_beat in self.last_heartbeat.items():
+                    if now - last_beat > timedelta(minutes=2):
+                        disconnected_clients.append(client_id)
+                        
+                for client_id in disconnected_clients:
+                    logger.warning(f"Removing stale client {client_id}")
+                    await self.disconnect(client_id)
+                    
+                await asyncio.sleep(60)  # Check every minute
+                    
+            except Exception as e:
+                logger.error(f"Error in cleanup task: {str(e)}")
+                await asyncio.sleep(60)  # Wait before retrying
     
     async def start_listener(self):
         """Start Redis subscription listener"""
@@ -108,6 +162,27 @@ class WebSocketManager:
 
 # Create global WebSocket manager instance
 manager = WebSocketManager()
+
+async def broadcast_station_update(station_data: Dict):
+    """Broadcast station status update to all connected clients"""
+    if manager.active_connections:
+        message = {
+            "type": "station_update",
+            "timestamp": datetime.now().isoformat(),
+            "data": {
+                "id": station_data.get("id"),
+                "name": station_data.get("name"),
+                "status": station_data.get("status"),
+                "is_active": station_data.get("is_active"),
+                "last_checked": station_data.get("last_checked"),
+                "last_detection_time": station_data.get("last_detection_time"),
+                "stream_url": station_data.get("stream_url"),
+                "country": station_data.get("country"),
+                "language": station_data.get("language"),
+                "total_play_time": station_data.get("total_play_time")
+            }
+        }
+        await manager.broadcast(message)
 
 async def broadcast_track_detection(track_data: Dict):
     """Broadcast track detection to all connected clients"""
