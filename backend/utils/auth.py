@@ -4,9 +4,14 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from typing import Optional
+import os
+import sys
+
+# Add the parent directory to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
 from database import get_db
 from models import User
-import os
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")

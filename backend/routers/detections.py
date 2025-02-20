@@ -4,8 +4,8 @@ from sqlalchemy import desc
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
-from database import get_db
-from models import TrackDetection, Track, RadioStation, StationStatus
+from ..database import get_db
+from ..models import TrackDetection, Track, RadioStation, StationStatus
 import logging
 
 router = APIRouter(prefix="/api/detections", tags=["detections"])
@@ -92,13 +92,23 @@ async def get_detections(
         detection_list = []
         for detection in detections:
             track = detection.track
+            
+            # Format play_duration to keep only HH:MM:SS
+            play_duration_str = "0:00:00"
+            if detection.play_duration:
+                total_seconds = int(detection.play_duration.total_seconds())
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+                play_duration_str = f"{hours}:{minutes:02d}:{seconds:02d}"
+            
             detection_dict = {
                 "id": detection.id,
                 "station_id": detection.station_id,
                 "track_id": detection.track_id,
-                "confidence": detection.confidence,
+                "confidence": round(detection.confidence, 2),
                 "detected_at": detection.detected_at.isoformat(),
-                "play_duration": str(detection.play_duration) if detection.play_duration else "0:00:00",
+                "play_duration": play_duration_str,
                 "track": {
                     "title": track.title,
                     "artist": track.artist,
@@ -145,29 +155,41 @@ async def get_latest_detections(
         # Get latest detections with station and track info
         query = db.query(TrackDetection).options(
             joinedload(TrackDetection.station),
-            joinedload(TrackDetection.track)
+            joinedload(TrackDetection.track).joinedload(Track.artist)
         ).order_by(desc(TrackDetection.detected_at)).limit(limit)
         
         detections = query.all()
         
-        return {
-            "total": len(detections),
-            "detections": [
-                {
+        detection_list = []
+        for d in detections:
+            try:
+                track = d.track
+                artist = track.artist if track else None
+                
+                # Format play_duration to keep only HH:MM:SS
+                play_duration_str = "0:00:00"
+                if d.play_duration:
+                    total_seconds = int(d.play_duration.total_seconds())
+                    hours = total_seconds // 3600
+                    minutes = (total_seconds % 3600) // 60
+                    seconds = total_seconds % 60
+                    play_duration_str = f"{hours}:{minutes:02d}:{seconds:02d}"
+                
+                detection_dict = {
                     "id": d.id,
                     "station_name": d.station.name if d.station else None,
-                    "track_title": d.track.title if d.track else None,
-                    "artist": d.track.artist if d.track else None,
+                    "track_title": track.title if track else None,
+                    "artist": artist.name if artist else None,
                     "detected_at": d.detected_at.isoformat(),
-                    "confidence": d.confidence,
-                    "play_duration": str(d.play_duration) if d.play_duration else "0:00:00",
+                    "confidence": round(d.confidence, 2),
+                    "play_duration": play_duration_str,
                     "track": {
-                        "id": d.track.id if d.track else None,
-                        "title": d.track.title if d.track else None,
-                        "artist": d.track.artist if d.track else None,
-                        "isrc": d.track.isrc if d.track else None,
-                        "label": d.track.label if d.track else None,
-                        "album": d.track.album if d.track else None
+                        "id": track.id if track else None,
+                        "title": track.title if track else None,
+                        "artist": artist.name if artist else None,
+                        "isrc": track.isrc if track else None,
+                        "label": track.label if track else None,
+                        "album": track.album if track else None
                     },
                     "station": {
                         "id": d.station.id if d.station else None,
@@ -175,8 +197,14 @@ async def get_latest_detections(
                         "stream_url": d.station.stream_url if d.station else None
                     }
                 }
-                for d in detections
-            ]
+                detection_list.append(detection_dict)
+            except Exception as e:
+                logger.error(f"Error processing detection {d.id}: {str(e)}")
+                continue
+        
+        return {
+            "total": len(detection_list),
+            "detections": detection_list
         }
     except Exception as e:
         logger.error(f"Error getting latest detections: {str(e)}")
@@ -195,14 +223,23 @@ async def get_detection(detection_id: int, db: Session = Depends(get_db)):
         if not detection:
             raise HTTPException(status_code=404, detail="Detection not found")
 
+        # Format play_duration to keep only HH:MM:SS
+        play_duration_str = "0:00:00"
+        if detection.play_duration:
+            total_seconds = int(detection.play_duration.total_seconds())
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
+            play_duration_str = f"{hours}:{minutes:02d}:{seconds:02d}"
+
         # Format the response to match the expected schema
         response = {
             "id": detection.id,
             "station_id": detection.station_id,
             "track_id": detection.track_id,
-            "confidence": detection.confidence,
+            "confidence": round(detection.confidence, 2),
             "detected_at": detection.detected_at,
-            "play_duration": str(detection.play_duration) if detection.play_duration else "0:00:00",
+            "play_duration": play_duration_str,
             "track": {
                 "title": detection.track.title,
                 "artist": detection.track.artist,

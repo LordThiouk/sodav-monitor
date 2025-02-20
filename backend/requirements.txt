@@ -33,7 +33,8 @@ passlib[bcrypt]>=1.7.4
 
 # Machine Learning
 tensorflow>=2.12.0
-pandas>=2.0.3
+pandas>=2.0.0
+openpyxl>=3.1.0
 
 # Networking and monitoring
 websockets>=12.0

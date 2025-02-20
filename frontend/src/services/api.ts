@@ -157,7 +157,7 @@ export const connectWebSocket = (onMessage: (data: WebSocketMessage) => void): W
 // Analytics API
 export const getArtistsAnalytics = async (timeRange: string = '7d') => {
   const response = await axios.get(`${API_BASE_URL}/analytics/artists?time_range=${timeRange}`);
-  return response.data.artists;
+  return response.data;
 };
 
 export const getLabelsAnalytics = async (timeRange: string = '7d') => {

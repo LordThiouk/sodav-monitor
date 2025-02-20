@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, distinct
 from datetime import datetime, timedelta
 import logging
 from typing import Dict, List, Optional
 from pydantic import BaseModel
 
-from database import get_db
-from models import Track, TrackDetection, RadioStation, ArtistStats, TrackStats, DetectionHourly, AnalyticsData
+from ..database import get_db
+from ..models import Track, TrackDetection, RadioStation, ArtistStats, TrackStats, DetectionHourly, AnalyticsData, Artist, StationStatus
 
 router = APIRouter(
     tags=["analytics"],
@@ -72,10 +72,19 @@ def get_analytics_overview(db: Session = Depends(get_db)):
         now = datetime.utcnow()
         last_24h = now - timedelta(hours=24)
         
-        # Get latest analytics data
+        # Get fresh counts of total and active stations
+        total_stations = db.query(func.count(RadioStation.id)).scalar() or 0
+        
+        # Get active stations (those marked as active)
+        active_stations = db.query(func.count(RadioStation.id))\
+            .filter(
+                RadioStation.is_active == True,
+                RadioStation.status == StationStatus.active
+            ).scalar() or 0
+            
+        # Get or create analytics data
         analytics = db.query(AnalyticsData).order_by(desc(AnalyticsData.timestamp)).first()
         if not analytics:
-            logger.info("No analytics data found, creating default response")
             analytics = AnalyticsData(
                 timestamp=now,
                 detection_count=0,
@@ -83,6 +92,12 @@ def get_analytics_overview(db: Session = Depends(get_db)):
                 active_stations=0,
                 average_confidence=0.0
             )
+            db.add(analytics)
+        
+        # Update analytics with current active stations
+        analytics.active_stations = active_stations
+        analytics.timestamp = now
+        db.commit()
         
         # Get hourly detections for the last 24 hours
         hourly_detections = db.query(DetectionHourly)\
@@ -102,7 +117,8 @@ def get_analytics_overview(db: Session = Depends(get_db)):
                 ))
         
         # Get top artists
-        top_artists = db.query(ArtistStats)\
+        top_artists = db.query(Artist, ArtistStats)\
+            .join(ArtistStats, Artist.id == ArtistStats.artist_id)\
             .order_by(desc(ArtistStats.detection_count))\
             .limit(10)\
             .all()
@@ -155,11 +171,6 @@ def get_analytics_overview(db: Session = Depends(get_db)):
         
         # Get system health
         try:
-            total_stations = db.query(func.count(RadioStation.id)).scalar() or 0
-            active_stations = db.query(func.count(RadioStation.id))\
-                .filter(RadioStation.last_checked >= last_24h)\
-                .scalar() or 0
-                
             system_health = {
                 "status": "healthy" if active_stations > 0 else "warning",
                 "uptime": 100.0 * (active_stations / total_stations if total_stations > 0 else 0),
@@ -173,12 +184,15 @@ def get_analytics_overview(db: Session = Depends(get_db)):
                 "lastError": str(e)
             }
         
+        # Get total play time from all detections
+        total_play_time = db.query(func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0))).scalar() or timedelta(0)
+        
         # Format response
         response = {
             "totalChannels": total_stations,
             "activeStations": active_stations,
             "totalPlays": analytics.detection_count,
-            "totalPlayTime": str(timedelta(seconds=int(analytics.detection_count * 15))),  # Assuming 15 seconds per detection
+            "totalPlayTime": f"{int(total_play_time.total_seconds() // 3600):01d}:{int((total_play_time.total_seconds() % 3600) // 60):02d}:{int(total_play_time.total_seconds() % 60):02d}",
             "playsData": [
                 ChartDataPoint(
                     hour=detection.hour.isoformat(),
@@ -187,20 +201,21 @@ def get_analytics_overview(db: Session = Depends(get_db)):
                 for detection in hourly_detections
             ],
             "topArtists": [
-                TopArtist(
-                    rank=idx + 1,
-                    name=artist.artist_name,
-                    plays=artist.detection_count
-                ).dict()
-                for idx, artist in enumerate(top_artists)
+                {
+                    "rank": i + 1,
+                    "name": artist.name,
+                    "plays": stats.detection_count or 0
+                }
+                for i, (artist, stats) in enumerate(top_artists)
+                if artist is not None
             ],
             "topTracks": [
                 TopTrack(
                     rank=idx + 1,
                     title=track.title,
-                    artist=track.artist,
+                    artist=track.artist.name,
                     plays=stats.detection_count,
-                    duration=str(track.duration) if track.duration else "00:00:00"
+                    duration=f"{int(stats.total_play_time.total_seconds() // 3600):01d}:{int((stats.total_play_time.total_seconds() % 3600) // 60):02d}:{int(stats.total_play_time.total_seconds() % 60):02d}" if stats.total_play_time else "0:00:00"
                 ).dict()
                 for idx, (track, stats) in enumerate(top_tracks)
             ],
@@ -301,15 +316,36 @@ async def get_artist_analytics(db: Session = Depends(get_db)):
     """
     Get detailed artist analytics including:
     - Detection counts
-    - Last detection time
+    - Total play time
+    - Unique tracks, albums, labels, and stations
     """
     try:
         logger.info("Fetching artist analytics data")
         
         # Get artist analytics with error handling
         try:
-            artist_stats = db.query(ArtistStats).order_by(
-                ArtistStats.detection_count.desc()
+            artist_stats = db.query(
+                Artist,
+                ArtistStats,
+                func.count(distinct(Track.id)).label('unique_tracks'),
+                func.count(distinct(Track.album)).label('unique_albums'),
+                func.count(distinct(Track.label)).label('unique_labels'),
+                func.count(distinct(TrackDetection.station_id)).label('unique_stations'),
+                func.sum(TrackDetection.play_duration).label('total_play_time')
+            ).join(
+                ArtistStats,
+                Artist.id == ArtistStats.artist_id
+            ).join(
+                Track,
+                Artist.id == Track.artist_id
+            ).join(
+                TrackDetection,
+                Track.id == TrackDetection.track_id
+            ).group_by(
+                Artist.id,
+                ArtistStats.id
+            ).order_by(
+                desc(ArtistStats.detection_count)
             ).all()
         except Exception as e:
             logger.error(f"Error getting artist analytics: {str(e)}")
@@ -317,12 +353,15 @@ async def get_artist_analytics(db: Session = Depends(get_db)):
         
         return [
             {
-                "id": stat.id,
-                "artist_name": stat.artist_name,
-                "detection_count": stat.detection_count,
-                "last_detected": stat.last_detected.isoformat() if stat.last_detected else None
+                "artist": artist.name,
+                "detection_count": stats.detection_count,
+                "total_play_time": f"{int(total_play_time.total_seconds() // 3600):01d}:{int((total_play_time.total_seconds() % 3600) // 60):02d}:{int(total_play_time.total_seconds() % 60):02d}" if total_play_time else "0:00:00",
+                "unique_tracks": unique_tracks,
+                "unique_albums": unique_albums,
+                "unique_labels": unique_labels,
+                "unique_stations": unique_stations
             }
-            for stat in artist_stats
+            for artist, stats, unique_tracks, unique_albums, unique_labels, unique_stations, total_play_time in artist_stats
         ]
         
     except Exception as e:
@@ -361,12 +400,15 @@ async def get_track_analytics(db: Session = Depends(get_db)):
         
         return [
             {
+                "id": track.id,
                 "title": track.title,
-                "artist": track.artist,
-                "plays": stats.detection_count,
-                "duration": track.duration or "0:00",
-                "confidence": stats.average_confidence,
-                "lastDetected": stats.last_detected.isoformat() if stats.last_detected else None
+                "artist": track.artist.name if track.artist else "Unknown",
+                "album": track.album or "-",
+                "label": track.label or "-",
+                "isrc": track.isrc or "-",
+                "detection_count": stats.detection_count,
+                "total_play_time": f"{int(stats.total_play_time.total_seconds() // 3600):01d}:{int((stats.total_play_time.total_seconds() % 3600) // 60):02d}:{int(stats.total_play_time.total_seconds() % 60):02d}" if stats.total_play_time else "0:00:00",
+                "unique_stations": len(set(d.station_id for d in track.detections))
             }
             for track, stats in track_stats
         ]
@@ -421,21 +463,21 @@ def update_artist_stats(db: Session):
         # Get recent detections grouped by artist
         try:
             artist_detections = db.query(
-                Track.artist,
+                Track.artist_id,
                 func.count(TrackDetection.id).label('detection_count'),
                 func.max(TrackDetection.detected_at).label('last_detected')
             ).join(TrackDetection).filter(
                 TrackDetection.detected_at >= yesterday
-            ).group_by(Track.artist).all()
+            ).group_by(Track.artist_id).all()
         except Exception as e:
             logger.error(f"Error getting artist detections: {str(e)}")
             artist_detections = []
         
         # Update artist stats
-        for artist, count, last_detected in artist_detections:
+        for artist_id, count, last_detected in artist_detections:
             try:
                 artist_stat = db.query(ArtistStats).filter(
-                    ArtistStats.artist_name == artist
+                    ArtistStats.artist_id == artist_id
                 ).first()
                 
                 if artist_stat:
@@ -443,7 +485,7 @@ def update_artist_stats(db: Session):
                     artist_stat.last_detected = last_detected
                 else:
                     artist_stat = ArtistStats(
-                        artist_name=artist,
+                        artist_id=artist_id,
                         detection_count=count,
                         last_detected=last_detected
                     )

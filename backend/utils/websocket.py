@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import logging
 from fastapi import WebSocket
 import json
-from redis_config import get_redis
+from ..redis_config import get_redis
 import asyncio
 
 logger = logging.getLogger(__name__)

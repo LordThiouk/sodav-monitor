@@ -1,16 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, desc, and_
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 from fastapi import BackgroundTasks
 import asyncio
 
-from database import get_db
-from models import RadioStation, StationStatus, Track, TrackDetection
-from utils.radio_manager import RadioManager
-from utils.websocket import broadcast_station_update
+from ..database import get_db
+from ..models import RadioStation, StationStatus, Track, TrackDetection, Artist
+from ..utils.radio_manager import RadioManager
+from ..utils.websocket import broadcast_station_update
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,13 +28,61 @@ class StationResponse(BaseModel):
     status: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class StationStats(BaseModel):
     total_stations: int
     active_stations: int
     inactive_stations: int
     languages: Dict[str, int]
+
+class TrackInfo(BaseModel):
+    title: str
+    artist: str
+    isrc: Optional[str] = ""
+    label: Optional[str] = ""
+    fingerprint: Optional[str] = ""
+
+    class Config:
+        from_attributes = True
+
+class DetectionResponse(BaseModel):
+    id: int
+    station_id: int
+    track_id: int
+    confidence: float
+    detected_at: datetime
+    play_duration: str
+    track: TrackInfo
+
+    class Config:
+        from_attributes = True
+
+class StationInfo(BaseModel):
+    id: int
+    name: str
+    country: Optional[str]
+    language: Optional[str]
+    status: str
+    total_detections: int
+    average_confidence: float
+    total_play_duration: str
+
+    class Config:
+        from_attributes = True
+
+class DetectionsResponse(BaseModel):
+    detections: List[DetectionResponse]
+    total: int
+    page: int
+    pages: int
+    has_next: bool
+    has_prev: bool
+    labels: List[str]
+    station: StationInfo
+
+    class Config:
+        from_attributes = True
 
 @router.get("/", response_model=Dict[str, List[StationResponse]])
 async def get_channels(db: Session = Depends(get_db)):
@@ -69,7 +117,7 @@ async def get_channels(db: Session = Depends(get_db)):
                         "stream_url": station.stream_url,
                         "country": station.country,
                         "language": station.language,
-                        "total_play_time": str(station.total_play_time) if station.total_play_time else "0:00:00"
+                        "total_play_time": f"{int(station.total_play_time.total_seconds() // 3600):01d}:{int((station.total_play_time.total_seconds() % 3600) // 60):02d}:{int(station.total_play_time.total_seconds() % 60):02d}" if station.total_play_time else "0:00:00"
                     })
             except Exception as e:
                 logger.warning(f"Error checking station {station.name}: {str(e)}")
@@ -86,7 +134,7 @@ async def get_channels(db: Session = Depends(get_db)):
                 "is_active": station.is_active,
                 "last_checked": station.last_checked.isoformat() if station.last_checked else None,
                 "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None,
-                "total_play_time": str(station.total_play_time) if station.total_play_time else "0:00:00"
+                "total_play_time": f"{int(station.total_play_time.total_seconds() // 3600):01d}:{int((station.total_play_time.total_seconds() % 3600) // 60):02d}:{int(station.total_play_time.total_seconds() % 60):02d}" if station.total_play_time else "0:00:00"
             }
             station_list.append(station_dict)
         
@@ -121,7 +169,7 @@ async def refresh_channels(db: Session = Depends(get_db)):
                 "stream_url": station.stream_url,
                 "country": station.country,
                 "language": station.language,
-                "total_play_time": str(station.total_play_time) if station.total_play_time else "0:00:00"
+                "total_play_time": f"{int(station.total_play_time.total_seconds() // 3600):01d}:{int((station.total_play_time.total_seconds() % 3600) // 60):02d}:{int(station.total_play_time.total_seconds() % 60):02d}" if station.total_play_time else "0:00:00"
             })
         
         return {
@@ -176,7 +224,7 @@ async def refresh_channel(channel_id: int, db: Session = Depends(get_db)):
             "stream_url": station.stream_url,
             "country": station.country,
             "language": station.language,
-            "total_play_time": str(station.total_play_time) if station.total_play_time else "0:00:00"
+            "total_play_time": f"{int(station.total_play_time.total_seconds() // 3600):01d}:{int((station.total_play_time.total_seconds() % 3600) // 60):02d}:{int(station.total_play_time.total_seconds() % 60):02d}" if station.total_play_time else "0:00:00"
         })
         
         return {
@@ -325,10 +373,15 @@ def get_channel_stats(db: Session = Depends(get_db)):
 def get_station_stats(station_id: int, db: Session = Depends(get_db)):
     """Get detailed statistics for a specific radio station"""
     try:
+        logger.info(f"Getting stats for station {station_id}")
+        
         # Verify station exists
         station = db.query(RadioStation).filter(RadioStation.id == station_id).first()
         if not station:
+            logger.warning(f"Station {station_id} not found")
             raise HTTPException(status_code=404, detail="Station not found")
+            
+        logger.info(f"Found station: {station.name}")
             
         now = datetime.utcnow()
         last_24h = now - timedelta(hours=24)
@@ -339,6 +392,8 @@ def get_station_stats(station_id: int, db: Session = Depends(get_db)):
         total_play_time = db.query(func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0))).filter(
             TrackDetection.station_id == station_id
         ).scalar() or timedelta(seconds=0)
+        
+        logger.info(f"Total play time: {total_play_time}")
         
         # Get detection counts for different time periods
         detections_24h = db.query(func.count(TrackDetection.id)).filter(
@@ -356,59 +411,97 @@ def get_station_stats(station_id: int, db: Session = Depends(get_db)):
             TrackDetection.detected_at >= last_30d
         ).scalar() or 0
         
+        logger.info(f"Detection counts - 24h: {detections_24h}, 7d: {detections_7d}, 30d: {detections_30d}")
+        
         # Get top tracks for this station with NULL handling
-        top_tracks = db.query(
-            Track,
-            func.count(TrackDetection.id).label('plays'),
-            func.coalesce(func.avg(TrackDetection.confidence), 0.0).label('avg_confidence'),
-            func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0)).label('total_duration')
-        ).join(
-            TrackDetection,
-            Track.id == TrackDetection.track_id
-        ).filter(
-            TrackDetection.station_id == station_id,
-            TrackDetection.detected_at >= last_24h
-        ).group_by(
-            Track.id
-        ).order_by(
-            desc('plays')
-        ).limit(10).all()
+        try:
+            top_tracks = db.query(
+                Track,
+                func.count(TrackDetection.id).label('plays'),
+                func.coalesce(func.avg(TrackDetection.confidence), 0.0).label('avg_confidence'),
+                func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0)).label('total_duration')
+            ).join(
+                TrackDetection, Track.id == TrackDetection.track_id
+            ).join(
+                Artist, Track.artist_id == Artist.id
+            ).filter(
+                TrackDetection.station_id == station_id,
+                TrackDetection.detected_at >= last_24h
+            ).group_by(
+                Track.id
+            ).order_by(
+                desc('plays')
+            ).limit(10).all()
+            
+            logger.info(f"Found {len(top_tracks)} top tracks")
+            
+        except Exception as track_error:
+            logger.error(f"Error getting top tracks: {str(track_error)}")
+            top_tracks = []
         
         # Get top artists for this station with NULL handling
-        top_artists = db.query(
-            Track.artist,
-            func.count(TrackDetection.id).label('plays'),
-            func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0)).label('total_duration')
-        ).join(
-            TrackDetection,
-            Track.id == TrackDetection.track_id
-        ).filter(
-            TrackDetection.station_id == station_id,
-            TrackDetection.detected_at >= last_24h
-        ).group_by(
-            Track.artist
-        ).order_by(
-            desc('plays')
-        ).limit(10).all()
+        try:
+            top_artists = db.query(
+                Artist,
+                func.count(TrackDetection.id).label('plays'),
+                func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0)).label('total_duration')
+            ).join(
+                Track, Track.artist_id == Artist.id
+            ).join(
+                TrackDetection, TrackDetection.track_id == Track.id
+            ).filter(
+                TrackDetection.station_id == station_id,
+                TrackDetection.detected_at >= last_24h
+            ).group_by(
+                Artist.id
+            ).order_by(
+                desc('plays')
+            ).limit(10).all()
+            
+            logger.info(f"Found {len(top_artists)} top artists")
+            
+        except Exception as artist_error:
+            logger.error(f"Error getting top artists: {str(artist_error)}")
+            top_artists = []
         
-        # Get hourly detection counts with SQLite compatible datetime handling
-        hourly_detections = db.query(
-            func.date_trunc('hour', TrackDetection.detected_at).label('hour'),
-            func.count(TrackDetection.id).label('count'),
-            func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0)).label('duration')
-        ).filter(
-            TrackDetection.station_id == station_id,
-            TrackDetection.detected_at >= last_24h,
-            TrackDetection.detected_at.isnot(None)  # Exclude NULL dates
-        ).group_by(
-            'hour'
-        ).order_by(
-            'hour'
-        ).all()
+        # Get hourly detection counts
+        try:
+            hourly_detections = db.query(
+                func.date_trunc('hour', TrackDetection.detected_at).label('hour'),
+                func.count(TrackDetection.id).label('count'),
+                func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0)).label('duration')
+            ).filter(
+                TrackDetection.station_id == station_id,
+                TrackDetection.detected_at >= last_24h
+            ).group_by(
+                'hour'
+            ).order_by(
+                'hour'
+            ).all()
+            
+            logger.info(f"Found {len(hourly_detections)} hourly detection records")
+            
+        except Exception as hourly_error:
+            logger.error(f"Error getting hourly detections: {str(hourly_error)}")
+            hourly_detections = []
 
         # Calculate metrics with NULL handling
-        total_detections = detections_24h + detections_7d + detections_30d
-        uptime_percentage = (detections_24h / 96) * 100 if detections_24h > 0 else 0  # 96 = 24 hours * 4 (15-min intervals)
+        total_detections = db.query(func.count(TrackDetection.id)).filter(
+            TrackDetection.station_id == station_id
+        ).scalar() or 0
+        
+        # Calculate uptime percentage based on detections in last 24h
+        total_24h_play_time = db.query(func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0))).filter(
+            TrackDetection.station_id == station_id,
+            TrackDetection.detected_at >= last_24h
+        ).scalar() or timedelta(0)
+
+        # Calculate percentage (24h = 86400 seconds)
+        play_time_seconds = total_24h_play_time.total_seconds()
+        uptime_percentage = (play_time_seconds / 86400) * 100
+
+        uptime_percentage = min(100, round(uptime_percentage, 2))  # Cap at 100% and round to 2 decimals
+        
         avg_duration = total_play_time / total_detections if total_detections > 0 else timedelta(0)
         
         # Ensure all datetime objects are converted to ISO format strings
@@ -428,20 +521,19 @@ def get_station_stats(station_id: int, db: Session = Depends(get_db)):
                 return dt.isoformat()
             elif isinstance(dt, str):
                 try:
-                    # Parse the SQLite datetime string and convert to ISO format
                     return datetime.strptime(dt, '%Y-%m-%d %H:%M:%S').isoformat()
                 except ValueError:
                     return dt
             else:
                 return str(dt) if dt is not None else None
         
-        return {
+        response = {
             "station": station_data,
             "metrics": {
-                "total_play_time": str(total_play_time),
+                "total_play_time": f"{int(total_play_time.total_seconds() // 3600):01d}:{int((total_play_time.total_seconds() % 3600) // 60):02d}:{int(total_play_time.total_seconds() % 60):02d}" if total_play_time else "0:00:00",
                 "detection_count": total_detections,
                 "unique_tracks": len(top_tracks),
-                "average_track_duration": str(avg_duration),
+                "average_track_duration": f"{int(avg_duration.total_seconds() // 3600):01d}:{int((avg_duration.total_seconds() % 3600) // 60):02d}:{int(avg_duration.total_seconds() % 60):02d}" if avg_duration else "0:00:00",
                 "uptime_percentage": round(uptime_percentage, 2)
             },
             "detections": {
@@ -451,27 +543,32 @@ def get_station_stats(station_id: int, db: Session = Depends(get_db)):
             },
             "top_tracks": [{
                 "title": track.title,
-                "artist": track.artist,
+                "artist": track.artist.name if track.artist else "Unknown",
                 "play_count": plays,
-                "play_time": str(total_duration) if total_duration else "00:00:00"
+                "play_time": f"{int(total_duration.total_seconds() // 3600):01d}:{int((total_duration.total_seconds() % 3600) // 60):02d}:{int(total_duration.total_seconds() % 60):02d}" if total_duration else "0:00:00"
             } for track, plays, avg_confidence, total_duration in top_tracks],
             "top_artists": [{
-                "name": artist,
+                "name": artist.name,
+                "label": artist.label or "Unknown",
+                "country": artist.country or "Unknown",
                 "play_count": plays,
-                "play_time": str(total_duration) if total_duration else "00:00:00"
+                "play_time": f"{int(total_duration.total_seconds() // 3600):01d}:{int((total_duration.total_seconds() % 3600) // 60):02d}:{int(total_duration.total_seconds() % 60):02d}" if total_duration else "0:00:00"
             } for artist, plays, total_duration in top_artists],
             "hourly_detections": [{
                 "hour": safe_datetime_to_iso(hour),
                 "count": count,
-                "duration": str(duration) if duration else "00:00:00"
+                "duration": f"{int(duration.total_seconds() // 3600):01d}:{int((duration.total_seconds() % 3600) // 60):02d}:{int(duration.total_seconds() % 60):02d}" if duration else "0:00:00"
             } for hour, count, duration in hourly_detections]
         }
+        
+        logger.info("Successfully generated station stats response")
+        return response
         
     except Exception as e:
         logger.error(f"Error getting station stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{station_id}/detections", response_model=dict)
+@router.get("/{station_id}/detections", response_model=DetectionsResponse)
 async def get_channel_detections(
     station_id: int,
     page: int = Query(1, ge=1),
@@ -484,96 +581,121 @@ async def get_channel_detections(
     Get detections for a specific radio station with pagination and filtering
     """
     try:
+        logger.info(f"Getting detections for station {station_id}, page {page}, limit {limit}")
+        
         # Verify station exists and is active
         station = db.query(RadioStation).filter(
-            RadioStation.id == station_id,
-            RadioStation.is_active == True,
-            RadioStation.status == StationStatus.active
+            RadioStation.id == station_id
         ).first()
+        
         if not station:
-            raise HTTPException(status_code=404, detail="Station not found or inactive")
+            logger.warning(f"Station {station_id} not found")
+            raise HTTPException(status_code=404, detail="Station not found")
+            
+        logger.info(f"Found station: {station.name}")
 
         # Calculate offset
         offset = (page - 1) * limit
+        logger.info(f"Calculated offset: {offset}")
 
-        # Base query
-        query = db.query(TrackDetection).join(
-            Track, TrackDetection.track_id == Track.id
-        ).filter(
-            TrackDetection.station_id == station_id
-        )
+        try:
+            # Base query with eager loading
+            query = db.query(TrackDetection).options(
+                joinedload(TrackDetection.track).joinedload(Track.artist)
+            ).filter(
+                TrackDetection.station_id == station_id
+            )
+            
+            # Apply search filter if provided
+            if search:
+                search = f"%{search.lower()}%"
+                logger.info(f"Applying search filter: {search}")
+                query = query.join(Track).join(Artist).filter(
+                    (Track.title.ilike(search)) |
+                    (Artist.name.ilike(search)) |
+                    (Track.isrc.ilike(search))
+                )
 
-        # Apply search filter if provided
-        if search:
-            search = f"%{search.lower()}%"
-            query = query.filter(
-                (Track.title.ilike(search)) |
-                (Track.artist.ilike(search)) |
-                (Track.isrc.ilike(search))
+            # Apply label filter if provided
+            if label and label != "All Labels":
+                logger.info(f"Applying label filter: {label}")
+                query = query.join(Track).filter(Track.label == label)
+
+            # Get total count for pagination
+            total_count = query.count()
+            logger.info(f"Total count: {total_count}")
+
+            # Get detections with pagination
+            detections = query.order_by(
+                desc(TrackDetection.detected_at)
+            ).offset(offset).limit(limit).all()
+            logger.info(f"Retrieved {len(detections)} detections")
+
+            # Get unique labels for filtering
+            labels = db.query(Track.label).distinct().filter(
+                Track.label.isnot(None)
+            ).all()
+            unique_labels = [label[0] for label in labels if label[0]]
+            logger.info(f"Found {len(unique_labels)} unique labels")
+
+            # Format response
+            detection_list = []
+            for detection in detections:
+                try:
+                    track = detection.track
+                    artist = track.artist if track else None
+                    detection_dict = DetectionResponse(
+                        id=detection.id,
+                        station_id=detection.station_id,
+                        track_id=detection.track_id,
+                        confidence=detection.confidence,
+                        detected_at=detection.detected_at,
+                        play_duration=f"{int(detection.play_duration.total_seconds() // 3600):01d}:{int((detection.play_duration.total_seconds() % 3600) // 60):02d}:{int(detection.play_duration.total_seconds() % 60):02d}" if detection.play_duration else "0:00:00",
+                        track=TrackInfo(
+                            title=track.title if track else "Unknown",
+                            artist=artist.name if artist else "Unknown",
+                            isrc=track.isrc or "",
+                            label=track.label or "",
+                            fingerprint=track.fingerprint or ""
+                        )
+                    )
+                    detection_list.append(detection_dict)
+                except Exception as e:
+                    logger.error(f"Error formatting detection {detection.id}: {str(e)}")
+                    continue
+
+            # Get station info for response
+            station_info = StationInfo(
+                id=station.id,
+                name=station.name,
+                country=station.country,
+                language=station.language,
+                status=station.status.value if station.status else "inactive",
+                total_detections=total_count,
+                average_confidence=0.0,  # Calculate this if needed
+                total_play_duration=f"{int(station.total_play_time.total_seconds() // 3600):01d}:{int((station.total_play_time.total_seconds() % 3600) // 60):02d}:{int(station.total_play_time.total_seconds() % 60):02d}" if station.total_play_time else "0:00:00"
             )
 
-        # Apply label filter if provided
-        if label and label != "All Labels":
-            query = query.filter(Track.label == label)
+            response = DetectionsResponse(
+                detections=detection_list,
+                total=total_count,
+                page=page,
+                pages=(total_count + limit - 1) // limit,
+                has_next=offset + limit < total_count,
+                has_prev=page > 1,
+                labels=unique_labels,
+                station=station_info
+            )
+            
+            logger.info("Successfully formatted response")
+            return response
 
-        # Get total count for pagination
-        total_count = query.count()
+        except Exception as e:
+            logger.error(f"Database error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-        # Get detections with pagination
-        detections = query.order_by(
-            desc(TrackDetection.detected_at)
-        ).offset(offset).limit(limit).all()
-
-        # Get unique labels for filtering
-        labels = db.query(Track.label).distinct().filter(
-            Track.label.isnot(None)
-        ).all()
-        unique_labels = [label[0] for label in labels if label[0]]
-
-        # Format response
-        detection_list = []
-        for detection in detections:
-            track = detection.track
-            detection_dict = {
-                "id": detection.id,
-                "station_id": detection.station_id,
-                "track_id": detection.track_id,
-                "confidence": detection.confidence,
-                "detected_at": detection.detected_at.isoformat(),
-                "play_duration": str(detection.play_duration) if detection.play_duration else "0:00:00",
-                "track": {
-                    "title": track.title,
-                    "artist": track.artist,
-                    "isrc": track.isrc or "",
-                    "label": track.label or "",
-                    "fingerprint": track.fingerprint or ""
-                }
-            }
-            detection_list.append(detection_dict)
-
-        # Get station info for response
-        station_info = {
-            "id": station.id,
-            "name": station.name,
-            "country": station.country,
-            "language": station.language,
-            "status": station.status.value if station.status else "inactive",
-            "total_detections": total_count,
-            "average_confidence": 0.0,  # Calculate this if needed
-            "total_play_duration": str(station.total_play_time) if station.total_play_time else "0:00:00"
-        }
-
-        return {
-            "detections": detection_list,
-            "total": total_count,
-            "page": page,
-            "pages": (total_count + limit - 1) // limit,
-            "has_next": offset + limit < total_count,
-            "has_prev": page > 1,
-            "labels": unique_labels,
-            "station": station_info
-        }
-
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error getting channel detections: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

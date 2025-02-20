@@ -2,7 +2,7 @@ import requests
 import logging
 from typing import List, Dict, Optional
 from datetime import datetime
-from models import StationStatus
+from ..models import StationStatus
 import aiohttp
 import asyncio
 

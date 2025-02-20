@@ -4,11 +4,11 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-from models import RadioStation, StationStatus, Track, TrackDetection, TrackStats, ArtistStats, StationTrackStats
+from ..models import RadioStation, StationStatus, Track, TrackDetection, TrackStats, ArtistStats, StationTrackStats
 from .radio_fetcher import RadioFetcher
 from .websocket import broadcast_track_detection  # Import broadcast_track_detection function
 from .analytics_manager import AnalyticsManager
-from audio_processor import AudioProcessor
+from ..audio_processor import AudioProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class RadioManager:
         # Initialize audio processor if not provided
         if audio_processor is None:
             try:
-                from audio_processor import AudioProcessor
+                from ..audio_processor import AudioProcessor
                 self.audio_processor = AudioProcessor()
                 logger.info("AudioProcessor initialized successfully")
             except Exception as e:
