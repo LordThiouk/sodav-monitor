@@ -49,9 +49,10 @@ class Report(Base):
     __tablename__ = "reports"
 
     id = Column(Integer, primary_key=True, index=True)
-    type = Column(String, nullable=False)
-    format = Column(String, default="csv", nullable=False)
-    status = Column(String, default="pending", nullable=False)  # Use string instead of enum
+    type = Column(String, nullable=False)  # detection, analytics, summary, artist, track, station
+    format = Column(String, default="csv", nullable=False)  # csv, xlsx, json
+    status = Column(String, default="pending", nullable=False)  # pending, generating, completed, failed
+    progress = Column(Float, default=0.0, nullable=False)  # 0.0 to 1.0
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
@@ -62,6 +63,9 @@ class Report(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     user = relationship("User", back_populates="reports")
+
+    def __repr__(self):
+        return f"<Report(id={self.id}, type={self.type}, status={self.status}, progress={self.progress})>"
 
 class ReportSubscription(Base):
     __tablename__ = 'report_subscriptions'
@@ -107,6 +111,7 @@ class Artist(Base):
     country = Column(String, nullable=True)  # Pour les statistiques par pays
     region = Column(String, nullable=True)   # Pour les statistiques régionales
     type = Column(String, nullable=True)     # solo, group, band, etc.
+    label = Column(String, nullable=True, index=True)  # Pour le label de l'artiste
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, onupdate=datetime.utcnow)
     total_play_time = Column(Interval, default=timedelta(0))
@@ -120,7 +125,7 @@ class Artist(Base):
     monthly_stats = relationship("ArtistMonthly", back_populates="artist", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<Artist(name='{self.name}', country='{self.country}', type='{self.type}')>"
+        return f"<Artist(name='{self.name}', country='{self.country}', type='{self.type}', label='{self.label}')>"
 
 class Track(Base):
     __tablename__ = 'tracks'
@@ -169,7 +174,7 @@ class ArtistStats(Base):
     __tablename__ = 'artist_stats'
 
     id = Column(Integer, primary_key=True)
-    artist_id = Column(Integer, ForeignKey('artists.id'), unique=True)  # Changer artist_name en artist_id
+    artist_id = Column(Integer, ForeignKey('artists.id'), unique=True)
     detection_count = Column(Integer, default=0)
     last_detected = Column(DateTime, nullable=True)
     total_play_time = Column(Interval, default=timedelta(0))

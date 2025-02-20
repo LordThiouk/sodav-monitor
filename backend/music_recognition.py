@@ -10,11 +10,18 @@ import librosa
 from datetime import datetime, timedelta
 import musicbrainzngs
 from sqlalchemy.orm import Session
-from models import Track
+from .models import Track
 import acoustid
 import hashlib
 from functools import lru_cache
-from utils.logging_config import setup_logging
+from .utils.logging_config import setup_logging
+import soundfile as sf
+import asyncio
+import aiohttp
+import tempfile
+from sqlalchemy import func, desc
+from .models import TrackDetection, RadioStation, StationTrackStats
+from .fingerprint import AudioProcessor as FingerprintProcessor
 
 # Configure logging
 logger = setup_logging(__name__)
@@ -53,7 +60,6 @@ class MusicRecognizer:
             if self.audd_api_key:
                 logger.info("Testing AudD API connection...")
                 try:
-                    import aiohttp
                     async with aiohttp.ClientSession() as session:
                         async with session.get(f'https://api.audd.io/test/?api_token={self.audd_api_key}') as response:
                             if response.status == 200:

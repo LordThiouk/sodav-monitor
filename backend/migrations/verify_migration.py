@@ -6,6 +6,7 @@ import sys
 sys.path.append('..')
 from database import get_database_url
 from models import Base, Track, Artist, ArtistStats
+from sqlalchemy import inspect
 
 # Configure logging
 logging.basicConfig(
@@ -14,9 +15,42 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def verify_table_structure(session):
+    """Verify the structure of the database tables"""
+    try:
+        # Get table information
+        inspector = inspect(session.get_bind())
+        
+        # Check artists table
+        logger.info("\nArtists table structure:")
+        for column in inspector.get_columns('artists'):
+            logger.info(f"  - {column['name']}: {column['type']}")
+        
+        # Check artist_stats table
+        logger.info("\nArtist_stats table structure:")
+        for column in inspector.get_columns('artist_stats'):
+            logger.info(f"  - {column['name']}: {column['type']}")
+        
+        # Check foreign keys
+        logger.info("\nForeign keys in artist_stats:")
+        for fk in inspector.get_foreign_keys('artist_stats'):
+            logger.info(f"  - {fk['constrained_columns']} -> {fk['referred_table']}.{fk['referred_columns']}")
+        
+        # Check indexes
+        logger.info("\nIndexes in artist_stats:")
+        for index in inspector.get_indexes('artist_stats'):
+            logger.info(f"  - {index['name']}: {index['column_names']}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error verifying table structure: {str(e)}")
+        return False
+
 def verify_database_state():
     """Verify the state of the database after migration"""
     try:
+        logger.info("Starting database verification...")
+        
         # Get database connection
         database_url = get_database_url()
         engine = create_engine(database_url)
@@ -24,109 +58,54 @@ def verify_database_state():
         session = Session()
         
         try:
-            # 1. Check artists table
-            artist_count = session.execute(text("SELECT COUNT(*) FROM artists")).scalar()
-            logger.info(f"Found {artist_count} artists in database")
+            # Check artists
+            artists = session.query(Artist).all()
+            logger.info(f"\nFound {len(artists)} artists:")
+            for artist in artists:
+                logger.info(f"  - {artist.name} (Label: {artist.label or 'N/A'})")
             
-            # 2. Check tracks with artist_id
-            tracks_with_artist = session.execute(text("""
-                SELECT COUNT(*) 
-                FROM tracks 
-                WHERE artist_id IS NOT NULL
-            """)).scalar()
-            logger.info(f"Found {tracks_with_artist} tracks with artist_id")
-            
-            # 3. Check for tracks without artist_id
-            tracks_without_artist = session.execute(text("""
-                SELECT COUNT(*) 
-                FROM tracks 
-                WHERE artist_id IS NULL
-            """)).scalar()
-            if tracks_without_artist > 0:
-                logger.warning(f"Found {tracks_without_artist} tracks without artist_id")
-            
-            # 4. Check artist statistics
-            artist_stats = session.execute(text("""
-                SELECT 
-                    a.id,
-                    a.name,
-                    a.total_plays,
-                    COUNT(t.id) as track_count,
-                    a.total_play_time,
-                    SUM(t.total_play_time) as actual_play_time
-                FROM artists a
-                LEFT JOIN tracks t ON a.id = t.artist_id
-                GROUP BY a.id, a.name, a.total_plays, a.total_play_time
-                ORDER BY track_count DESC
-                LIMIT 10
-            """)).fetchall()
-            
-            logger.info("\nTop 10 artists by track count:")
-            for artist in artist_stats:
-                logger.info(
-                    f"Artist: {artist[1]}\n"
-                    f"  - Tracks: {artist[3]}\n"
-                    f"  - Total plays: {artist[2]}\n"
-                    f"  - Total play time: {artist[4]}\n"
-                )
-            
-            # 5. Check for temporary columns
-            temp_columns = session.execute(text("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'tracks' 
-                AND (column_name = 'temp_artist_name' OR column_name = 'artist')
-            """)).fetchall()
-            
-            if temp_columns:
-                logger.warning(f"Found temporary columns: {[col[0] for col in temp_columns]}")
-            
-            # 6. Check foreign key constraints
-            fk_violations = session.execute(text("""
-                SELECT COUNT(*) 
-                FROM tracks t
-                LEFT JOIN artists a ON t.artist_id = a.id
-                WHERE t.artist_id IS NOT NULL 
-                AND a.id IS NULL
-            """)).scalar()
-            
-            if fk_violations > 0:
-                logger.error(f"Found {fk_violations} tracks with invalid artist_id references")
-            else:
-                logger.info("No foreign key violations found")
-            
-            # 7. Check artist stats consistency
-            stats_inconsistencies = session.execute(text("""
-                SELECT 
-                    a.id,
-                    a.name,
-                    a.total_plays,
-                    COUNT(t.id) as actual_count
-                FROM artists a
-                LEFT JOIN tracks t ON a.id = t.artist_id
-                GROUP BY a.id, a.name, a.total_plays
-                HAVING a.total_plays != COUNT(t.id)
-            """)).fetchall()
-            
-            if stats_inconsistencies:
-                logger.warning(f"Found {len(stats_inconsistencies)} artists with inconsistent statistics:")
-                for artist in stats_inconsistencies:
-                    logger.warning(
-                        f"Artist {artist[1]} (ID: {artist[0]}):\n"
-                        f"  - Stored plays: {artist[2]}\n"
-                        f"  - Actual tracks: {artist[3]}"
+            # Check artist stats
+            stats = session.query(ArtistStats).all()
+            logger.info(f"\nFound {len(stats)} artist statistics records:")
+            for stat in stats:
+                artist = session.query(Artist).get(stat.artist_id)
+                if artist:
+                    logger.info(
+                        f"  - {artist.name}:\n"
+                        f"    * Detection count: {stat.detection_count}\n"
+                        f"    * Total play time: {stat.total_play_time}\n"
+                        f"    * Average confidence: {stat.average_confidence:.2f}%"
                     )
+            
+            # Check for artists without stats
+            artists_without_stats = session.query(Artist).outerjoin(
+                ArtistStats
+            ).filter(
+                ArtistStats.id == None
+            ).all()
+            
+            if artists_without_stats:
+                logger.warning(f"\nFound {len(artists_without_stats)} artists without statistics:")
+                for artist in artists_without_stats:
+                    logger.warning(f"  - {artist.name}")
             else:
-                logger.info("Artist statistics are consistent")
+                logger.info("\nAll artists have statistics records")
             
-            logger.info("\nVerification completed!")
+            logger.info("\nVerification completed successfully!")
             
+        except Exception as e:
+            logger.error(f"Error during verification: {str(e)}")
+            raise
         finally:
             session.close()
             
     except Exception as e:
-        logger.error(f"Error during verification: {str(e)}")
+        logger.error(f"Database verification failed: {str(e)}")
         raise
 
 if __name__ == "__main__":
-    verify_database_state() 
+    try:
+        verify_database_state()
+    except Exception as e:
+        logger.error("Verification failed")
+        sys.exit(1) 

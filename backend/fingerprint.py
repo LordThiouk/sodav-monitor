@@ -1,17 +1,25 @@
 import numpy as np
 import io
 from pydub import AudioSegment
-from music_recognition import MusicRecognizer
 from typing import Dict, Any, Optional
 import logging
 from scipy import signal
+import librosa
+import soundfile as sf
+from .models import Track, TrackDetection
+from datetime import datetime, timedelta
+import asyncio
+import aiohttp
+import tempfile
+import os
 
 logger = logging.getLogger(__name__)
 
 class AudioProcessor:
     def __init__(self, acoustid_api_key: Optional[str] = None, audd_api_key: Optional[str] = None):
         """Initialize audio processor with API keys for music recognition services"""
-        self.recognizer = MusicRecognizer(acoustid_api_key, audd_api_key)
+        self.acoustid_api_key = acoustid_api_key
+        self.audd_api_key = audd_api_key
     
     def detect_track(self, audio_data: bytes) -> Dict[str, Any]:
         """
@@ -24,6 +32,8 @@ class AudioProcessor:
             Dictionary containing detection results and track information
         """
         try:
+            from .music_recognition import MusicRecognizer
+            
             logger.info("Converting audio data...")
             # Convert audio to numpy array for analysis
             audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
@@ -54,7 +64,8 @@ class AudioProcessor:
             # If we're confident it's music, try to identify the track
             if is_music and analysis["music_confidence"] > 60:
                 logger.info("Attempting to identify track...")
-                track_info = self.recognizer.recognize_from_audio_data(audio_data)
+                recognizer = MusicRecognizer(self.acoustid_api_key, self.audd_api_key)
+                track_info = recognizer.recognize_from_audio_data(audio_data)
                 if "error" not in track_info:
                     logger.info(f"Track identified: {track_info.get('title')} by {track_info.get('artist')}")
                     result["track_info"] = track_info
@@ -291,6 +302,8 @@ class AudioProcessor:
     
     def lookup_isrc(self, isrc: str) -> Dict[str, Any]:
         """Look up song details by ISRC code"""
-        return self.recognizer.get_song_details(isrc)
+        from .music_recognition import MusicRecognizer
+        recognizer = MusicRecognizer(self.acoustid_api_key, self.audd_api_key)
+        return recognizer.get_song_details(isrc)
 
 __all__ = ['AudioProcessor']

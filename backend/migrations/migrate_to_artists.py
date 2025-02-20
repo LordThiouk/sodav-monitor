@@ -36,9 +36,63 @@ def create_artists_table(engine, session):
             return True
         else:
             logger.info("Artists table already exists")
+            # Add label column if it doesn't exist
+            if not column_exists(engine, 'artists', 'label'):
+                logger.info("Adding label column to artists table...")
+                session.execute(text("""
+                    ALTER TABLE artists 
+                    ADD COLUMN IF NOT EXISTS label VARCHAR;
+                    CREATE INDEX IF NOT EXISTS idx_artist_label ON artists (label);
+                """))
+                session.commit()
+                logger.info("Label column added successfully")
             return True
     except Exception as e:
         logger.error(f"Error creating artists table: {str(e)}")
+        session.rollback()
+        return False
+
+def prepare_artist_stats_table(session):
+    """Prepare the artist_stats table for PostgreSQL"""
+    try:
+        # Drop existing table if it exists
+        session.execute(text("DROP TABLE IF EXISTS artist_stats CASCADE"))
+        session.commit()
+        
+        logger.info("Creating artist_stats table...")
+        # Create new table with correct structure
+        session.execute(text("""
+            CREATE TABLE artist_stats (
+                id SERIAL PRIMARY KEY,
+                artist_id INTEGER,
+                detection_count INTEGER DEFAULT 0,
+                last_detected TIMESTAMP,
+                total_play_time INTERVAL DEFAULT '0 seconds',
+                average_confidence FLOAT DEFAULT 0.0
+            )
+        """))
+        
+        # Add foreign key constraint
+        session.execute(text("""
+            ALTER TABLE artist_stats 
+            ADD CONSTRAINT fk_artist_stats_artist 
+            FOREIGN KEY (artist_id) 
+            REFERENCES artists(id);
+            
+            ALTER TABLE artist_stats 
+            ADD CONSTRAINT unique_artist_id 
+            UNIQUE (artist_id);
+            
+            CREATE INDEX idx_artist_stats_artist_id 
+            ON artist_stats(artist_id);
+        """))
+        
+        session.commit()
+        logger.info("Artist stats table created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error preparing artist_stats table: {str(e)}")
+        session.rollback()
         return False
 
 def prepare_tracks_table(session):
@@ -75,14 +129,22 @@ def prepare_tracks_table(session):
 def create_artists(session):
     """Create artist entries from unique artist names"""
     try:
-        # Get unique artists
+        # Get unique artists and their labels from tracks
         unique_artists = session.execute(
-            text("SELECT DISTINCT artist FROM tracks WHERE artist IS NOT NULL")
+            text("""
+                SELECT DISTINCT artist, label 
+                FROM tracks 
+                WHERE artist IS NOT NULL
+                GROUP BY artist, label
+            """)
         ).fetchall()
         
         artist_mapping = {}
         
-        for (artist_name,) in tqdm(unique_artists, desc="Creating artists"):
+        for artist_row in tqdm(unique_artists, desc="Creating artists"):
+            artist_name = artist_row[0]
+            artist_label = artist_row[1]
+            
             # Check if artist exists
             existing_artist = session.execute(
                 text("SELECT id FROM artists WHERE name = :name"),
@@ -91,11 +153,22 @@ def create_artists(session):
             
             if existing_artist:
                 artist_mapping[artist_name] = existing_artist[0]
+                # Update label if not set
+                if artist_label:
+                    session.execute(
+                        text("""
+                            UPDATE artists 
+                            SET label = :label 
+                            WHERE id = :id AND label IS NULL
+                        """),
+                        {"id": existing_artist[0], "label": artist_label}
+                    )
                 continue
             
             # Create new artist
             artist = Artist(
                 name=artist_name,
+                label=artist_label,
                 created_at=datetime.utcnow(),
                 total_play_time=timedelta(0),
                 total_plays=0
@@ -234,28 +307,32 @@ def migrate_to_artists():
         if not create_artists_table(engine, session):
             raise Exception("Failed to create artists table")
         
-        # Step 2: Prepare tracks table
+        # Step 2: Prepare artist_stats table
+        if not prepare_artist_stats_table(session):
+            raise Exception("Failed to prepare artist_stats table")
+        
+        # Step 3: Prepare tracks table
         if not prepare_tracks_table(session):
             raise Exception("Failed to prepare tracks table")
         
-        # Step 3: Create artists
+        # Step 4: Create artists
         artist_mapping = create_artists(session)
         if not artist_mapping:
             raise Exception("Failed to create artists")
         
-        # Step 4: Update track references
+        # Step 5: Update track references
         if not update_track_references(session, artist_mapping):
             raise Exception("Failed to update track references")
         
-        # Step 5: Update artist statistics
+        # Step 6: Update artist statistics
         if not update_artist_statistics(session, artist_mapping):
             raise Exception("Failed to update artist statistics")
         
-        # Step 6: Verify migration
+        # Step 7: Verify migration
         if not verify_migration(session):
             raise Exception("Migration verification failed")
         
-        # Step 7: Cleanup
+        # Step 8: Cleanup
         if not cleanup(session):
             raise Exception("Failed to clean up temporary data")
         

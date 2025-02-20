@@ -14,23 +14,27 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, distinct, case, and_, text
+from sqlalchemy import func, distinct, case, and_, text, String
 import librosa
-from models import Base, RadioStation, Track, TrackDetection, User, Report, ReportStatus
-from database import SessionLocal, engine
-from audio_processor import AudioProcessor
-from music_recognition import MusicRecognizer
-from fingerprint import AudioProcessor as FingerprintProcessor
-from radio_manager import RadioManager
-from fingerprint_generator import generate_fingerprint
-from routers.analytics import router as analytics_router
-from routers.channels import router as channels_router
-from routers.reports import router as reports_router
-from routers import channels, detections
-from utils.logging_config import setup_logging
-from health_check import get_system_health
-from redis_config import init_redis, close_redis
-from utils.websocket import manager
+import pandas as pd
+from pathlib import Path
+
+# Local imports
+from backend.models import Base, RadioStation, Track, TrackDetection, User, Report, ReportStatus
+from backend.database import SessionLocal, engine
+from backend.audio_processor import AudioProcessor
+from backend.music_recognition import MusicRecognizer
+from backend.fingerprint import AudioProcessor as FingerprintProcessor
+from backend.radio_manager import RadioManager
+from backend.fingerprint_generator import generate_fingerprint
+from backend.routers.analytics import router as analytics_router
+from backend.routers.channels import router as channels_router
+from backend.routers.reports import router as reports_router
+from backend.routers import detections
+from backend.utils.logging_config import setup_logging
+from backend.health_check import get_system_health
+from backend.redis_config import init_redis, close_redis
+from backend.utils.websocket import manager
 import uuid
 import asyncio
 
@@ -64,7 +68,6 @@ app.add_middleware(
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(channels_router)
 app.include_router(reports_router, prefix="/api/reports", tags=["reports"])
-app.include_router(channels.router)
 app.include_router(detections.router)
 
 # Fallback route for API 404s
@@ -677,7 +680,7 @@ async def get_reports(db: Session = Depends(get_db)):
 
 async def broadcast_track_detection(track_data: Dict):
     """Broadcast track detection to all connected clients"""
-    from utils.websocket import active_connections
+    from backend.utils.websocket import active_connections
     
     # Format the track data for frontend
     track = {
@@ -924,6 +927,10 @@ async def download_report(
         filename=f"report_{report.id}_{report.type}_{report.created_at.date()}.{report.format}"
     )
 
+# Create reports directory if it doesn't exist
+REPORTS_DIR = Path(__file__).parent / "reports"
+REPORTS_DIR.mkdir(exist_ok=True)
+
 async def generate_report(report_id: int, db: Session):
     """Background task to generate report"""
     try:
@@ -931,8 +938,74 @@ async def generate_report(report_id: int, db: Session):
         if not report:
             return
 
+        report.status = "generating"
+        db.commit()
+
+        # Generate sample data based on report type
+        data = []
+        if report.type == "detection":
+            # Get detection data for the date range
+            detections = db.query(TrackDetection).filter(
+                TrackDetection.detected_at.between(report.start_date, report.end_date)
+            ).all()
+            data = [
+                {
+                    "track_id": d.track_id,
+                    "station": d.station_id,
+                    "detected_at": d.detected_at,
+                    "confidence": d.confidence
+                }
+                for d in detections
+            ]
+        elif report.type == "analytics":
+            # Get analytics data
+            stations = db.query(RadioStation).all()
+            data = [
+                {
+                    "station_id": s.id,
+                    "name": s.name,
+                    "status": "active" if s.is_active else "inactive",
+                    "uptime": s.uptime or 0
+                }
+                for s in stations
+            ]
+        elif report.type == "summary":
+            # Generate summary data
+            total_detections = db.query(TrackDetection).filter(
+                TrackDetection.detected_at.between(report.start_date, report.end_date)
+            ).count()
+            active_stations = db.query(RadioStation).filter(RadioStation.is_active == True).count()
+            data = [{
+                "period_start": report.start_date,
+                "period_end": report.end_date,
+                "total_detections": total_detections,
+                "active_stations": active_stations
+            }]
+
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        
+        if df.empty:
+            report.status = "failed"
+            report.error_message = "No data found for the specified time range"
+            db.commit()
+            return
+
+        # Create file path
+        file_path = REPORTS_DIR / f"report_{report.id}.{report.format}"
+        
+        # Export data in the requested format
+        if report.format == "csv":
+            df.to_csv(file_path, index=False)
+        elif report.format == "xlsx":
+            df.to_excel(file_path, index=False)
+        elif report.format == "json":
+            df.to_json(file_path, orient="records")
+
+        # Update report status
         report.status = "completed"
         report.completed_at = datetime.now()
+        report.file_path = str(file_path)
         
     except Exception as e:
         report.status = "failed"
@@ -1037,12 +1110,12 @@ async def get_artist_analytics(
             db.query(
                 Track.artist,
                 func.count(TrackDetection.id).label('detection_count'),
-                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
+                func.sum(func.extract('epoch', TrackDetection.play_duration)).label('total_play_time'),
                 func.count(distinct(Track.id)).label('unique_tracks'),
-                func.group_concat(distinct(Track.title)).label('tracks'),
-                func.group_concat(distinct(Track.album)).label('albums'),
-                func.group_concat(distinct(Track.label)).label('labels'),
-                func.group_concat(distinct(RadioStation.name)).label('stations')
+                func.string_agg(distinct(Track.title), ',').label('tracks'),
+                func.string_agg(distinct(Track.album), ',').label('albums'),
+                func.string_agg(distinct(Track.label), ',').label('labels'),
+                func.string_agg(distinct(RadioStation.name), ',').label('stations')
             )
             .join(TrackDetection, Track.id == TrackDetection.track_id)
             .join(RadioStation, TrackDetection.station_id == RadioStation.id)
@@ -1095,79 +1168,54 @@ async def get_label_analytics(
     time_range: str = Query(..., description="Time range for analytics (e.g., '7d' for 7 days)"),
     db: Session = Depends(get_db)
 ):
-    """Get label analytics for a specific time range"""
     try:
-        # Parse time range
-        unit = time_range[-1].lower()
-        value = int(time_range[:-1])
-        
-        if unit == 'd':
-            delta = timedelta(days=value)
-        elif unit == 'h':
-            delta = timedelta(hours=value)
-        else:
-            raise ValueError(f"Invalid time range format: {time_range}. Use format like '7d' or '24h'")
-        
-        start_time = datetime.now() - delta
-        
-        # Get label detections in the time range
-        detections = (
-            db.query(
-                Track.label,
-                func.count(TrackDetection.id).label('detection_count'),
-                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
-                func.count(distinct(Track.id)).label('unique_tracks'),
-                func.group_concat(distinct(Track.title)).label('tracks'),
-                func.group_concat(distinct(Track.artist)).label('artists'),
-                func.group_concat(distinct(Track.album)).label('albums'),
-                func.group_concat(distinct(RadioStation.name)).label('stations')
-            )
-            .join(TrackDetection, Track.id == TrackDetection.track_id)
-            .join(RadioStation, TrackDetection.station_id == RadioStation.id)
-            .filter(TrackDetection.detected_at >= start_time)
-            .filter(Track.label.isnot(None))  # Exclude tracks without labels
-            .group_by(Track.label)
-            .order_by(func.count(TrackDetection.id).desc())
-            .all()
+        # Calculate start date based on time range
+        start_date = datetime.now() - timedelta(
+            days=30 if time_range == '30d' else 7 if time_range == '7d' else 1
         )
         
+        # Query for label analytics
+        label_stats = db.query(
+            Track.label.label('label'),
+            func.count(TrackDetection.id).label('detection_count'),
+            func.sum(func.extract('epoch', TrackDetection.play_duration)).label('total_play_time'),
+            func.count(distinct(Track.id)).label('unique_tracks'),
+            func.string_agg(distinct(Track.title), ',').label('tracks'),
+            func.string_agg(distinct(Track.album), ',').label('albums'),
+            func.string_agg(distinct(RadioStation.name), ',').label('stations')
+        ).join(
+            TrackDetection, Track.id == TrackDetection.track_id
+        ).join(
+            RadioStation, TrackDetection.station_id == RadioStation.id
+        ).filter(
+            TrackDetection.detected_at >= start_date,
+            Track.label.isnot(None)
+        ).group_by(
+            Track.label
+        ).order_by(
+            func.count(TrackDetection.id).desc()
+        ).all()
+
         # Format response
-        results = []
-        for (label, detection_count, total_play_time, unique_tracks, tracks, artists, albums, stations) in detections:
-            # Split concatenated strings into lists
-            track_list = tracks.split(',') if tracks else []
-            artist_list = list(set(artists.split(',') if artists else []))
-            album_list = list(set(albums.split(',') if albums else []))
-            station_list = list(set(stations.split(',') if stations else []))
+        labels = []
+        for stat in label_stats:
+            total_play_time = timedelta(seconds=int(stat.total_play_time)) if stat.total_play_time else timedelta(0)
             
-            results.append({
-                "label": label,
-                "detection_count": detection_count,
-                "total_play_time": str(timedelta(seconds=int(total_play_time))) if total_play_time else "0:00:00",
-                "unique_tracks": unique_tracks,
-                "tracks": track_list,
-                "unique_artists": len(artist_list),
-                "artists": artist_list,
-                "unique_albums": len(album_list),
-                "albums": album_list,
-                "unique_stations": len(station_list),
-                "stations": station_list
+            labels.append({
+                "label": stat.label,
+                "detection_count": stat.detection_count,
+                "total_play_time": str(total_play_time),
+                "unique_tracks": stat.unique_tracks,
+                "tracks": stat.tracks.split(',') if stat.tracks else [],
+                "albums": stat.albums.split(',') if stat.albums else [],
+                "stations": stat.stations.split(',') if stat.stations else []
             })
-        
-        return {
-            "time_range": time_range,
-            "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-            "end_time": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-            "total_labels": len(results),
-            "labels": results
-        }
-        
+
+        return {"labels": labels}
+
     except Exception as e:
         logger.error(f"Error getting label analytics: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error getting label analytics: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/analytics/channels")
 async def get_channel_analytics(
@@ -1177,82 +1225,76 @@ async def get_channel_analytics(
     """Get channel analytics for a specific time range"""
     try:
         # Parse time range
-        unit = time_range[-1].lower()
-        value = int(time_range[:-1])
-        
-        if unit == 'd':
-            delta = timedelta(days=value)
-        elif unit == 'h':
-            delta = timedelta(hours=value)
-        else:
-            raise ValueError(f"Invalid time range format: {time_range}. Use format like '7d' or '24h'")
-        
-        start_time = datetime.now() - delta
-        
-        # Get channel detections in the time range
-        detections = (
-            db.query(
-                RadioStation.id,
-                RadioStation.name,
-                RadioStation.stream_url,
-                RadioStation.country,
-                RadioStation.language,
-                RadioStation.status,
-                func.count(TrackDetection.id).label('detection_count'),
-                func.sum(func.strftime('%s', TrackDetection.play_duration)).label('total_play_time'),
-                func.count(distinct(Track.id)).label('unique_tracks'),
-                func.group_concat(distinct(Track.title)).label('tracks'),
-                func.group_concat(distinct(Track.artist)).label('artists'),
-                func.group_concat(distinct(Track.label)).label('labels'),
-                func.count(distinct(Track.artist)).label('unique_artists'),
-                func.count(distinct(Track.label)).label('unique_labels')
-            )
-            .outerjoin(TrackDetection, and_(
-                RadioStation.id == TrackDetection.station_id,
-                TrackDetection.detected_at >= start_time
-            ))
-            .outerjoin(Track, TrackDetection.track_id == Track.id)
-            .group_by(RadioStation.id)
-            .order_by(func.count(TrackDetection.id).desc())
-            .all()
+        start_date = datetime.now() - timedelta(
+            days=30 if time_range == '30d' else 7 if time_range == '7d' else 1
         )
         
-        # Format response
+        # Get all radio stations with their detection stats
+        query = text("""
+            WITH detection_stats AS (
+                SELECT 
+                    rs.id,
+                    rs.name,
+                    rs.stream_url,
+                    rs.country,
+                    rs.language,
+                    COALESCE(rs.status::text, 'inactive') as status,
+                    COUNT(td.id) as detection_count,
+                    SUM(EXTRACT(epoch FROM td.play_duration)) as total_play_time,
+                    COUNT(DISTINCT t.id) as unique_tracks,
+                    COUNT(DISTINCT t.artist_id) as unique_artists,
+                    COUNT(DISTINCT t.label) as unique_labels,
+                    STRING_AGG(DISTINCT COALESCE(t.title, '')::text, ',') FILTER (WHERE t.title IS NOT NULL) as tracks,
+                    STRING_AGG(DISTINCT COALESCE(a.name, '')::text, ',') FILTER (WHERE a.name IS NOT NULL) as artists,
+                    STRING_AGG(DISTINCT COALESCE(t.label, '')::text, ',') FILTER (WHERE t.label IS NOT NULL) as labels
+                FROM radio_stations rs
+                LEFT JOIN track_detections td ON rs.id = td.station_id 
+                    AND td.detected_at >= :start_date
+                LEFT JOIN tracks t ON td.track_id = t.id
+                LEFT JOIN artists a ON t.artist_id = a.id
+                GROUP BY rs.id, rs.name, rs.stream_url, rs.country, rs.language, rs.status
+                ORDER BY COUNT(td.id) DESC
+            )
+            SELECT * FROM detection_stats
+        """)
+        
+        # Execute query with parameters
+        result = db.execute(query, {"start_date": start_date})
+        stations = result.fetchall()
+        
         results = []
-        for (
-            station_id, name, stream_url, country, language, status, 
-            detection_count, total_play_time, unique_tracks, tracks, 
-            artists, labels, unique_artists, unique_labels
-        ) in detections:
-            # Split concatenated strings into lists
-            track_list = tracks.split(',') if tracks else []
-            artist_list = list(set(artists.split(',') if artists else []))
-            label_list = list(set(labels.split(',') if labels else []))
-            
-            # Calculate detection rate (detections per hour)
-            hours = delta.total_seconds() / 3600
+        for station in stations:
+            # Calculate detection rate
+            time_diff = datetime.now() - start_date
+            hours = time_diff.total_seconds() / 3600
+            detection_count = station.detection_count or 0
             detection_rate = round(detection_count / hours, 2) if detection_count else 0
             
+            # Split aggregated strings into lists, filtering out empty strings
+            track_list = sorted([t for t in station.tracks.split(',') if t]) if station.tracks else []
+            artist_list = sorted([a for a in station.artists.split(',') if a]) if station.artists else []
+            label_list = sorted([l for l in station.labels.split(',') if l]) if station.labels else []
+            
             results.append({
-                "id": station_id,
-                "name": name,
-                "url": stream_url,
-                "status": status.value if status else "inactive",
-                "region": f"{country or 'Unknown'} ({language or 'Unknown'})",
-                "detection_count": detection_count or 0,
+                "id": station.id,
+                "name": station.name,
+                "url": station.stream_url,
+                "status": station.status,
+                "region": f"{station.country or 'Unknown'} ({station.language or 'Unknown'})",
+                "detection_count": detection_count,
                 "detection_rate": detection_rate,
-                "total_play_time": str(timedelta(seconds=int(total_play_time))) if total_play_time else "0:00:00",
-                "unique_tracks": unique_tracks or 0,
+                "total_play_time": str(timedelta(seconds=int(station.total_play_time))) if station.total_play_time else "0:00:00",
+                "unique_tracks": station.unique_tracks or 0,
                 "tracks": track_list,
-                "unique_artists": unique_artists or 0,
+                "unique_artists": station.unique_artists or 0,
                 "artists": artist_list,
-                "unique_labels": unique_labels or 0,
+                "unique_labels": station.unique_labels or 0,
                 "labels": label_list
             })
         
         return {
             "time_range": time_range,
-            "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "start_time": start_date.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
             "end_time": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
             "total_channels": len(results),
             "active_channels": len([r for r in results if r["detection_count"] > 0]),
@@ -1402,7 +1444,7 @@ async def get_analytics_overview(
             "totalChannels": total_stations,
             "activeStations": active_stations,
             "totalPlays": detection_stats.total_detections or 0,
-            "totalPlayTime": str(timedelta(seconds=int(detection_stats.total_play_time))) if detection_stats.total_play_time else "00:00:00",
+            "totalPlayTime": str(timedelta(seconds=int(detection_stats.total_play_time))) if detection_stats.total_play_time else "0:00:00",
             "playsData": [
                 {
                     "hour": hour,
@@ -1415,8 +1457,8 @@ async def get_analytics_overview(
                     "rank": i + 1,
                     "title": title,
                     "artist": artist,
-                    "plays": detection_count or 0,
-                    "duration": str(timedelta(seconds=int(total_play_time))) if total_play_time else "00:00:00"
+                    "plays": detection_count,
+                    "duration": str(timedelta(seconds=int(total_play_time))) if total_play_time else "0:00:00"
                 }
                 for i, (id, title, artist, detection_count, total_play_time) in enumerate(top_tracks)
             ],
@@ -1424,7 +1466,8 @@ async def get_analytics_overview(
                 {
                     "rank": i + 1,
                     "name": artist,
-                    "plays": detection_count or 0
+                    "plays": detection_count,
+                    "duration": str(timedelta(seconds=int(total_play_time))) if total_play_time else "0:00:00"
                 }
                 for i, (artist, detection_count, total_play_time) in enumerate(top_artists)
                 if artist is not None
@@ -1432,7 +1475,7 @@ async def get_analytics_overview(
             "topLabels": [
                 {
                     "rank": i + 1,
-                    "name": label or "Unknown",
+                    "name": label,
                     "plays": count
                 }
                 for i, (label, count) in enumerate(top_labels)
@@ -1441,8 +1484,8 @@ async def get_analytics_overview(
                 {
                     "rank": i + 1,
                     "name": name,
-                    "country": country or "Unknown",
-                    "language": language or "Unknown",
+                    "country": country,
+                    "language": language,
                     "plays": count
                 }
                 for i, (id, name, country, language, count) in enumerate(top_channels)

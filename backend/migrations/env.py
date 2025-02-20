@@ -9,7 +9,7 @@ import sys
 from dotenv import load_dotenv
 
 # Add the parent directory to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 # Load environment variables from .env file
 load_dotenv()
@@ -24,15 +24,29 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import all models here
-from models import Base
+from backend.models import Base
 
-# Set the database URL in the alembic.ini file
+# Get database URL from environment
 def get_database_url():
-    db_url = os.getenv("DATABASE_URL")
-    if db_url and db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-    return db_url or "postgresql://postgres:password@localhost:5432/sodav"
+    """Get database URL based on environment"""
+    env = os.getenv("ENV", "development")
+    
+    if env == "production":
+        # Use production PostgreSQL URL
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            raise ValueError("DATABASE_URL not set in production environment")
+    else:
+        # Use development PostgreSQL database
+        db_url = os.getenv("DEV_DATABASE_URL", "postgresql://sodav:sodav123@localhost:5432/sodav_dev")
+    
+    # Handle special case for postgres:// URLs
+    if db_url.startswith('postgres://'):
+        db_url = db_url.replace('postgres://', 'postgresql://', 1)
+    
+    return db_url
 
+# Set database URL in Alembic config
 config.set_main_option("sqlalchemy.url", get_database_url())
 
 # add your model's MetaData object here
