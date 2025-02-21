@@ -1,33 +1,24 @@
-import logging
+"""Script pour exécuter les migrations de la base de données"""
+import os
+import sys
 from alembic import command
 from alembic.config import Config
-from pathlib import Path
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 def run_migrations():
-    """Run all pending database migrations."""
     try:
-        # Get the directory containing this script
-        migrations_dir = Path(__file__).parent.absolute()
+        # Obtenir le chemin du fichier alembic.ini
+        alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
         
-        # Create Alembic configuration
-        alembic_cfg = Config()
-        alembic_cfg.set_main_option('script_location', str(migrations_dir))
+        # Définir le chemin des scripts de migration
+        alembic_cfg.set_main_option("script_location", os.path.dirname(__file__))
         
-        # Run the migration
-        logger.info("Starting database migration...")
+        # Exécuter la migration
         command.upgrade(alembic_cfg, "head")
-        logger.info("Database migration completed successfully!")
+        print("✅ Migration completed successfully")
         
     except Exception as e:
-        logger.error(f"Error during database migration: {str(e)}")
-        raise
+        print(f"❌ Error during migration: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     run_migrations() 

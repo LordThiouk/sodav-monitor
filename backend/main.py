@@ -14,13 +14,19 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, distinct, case, and_, text, String
+from sqlalchemy import func, distinct, case, and_, text, String, cast
 import librosa
 import pandas as pd
 from pathlib import Path
+import asyncio
+from sqlalchemy import create_engine, MetaData
+from sqlalchemy.ext.declarative import declarative_base
+import asyncpg
+import aioredis
+from starlette.websockets import WebSocketDisconnect
 
 # Local imports
-from backend.models import Base, RadioStation, Track, TrackDetection, User, Report, ReportStatus
+from backend.models import Base, RadioStation, Track, TrackDetection, User, Report, ReportStatus, Artist
 from backend.database import SessionLocal, engine
 from backend.audio_processor import AudioProcessor
 from backend.music_recognition import MusicRecognizer
@@ -36,16 +42,23 @@ from backend.health_check import get_system_health
 from backend.redis_config import init_redis, close_redis
 from backend.utils.websocket import manager
 import uuid
-import asyncio
+from tasks.report_scheduler import start_schedulers
+from backend.utils.stats_updater import StatsUpdater
 
 # Load environment variables
 load_dotenv()
 
+# Load database and Redis URLs from environment variables
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/sodav_monitor")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
 # Configure logging
 logger = setup_logging(__name__)
 
-# Create tables
+# Create tables if they don't exist
+logger.info("Creating database tables if they don't exist...")
 Base.metadata.create_all(bind=engine)
+logger.info("Database tables ready")
 
 app = FastAPI(
     title="SODAV Media Monitor",
@@ -154,93 +167,106 @@ processor = None
 
 @app.on_event("startup")
 async def startup_event():
-    """Application startup event handler"""
+    """Initialize app components on startup"""
     try:
-        global music_recognizer, processor
+        # Initialize database
+        from .database import init_db
+        init_db()
+        logger.info("Database tables recreated")
+        
+        # Create a database session for initialization
+        db_session = SessionLocal()
+        
+        # Initialize database pool
+        db_url = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/sodav_dev")
+        app.state.pool = await asyncpg.create_pool(
+            db_url,
+            min_size=2,
+            max_size=10
+        )
+        logger.info("Database pool initialized")
         
         # Initialize Redis
-        app.state.redis = await init_redis()
-        if not app.state.redis:
-            logger.warning("Redis is not available. Some features may be limited.")
-
-        # Initialize database session
-        db = SessionLocal()
-
-        # Initialize MusicRecognizer first
-        try:
-            music_recognizer = MusicRecognizer(db_session=db)
-            await music_recognizer.initialize()
-            logger.info("MusicRecognizer initialized successfully")
-        except Exception as e:
-            logger.error(f"Error initializing MusicRecognizer: {str(e)}")
-            raise
-
-        # Initialize AudioProcessor with music_recognizer
-        try:
-            processor = AudioProcessor(db_session=db, music_recognizer=music_recognizer)
-            app.state.audio_processor = processor  # Store in app state for access
-            logger.info("AudioProcessor initialized successfully")
-        except Exception as e:
-            logger.error(f"Error initializing AudioProcessor: {str(e)}")
-            raise
-
-        # Initialize RadioManager with audio_processor
-        try:
-            app.state.radio_manager = RadioManager(db_session=db, audio_processor=processor)
-            logger.info("RadioManager initialized successfully")
-        except Exception as e:
-            logger.error(f"Error initializing RadioManager: {str(e)}")
-            raise
-
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        app.state.redis = aioredis.from_url(
+            redis_url,
+            encoding="utf-8",
+            decode_responses=True
+        )
+        logger.info("Redis connection initialized")
+        
+        # Initialize music recognizer first
+        music_recognizer = MusicRecognizer(
+            db_session=db_session,
+            audd_api_key=os.getenv("AUDD_API_KEY")
+        )
+        await music_recognizer.initialize()
+        app.state.music_recognizer = music_recognizer
+        logger.info("Music recognizer initialized")
+        
+        # Initialize audio processor with music recognizer
+        audio_processor = AudioProcessor(
+            db_session=db_session,
+            music_recognizer=music_recognizer
+        )
+        app.state.audio_processor = audio_processor
+        logger.info("Audio processor initialized")
+        
+        # Initialize radio manager with audio processor
+        app.state.radio_manager = RadioManager(
+            db_session=db_session,
+            audio_processor=audio_processor
+        )
+        logger.info("Radio manager initialized")
+        
+        # Initialize stats updater and verify statistics
+        stats_updater = StatsUpdater(db_session)
+        await stats_updater.initialize_missing_stats()
+        logger.info("Statistics initialized")
+        
     except Exception as e:
         logger.error(f"Error during startup: {str(e)}")
-        raise
+        raise e
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cleanup on shutdown"""
+    """Cleanup on app shutdown"""
     try:
-        await close_redis()
-        logger.info("Application shutdown completed")
+        # Cancel monitoring task if running
+        if hasattr(app.state, 'monitoring_task'):
+            app.state.monitoring_task.cancel()
+            try:
+                await app.state.monitoring_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Station monitoring stopped")
+        
+        # Close database pool
+        if hasattr(app.state, 'pool'):
+            await app.state.pool.close()
+            logger.info("Database pool closed")
+            
+        # Close Redis connection    
+        if hasattr(app.state, 'redis'):
+            await app.state.redis.close()
+            logger.info("Redis connection closed")
+            
     except Exception as e:
-        logger.error(f"Error during shutdown: {str(e)}")
+        logger.error(f"Error during shutdown: {str(e)}", exc_info=True)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint with Redis support and heartbeat"""
     client_id = str(uuid.uuid4())
+    await manager.connect(websocket, client_id)
     try:
-        await manager.connect(websocket, client_id)
-        
-        # Start heartbeat task
-        heartbeat_task = asyncio.create_task(send_heartbeat(websocket))
-        
         while True:
-            try:
-                data = await websocket.receive_text()
-                # Handle heartbeat response
-                if data == "pong":
-                    continue
-                    
-                # Broadcast received message
-                await manager.broadcast({
-                    "type": "message",
-                    "client_id": client_id,
-                    "data": data,
-                    "timestamp": datetime.now().isoformat()
-                })
-            except WebSocketDisconnect:
-                break
-            except Exception as e:
-                logger.error(f"Error handling WebSocket message: {str(e)}")
-                break
-                
+            data = await websocket.receive_text()
+            await manager.broadcast({"type": "message", "client_id": client_id, "data": data})
+    except WebSocketDisconnect:
+        logger.info(f"Client {client_id} disconnected")
+        await manager.disconnect(client_id)
     except Exception as e:
         logger.error(f"WebSocket error for client {client_id}: {str(e)}")
-    finally:
-        # Clean up
-        if 'heartbeat_task' in locals():
-            heartbeat_task.cancel()
         await manager.disconnect(client_id)
 
 async def send_heartbeat(websocket: WebSocket):
@@ -321,30 +347,50 @@ async def add_track(
 ):
     """Add a new track to the database with its audio fingerprint."""
     try:
-        # Save audio file temporarily
-        file_location = f"/tmp/{audio_file.filename}"
-        with open(file_location, "wb+") as file_object:
-            file_object.write(await audio_file.read())
-
+        # Read audio file
+        audio_data = await audio_file.read()
+        
         # Generate fingerprint
-        y, sr = librosa.load(file_location)
-        fingerprint = generate_fingerprint(y, sr)
-
+        fingerprint_result = generate_fingerprint(audio_data)
+        if not fingerprint_result:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not generate fingerprint from audio file"
+            )
+            
+        duration, fingerprint = fingerprint_result
+        
         # Create track in database
         db = SessionLocal()
-        track = Track(
-            title=title,
-            artist=artist,
-            fingerprint=fingerprint,
-            fingerprint_hash=AudioProcessor._hash_fingerprint(fingerprint)
-        )
-        db.add(track)
-        db.commit()
-        db.refresh(track)
-        db.close()
-
-        return {"message": "Track added successfully", "track_id": track.id}
+        try:
+            # Check if artist exists
+            artist_obj = db.query(Artist).filter(Artist.name == artist).first()
+            if not artist_obj:
+                artist_obj = Artist(name=artist)
+                db.add(artist_obj)
+                db.flush()
+            
+            # Create track
+            track = Track(
+                title=title,
+                artist_id=artist_obj.id,
+                fingerprint=fingerprint,
+                total_play_time=timedelta(seconds=duration)
+            )
+            db.add(track)
+            db.commit()
+            db.refresh(track)
+            
+            return {
+                "message": "Track added successfully",
+                "track_id": track.id,
+                "duration": duration
+            }
+        finally:
+            db.close()
+            
     except Exception as e:
+        logger.error(f"Error adding track: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/stations")
@@ -1180,9 +1226,9 @@ async def get_label_analytics(
             func.count(TrackDetection.id).label('detection_count'),
             func.sum(func.extract('epoch', TrackDetection.play_duration)).label('total_play_time'),
             func.count(distinct(Track.id)).label('unique_tracks'),
-            func.string_agg(distinct(Track.title), ',').label('tracks'),
-            func.string_agg(distinct(Track.album), ',').label('albums'),
-            func.string_agg(distinct(RadioStation.name), ',').label('stations')
+            func.string_agg(cast(Track.title, String), ',').label('tracks'),
+            func.string_agg(cast(Track.album, String), ',').label('albums'),
+            func.string_agg(cast(RadioStation.name, String), ',').label('stations')
         ).join(
             TrackDetection, Track.id == TrackDetection.track_id
         ).join(
@@ -1279,17 +1325,12 @@ async def get_channel_analytics(
                 "id": station.id,
                 "name": station.name,
                 "url": station.stream_url,
-                "status": station.status,
-                "region": f"{station.country or 'Unknown'} ({station.language or 'Unknown'})",
-                "detection_count": detection_count,
                 "detection_rate": detection_rate,
                 "total_play_time": str(timedelta(seconds=int(station.total_play_time))) if station.total_play_time else "0:00:00",
                 "unique_tracks": station.unique_tracks or 0,
                 "tracks": track_list,
                 "unique_artists": station.unique_artists or 0,
-                "artists": artist_list,
-                "unique_labels": station.unique_labels or 0,
-                "labels": label_list
+                "artists": artist_list
             })
         
         return {
@@ -1444,10 +1485,9 @@ async def get_analytics_overview(
             "totalChannels": total_stations,
             "activeStations": active_stations,
             "totalPlays": detection_stats.total_detections or 0,
-            "totalPlayTime": str(timedelta(seconds=int(detection_stats.total_play_time))) if detection_stats.total_play_time else "0:00:00",
-            "playsData": [
+            "detectionsByHour": [
                 {
-                    "hour": hour,
+                    "hour": hour.strftime("%H:00"),
                     "count": count
                 }
                 for hour, count in hourly_detections
@@ -1476,7 +1516,7 @@ async def get_analytics_overview(
                 {
                     "rank": i + 1,
                     "name": label,
-                    "plays": count
+                    "count": count
                 }
                 for i, (label, count) in enumerate(top_labels)
             ],
@@ -1486,7 +1526,7 @@ async def get_analytics_overview(
                     "name": name,
                     "country": country,
                     "language": language,
-                    "plays": count
+                    "count": count
                 }
                 for i, (id, name, country, language, count) in enumerate(top_channels)
             ]

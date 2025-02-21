@@ -5,6 +5,7 @@ from sqlalchemy.pool import QueuePool
 import os
 from dotenv import load_dotenv
 import logging
+from sqlalchemy.sql import text
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -70,10 +71,41 @@ def get_db():
         db.close()
 
 def init_db():
-    """Initialize database with required tables"""
+    """Initialize database tables if they don't exist"""
     try:
+        logger.info("Using development database")
+        logger.info("Database environment: development")
+        
+        # Import all models to ensure they are registered
+        from .models import (
+            User, Report, ReportSubscription, RadioStation,
+            Artist, Track, TrackDetection, DetectionHourly,
+            DetectionDaily, DetectionMonthly, StationStats,
+            TrackDaily, TrackMonthly, ArtistDaily, ArtistMonthly,
+            StationTrackStats, AnalyticsData, ArtistStats, TrackStats
+        )
+        
+        # Create all tables without dropping
+        logger.info("Creating tables if they don't exist...")
         Base.metadata.create_all(bind=engine)
-        logger.info(f"✅ Database initialized successfully on {DATABASE_URL.split('@')[1]}")
+        
+        # Add unique constraint to hour column if it doesn't exist
+        with engine.begin() as conn:
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conname = 'detection_hourly_hour_key'
+                    ) THEN
+                        ALTER TABLE detection_hourly ADD CONSTRAINT detection_hourly_hour_key UNIQUE (hour);
+                    END IF;
+                END $$;
+            """))
+        
+        logger.info("Database initialized successfully")
+        
     except Exception as e:
-        logger.error(f"❌ Database initialization failed: {str(e)}")
+        logger.error(f"Error initializing database: {str(e)}")
         raise

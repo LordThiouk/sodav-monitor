@@ -14,10 +14,16 @@ class WebSocketManager:
         self.redis = None
         self.pubsub = None
         self.last_heartbeat: Dict[str, datetime] = {}
+        self.max_connections = 100  # Maximum number of concurrent connections
         
     async def connect(self, websocket: WebSocket, client_id: str):
         """Connect a new WebSocket client"""
         try:
+            if len(self.active_connections) >= self.max_connections:
+                await websocket.close(code=1008, reason="Too many connections")
+                logger.warning(f"Rejected client {client_id} due to connection limit")
+                return
+                
             await websocket.accept()
             self.active_connections[client_id] = websocket
             self.last_heartbeat[client_id] = datetime.now()
@@ -34,7 +40,7 @@ class WebSocketManager:
                 })
             )
             
-            logger.info(f"WebSocket client {client_id} connected")
+            logger.info(f"WebSocket client {client_id} connected ({len(self.active_connections)}/{self.max_connections})")
             
         except Exception as e:
             logger.error(f"Error connecting WebSocket client {client_id}: {str(e)}")

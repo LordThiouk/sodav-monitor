@@ -38,6 +38,7 @@ class User(Base):
     role = Column(String, default='user')  # 'admin', 'user', etc.
     
     reports = relationship("Report", back_populates="user")
+    subscriptions = relationship("ReportSubscription", back_populates="user")
 
     def set_password(self, password):
         self.password_hash = pwd_context.hash(password)
@@ -68,20 +69,29 @@ class Report(Base):
         return f"<Report(id={self.id}, type={self.type}, status={self.status}, progress={self.progress})>"
 
 class ReportSubscription(Base):
-    __tablename__ = 'report_subscriptions'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    frequency = Column(String, nullable=False)  # daily, weekly, monthly
-    type = Column(String, nullable=False)  # detection, analytics, summary
-    recipients = Column(JSON, nullable=False)  # Store email list as JSON array
-    next_delivery = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    last_sent = Column(DateTime, nullable=True)
+    __tablename__ = "report_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)  # Nom de l'abonnement
+    email = Column(String, nullable=False)
+    frequency = Column(String, nullable=False)  # quotidien, hebdomadaire, mensuel
+    report_type = Column(String, nullable=False)  # artist, track, station, label, comprehensive
+    format = Column(String, default="xlsx")  # xlsx, csv, pdf
+    filters = Column(JSON, nullable=True)  # Filtres personnalisés
     is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    next_delivery = Column(DateTime, nullable=False)
+    last_delivery = Column(DateTime, nullable=True)
+    delivery_count = Column(Integer, default=0)  # Nombre de rapports envoyés
+    error_count = Column(Integer, default=0)  # Nombre d'erreurs
+    last_error = Column(String, nullable=True)  # Dernière erreur rencontrée
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
-    user = relationship("User")
+
+    # Relations
+    user = relationship("User", back_populates="subscriptions")
+
+    def __repr__(self):
+        return f"<ReportSubscription(id={self.id}, name={self.name}, email={self.email}, frequency={self.frequency})>"
 
 class RadioStation(Base):
     __tablename__ = "radio_stations"
@@ -158,16 +168,38 @@ class TrackDetection(Base):
     track_id = Column(Integer, ForeignKey('tracks.id'), index=True)
     confidence = Column(Float)
     detected_at = Column(DateTime, default=datetime.now, index=True)
-    play_duration = Column(Interval)  # Duration of this specific play
+    end_time = Column(DateTime, index=True)  # Timestamp de fin de lecture
+    play_duration = Column(Interval)  # Durée réelle de lecture
+    fingerprint = Column(String)  # Empreinte digitale du son pour validation
     
+    # Relations
     station = relationship("RadioStation", back_populates="detections")
     track = relationship("Track", back_populates="detections")
+    
+    @property
+    def duration_seconds(self) -> float:
+        """Calculer la durée en secondes"""
+        if self.play_duration:
+            return self.play_duration.total_seconds()
+        elif self.end_time and self.detected_at:
+            return (self.end_time - self.detected_at).total_seconds()
+        return 0.0
+    
+    @property
+    def is_valid(self) -> bool:
+        """Vérifier si la détection est valide"""
+        return (
+            self.confidence is not None and 
+            self.confidence >= 50.0 and
+            self.duration_seconds >= 10.0 and
+            self.duration_seconds <= 900.0  # 15 minutes maximum
+        )
 
 class DetectionHourly(Base):
     __tablename__ = 'detection_hourly'
 
     id = Column(Integer, primary_key=True)
-    hour = Column(DateTime)
+    hour = Column(DateTime, unique=True)
     count = Column(Integer, default=0)
 
 class ArtistStats(Base):
@@ -301,6 +333,13 @@ Index('idx_track_detections_composite',
     TrackDetection.track_id, 
     TrackDetection.detected_at
 )
+
+Index('idx_tracks_title_artist', Track.title, Track.artist_id)
+Index('idx_tracks_isrc', Track.isrc)
+Index('idx_tracks_label', Track.label)
+Index('idx_tracks_created', Track.created_at)
+Index('idx_artists_name', Artist.name)
+Index('idx_artists_label', Artist.label)
 
 Index('idx_artist_stats_artist_id', ArtistStats.artist_id)
 

@@ -245,9 +245,9 @@ DEBUG=True
 
 ## Développement
 
-- Backend : Python 3.8+, FastAPI, SQLAlchemy
+- Backend : Python 3.8+, FastAPI, PostgreSQL
 - Frontend : React 18, TypeScript, Chakra UI
-- Base de données : SQLite
+- Base de données : PostgreSQL
 
 ## Licence
 
