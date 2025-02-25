@@ -1,0 +1,106 @@
+---
+description: 📂 Règle d'Organisation des Fichiers pour le Projet
+globs: *
+---
+Voici une règle claire pour **organiser les fichiers du projet** afin d'améliorer la lisibilité et la structure du code :
+A chaque fois tu fera des changements concernant cette règle tu vas update le fichier REORGANISATION.md pour briefer ce que tu as fais.
+---
+
+### 📂 **Règle d'Organisation des Fichiers pour le Projet**
+
+1. ✅ **Regrouper les Fichiers Par Fonctionnalité**
+   - Diviser les fichiers en dossiers selon leur fonctionnalité principale pour éviter d'encombrer les répertoires.
+
+---
+
+2. ✅ **Structure du Projet Clarifiée**
+
+```
+/sodav_monitor/
+│
+├── backend/
+│   ├── detection/              # Logique de détection
+│   │   ├── local_detection.py
+│   │   ├── musicbrainz_detection.py
+│   │   ├── audd_detection.py
+│   │
+│   ├── processing/             # Traitement des données
+│   │   ├── fingerprint_handler.py
+│   │   ├── playtime_tracker.py
+│   │
+│   ├── reports/                # Gestion des rapports
+│   │   ├── generate_report.py
+│   │   ├── subscription_handler.py
+│   │
+│   ├── logs/                   # Gestion des logs
+│   │   ├── error_logger.py
+│   │   ├── detection_logs.py
+│   │
+│   ├── analytics/              # Données analytiques
+│   │   ├── stats_calculator.py
+│   │   ├── analytics_report.py
+│   │
+│   ├── models/                 # Modèles de la base de données
+│   │   ├── track.py
+│   │   ├── station.py
+│   │   ├── detection.py
+│   │   ├── report.py
+│   │
+│   ├── utils/                  # Fonctions utilitaires
+│   │   ├── auth.py
+│   │   ├── config.py
+│   │
+│   ├── tests/                  # Tests unitaires
+│   │   ├── test_detection.py
+│   │   ├── test_reports.py
+│   │   ├── test_fingerprint.py
+│   │
+│   ├── main.py                 # Point d'entrée de l'application
+│   └── config.py               # Configuration générale
+│
+├── frontend/                   # Frontend React/Next.js
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   ├── theme/
+│   │   ├── utils/
+│   │
+│   └── public/
+│
+├── scripts/                    # Scripts divers
+│   ├── init_db.py
+│   ├── migrate_data.py
+│
+├── docker/                     # Fichiers Docker
+│   ├── Dockerfile
+│   ├── nginx.conf
+│
+├── requirements.txt            # Dépendances Python
+├── README.md                   # Documentation principale
+└── .env.example                # Variables d'environnement
+```
+
+---
+
+3. ✅ **Fusionner les Fichiers Redondants**
+   - Regrouper les petits fichiers trop similaires sous un seul fichier.
+
+---
+
+4. ✅ **Nettoyer les Fichiers Obsolètes**
+   - Supprimer les anciens scripts inutilisés et archiver les anciens fichiers dans un dossier `/legacy/` si nécessaire.
+
+---
+
+5. ✅ **Nommer les Fichiers de Manière Cohérente**
+   - Utiliser des noms explicites en anglais et en minuscules avec des underscores (`snake_case`).
+
+   ✅ Mettre en Place des Limites de Taille de Fichier
+Limiter chaque fichier à 500 lignes maximum
+Diviser les fichiers trop longs en modules supplémentaires
+
+
+---
+
+Voulez-vous que je mette en place une feuille de route pour appliquer cette nouvelle organisation dans votre projet ? 🚀

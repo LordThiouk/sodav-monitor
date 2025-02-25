@@ -1,0 +1,6 @@
+---
+description: Connaissance du Projet
+globs: *
+---
+Comprendre l'objectif du projet : surveiller les flux radios en temps réel, détecter automatiquement les morceaux joués et générer des rapports d'analyse.
+Se familiariser avec l'architecture du projet : Backend en FastAPI et Frontend en React/TypeScript utilisant Chakra UI et Postgresql comme base de données.

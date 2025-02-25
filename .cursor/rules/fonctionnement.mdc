@@ -1,0 +1,11 @@
+---
+description:  Règles Générales de Fonctionnement
+globs: *
+---
+Les logs du serveur doivent être surveillés en continu pour détecter les erreurs critiques et prévenir les pannes.
+Les endpoints d'API doivent toujours retourner des réponses valides (statut 200) et gérer les erreurs avec des messages clairs.
+Les migrations de base de données doivent être validées avant déploiement pour éviter les conflits d'alembic.
+Toutes les détections doivent être enregistrées en temps réel avec un suivi précis de :
+L’heure de détection (detected_at)
+La durée de lecture (play_duration)
+La station et le morceau détectés.

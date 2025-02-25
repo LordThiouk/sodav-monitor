@@ -1,0 +1,74 @@
+---
+description:  Règle de Détection Avancée pour l'Algorithme SODAV Monitor
+globs: *
+---
+#### 🎧 **1. Identification du Type de Contenu**
+- Analyser le flux audio pour déterminer si le contenu est :
+  - 🎶 **Musique** : Continuer le processus de détection, utilise /api/channels/detect-music pour la detection.
+  - 🎙️ **Speech** : Ignorer la détection, enregistrer seulement les métadonnées de la diffusion.
+
+---
+
+#### 🎼 **2. Processus de Détection Hiérarchique**
+Si le contenu est identifié comme **musique**, suivre cet ordre de détection :
+
+1. 🔍 **Détection Locale**  
+   - Rechercher des correspondances dans la base de données locale à l'aide des empreintes digitales enregistrées.  
+   - Si une correspondance est trouvée, procéder à l'enregistrement des données.
+
+2. 🌐 **Détection avec MusicBrainz**  
+   - Si la détection locale échoue, interroger l'API MusicBrainz pour tenter une identification externe.  
+   - Si trouvée, enregistrer les métadonnées récupérées.
+
+3. 🎧 **Détection avec Audd**  
+   - Si MusicBrainz échoue également, utiliser l'API Audd comme solution de dernier recours.  
+   - Enregistrer les informations fournies par Audd.
+
+---
+
+#### 📥 **3. Enregistrement des Données à Chaque Détection**
+Pour chaque détection réussie (quelle que soit la méthode), enregistrer automatiquement :
+
+- 🔑 **Empreinte Digitale** :
+  - `fingerprint` : Empreinte audio analysée.
+  - `fingerprint_raw` : Données brutes de l'empreinte audio.
+
+- ⏱️ **Temps de Jeu Exact** :
+  - Durée exacte pendant laquelle la musique a été diffusée, par station.
+
+- 🎯 **Confiance de Détection** :
+  - Enregistrer le score de confiance (`confidence`) donné par l'algorithme ou l'API.
+
+---
+
+#### ❌ **4. Gestion des Détections Non Identifiées**
+Si aucune correspondance n'est trouvée après toutes les tentatives :
+
+- 📝 **Journalisation des Tentatives** :
+  - Consigner la tentative de détection échouée dans les logs avec le timestamp, l'empreinte et la station.
+
+- 🔄 **Réessai de Détection Locale** :
+  - Réessayer la détection locale à l'aide des empreintes enregistrées précédemment.
+
+---
+
+#### 🔄 **5. Mise à Jour des Données**
+À chaque détection (réussie ou non), mettre à jour les tables suivantes :
+
+- 🎼 **Tracks** :
+  - Nombre de détections
+  - Temps de jeu total
+  - Dernière date de détection
+
+- 📊 **TrackStats**, **ArtistStats**, **StationStats** :
+  - Nombre de détections
+  - Temps de jeu cumulé
+  - Confiance moyenne
+  - Dernière détection
+
+- 📻 **StationTrackStats** :
+  - Temps de jeu par station
+  - Dernière diffusion enregistrée
+
+- 📈 **AnalyticsData** :
+  - Statistiques en temps réel sur les détections, la confiance moyenne et le nombre de stations actives.

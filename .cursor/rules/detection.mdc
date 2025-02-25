@@ -1,0 +1,11 @@
+---
+description: Règles pour la Détection Musicale
+globs: *
+---
+Chaque détection doit enregistrer :
+L’empreinte digitale (fingerprint et fingerprint_raw)
+Le temps de jeu exact de chaque son par station
+La confiance de la détection (confidence)
+En cas de détection non identifiée :
+Enregistrer la tentative dans les logs
+Tenter une détection locale à partir des empreintes enregistrées précédemment

@@ -1,0 +1,6 @@
+---
+description: Powershell Rules
+globs: *
+---
+Don't use Powershell command on terminal, always look to directory
+ avant de créer des fichiers, les tests backend se font dans backend/tests
