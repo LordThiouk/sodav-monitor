@@ -8,6 +8,9 @@ from pydantic import BaseModel
 
 from ..database import get_db
 from ..models import Track, TrackDetection, RadioStation, ArtistStats, TrackStats, DetectionHourly, AnalyticsData, Artist, StationStatus
+from ..analytics.stats_manager import StatsManager
+from ..schemas.base import AnalyticsResponse, ChartData, SystemHealth
+from ..core.security import get_current_user
 
 router = APIRouter(
     tags=["analytics"],
@@ -544,3 +547,110 @@ def update_track_stats(db: Session):
         
     except Exception as e:
         logger.error(f"Error in track stats update: {str(e)}", exc_info=True)
+
+@router.get("/dashboard", response_model=AnalyticsResponse)
+async def get_dashboard_stats(
+    period: Optional[int] = 24,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Récupère les statistiques pour le tableau de bord."""
+    try:
+        stats_manager = StatsManager(db)
+        
+        # Récupère les statistiques de détection
+        detection_stats = await stats_manager.get_detection_stats(hours=period)
+        
+        # Récupère l'analyse des tendances
+        trends = await stats_manager.get_trend_analysis(days=period//24)
+        
+        # Génère le rapport quotidien
+        daily_report = await stats_manager.generate_daily_report()
+        
+        return {
+            "totalDetections": detection_stats["total"],
+            "detectionRate": detection_stats["success"] / detection_stats["total"] if detection_stats["total"] > 0 else 0,
+            "activeStations": daily_report["station_stats"].__len__(),
+            "totalStations": len(daily_report["station_stats"]),
+            "averageConfidence": sum(track["confidence"] for track in daily_report["top_tracks"]) / len(daily_report["top_tracks"]) if daily_report["top_tracks"] else 0,
+            "detectionsByHour": [
+                ChartData(hour=hour, count=count)
+                for hour, count in enumerate(detection_stats.get("hourly_counts", [0] * 24))
+            ],
+            "topArtists": [
+                {"name": artist["name"], "detections": artist["detections"]}
+                for artist in daily_report["top_artists"]
+            ],
+            "systemHealth": SystemHealth(
+                status="healthy",
+                uptime=period,
+                lastError=None
+            )
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/trends")
+async def get_trends(
+    days: Optional[int] = 7,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Récupère les tendances sur une période donnée."""
+    try:
+        stats_manager = StatsManager(db)
+        return await stats_manager.get_trend_analysis(days=days)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/stations")
+async def get_station_stats(
+    station_id: Optional[int] = None,
+    period: Optional[int] = 24,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Récupère les statistiques par station."""
+    try:
+        stats_manager = StatsManager(db)
+        daily_report = await stats_manager.generate_daily_report()
+        
+        if station_id:
+            # Filtre pour une station spécifique
+            station_stats = next(
+                (stat for stat in daily_report["station_stats"] if stat["id"] == station_id),
+                None
+            )
+            if not station_stats:
+                raise HTTPException(status_code=404, detail="Station not found")
+            return station_stats
+        
+        return daily_report["station_stats"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/artists")
+async def get_artist_stats(
+    artist_id: Optional[int] = None,
+    period: Optional[int] = 24,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Récupère les statistiques par artiste."""
+    try:
+        stats_manager = StatsManager(db)
+        daily_report = await stats_manager.generate_daily_report()
+        
+        if artist_id:
+            # Filtre pour un artiste spécifique
+            artist_stats = next(
+                (stat for stat in daily_report["top_artists"] if stat["id"] == artist_id),
+                None
+            )
+            if not artist_stats:
+                raise HTTPException(status_code=404, detail="Artist not found")
+            return artist_stats
+        
+        return daily_report["top_artists"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

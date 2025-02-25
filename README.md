@@ -1,254 +1,138 @@
-# SODAV Monitor - Système de Monitoring Radio/TV
+# SODAV Monitor
 
-## Vue d'ensemble
+Un système de monitoring automatisé pour les chaînes de radio et de télévision sénégalaises, conçu pour la SODAV (Société Sénégalaise du Droit d'Auteur et des Droits Voisins).
 
-SODAV Monitor est un système automatisé de surveillance des diffusions musicales pour les chaînes de radio et de télévision sénégalaises. Le système utilise des technologies avancées de reconnaissance audio et de traitement du signal pour identifier en temps réel les morceaux de musique diffusés.
+## 🎯 Objectifs
 
-## Architecture du Système
+- Surveillance en temps réel des flux audio et vidéo
+- Détection et identification des morceaux de musique diffusés en direct
+- Génération de rapports de diffusion précis pour améliorer la distribution des droits d'auteur
+- Alternative rentable et évolutive aux solutions existantes
+- Exploitation des technologies cloud, IA et Big Data pour un traitement efficace
 
-### Structure du Projet
+## 📂 Structure du Projet
+
 ```
-sodav-monitor/
-├── backend/                 # API et logique métier
-│   ├── routers/            # Points d'entrée API
-│   │   ├── analytics/      # Endpoints statistiques
-│   │   ├── channels.py     # Gestion des stations
-│   │   └── reports.py      # Génération rapports
-│   ├── models.py           # Modèles de données
-│   ├── schemas.py          # Schémas Pydantic
-│   ├── music_recognition.py # Algorithme reconnaissance
-│   └── audio_processor.py  # Traitement audio
+/sodav_monitor/
 │
-├── frontend/               # Interface utilisateur
+├── backend/
+│   ├── detection/              # Logique de détection musicale
+│   │   ├── audio_fingerprint.py
+│   │   ├── audio_processor.py
+│   │   ├── detect_music.py
+│   │   ├── fingerprint.py
+│   │   └── music_recognition.py
+│   │
+│   ├── processing/            # Traitement des données
+│   │   └── radio_manager.py
+│   │
+│   ├── reports/              # Gestion des rapports
+│   │
+│   ├── logs/                 # Gestion des logs
+│   │
+│   ├── analytics/            # Données analytiques
+│   │
+│   ├── models/              # Modèles de la base de données
+│   │   ├── models.py
+│   │   └── database.py
+│   │
+│   ├── utils/               # Fonctions utilitaires
+│   │   ├── config.py
+│   │   └── redis_config.py
+│   │
+│   └── tests/               # Tests unitaires
+│
+├── frontend/               # Interface utilisateur React/Next.js
 │   ├── src/
-│   │   ├── components/     # Composants React
-│   │   ├── pages/         # Pages de l'application
-│   │   └── services/      # Services API
-│   └── public/            # Assets statiques
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   ├── theme/
+│   │   └── utils/
+│   │
+│   └── public/
+│
+├── docker/                # Configuration Docker
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   └── default.conf
+│
+├── scripts/              # Scripts utilitaires
+│   └── reorganize.py
+│
+├── requirements.txt      # Dépendances Python
+└── .env.example         # Template des variables d'environnement
 ```
 
-## Algorithme de Reconnaissance
+## 🚀 Installation
 
-### 1. Capture et Prétraitement Audio
-- Échantillonnage du flux audio en segments de 15 secondes
-- Conversion en format standard pour analyse
-- Normalisation du signal audio
-
-### 2. Détection de Musique (music_recognition.py)
-1. **Analyse des Caractéristiques Audio**
-   - Calcul du centroïde spectral
-   - Mesure de l'énergie RMS
-   - Analyse du taux de passage à zéro
-   - Évaluation du rolloff spectral
-   
-2. **Score de Probabilité Musicale**
-   ```python
-   music_score = (
-       (spectral_centroid_weight * 25) +
-       (rms_energy_weight * 25) +
-       (zero_crossing_rate_weight * 25) +
-       (spectral_rolloff_weight * 25)
-   )
-   ```
-
-### 3. Cascade de Reconnaissance
-L'algorithme suit une approche en cascade pour l'identification :
-
-1. **Base de Données Locale**
-   - Recherche par empreinte acoustique
-   - Cache des empreintes fréquentes
-   - Correspondance rapide
-
-2. **MusicBrainz**
-   - Identification via API MusicBrainz
-   - Récupération métadonnées détaillées
-   - Correspondance ISRC
-
-3. **AudD**
-   - Service de reconnaissance externe
-   - Haute précision pour nouveaux morceaux
-   - Enrichissement métadonnées
-
-### 4. Traitement des Résultats
-- Calcul durée de lecture
-- Agrégation métadonnées
-- Enrichissement base de données
-- Mise à jour statistiques
-
-## Base de Données
-
-### Schéma Principal
-```sql
--- Stations Radio
-CREATE TABLE radio_stations (
-    id INTEGER PRIMARY KEY,
-    name VARCHAR,
-    stream_url VARCHAR,
-    status VARCHAR,
-    is_active BOOLEAN,
-    last_checked TIMESTAMP
-);
-
--- Morceaux
-CREATE TABLE tracks (
-    id INTEGER PRIMARY KEY,
-    title VARCHAR,
-    artist VARCHAR,
-    isrc VARCHAR,
-    label VARCHAR,
-    play_count INTEGER,
-    total_play_time INTERVAL
-);
-
--- Détections
-CREATE TABLE track_detections (
-    id INTEGER PRIMARY KEY,
-    station_id INTEGER,
-    track_id INTEGER,
-    detected_at TIMESTAMP,
-    confidence FLOAT,
-    play_duration INTERVAL
-);
-```
-
-## API Backend
-
-### Points d'Entrée Principaux
-
-1. **Gestion des Stations**
-   ```
-   GET    /api/channels/              # Liste stations
-   POST   /api/channels/refresh       # Rafraîchir stations
-   GET    /api/channels/{id}/stats    # Statistiques station
-   ```
-
-2. **Détections**
-   ```
-   POST   /api/detect                 # Détecter morceau
-   GET    /api/detections/{id}        # Détails détection
-   ```
-
-3. **Statistiques**
-   ```
-   GET    /api/analytics/overview     # Vue d'ensemble
-   GET    /api/analytics/tracks       # Stats morceaux
-   GET    /api/analytics/artists      # Stats artistes
-   ```
-
-## Interface Utilisateur
-
-### Composants Principaux
-
-1. **Dashboard**
-   - Vue d'ensemble temps réel
-   - Graphiques statistiques
-   - Alertes et notifications
-
-2. **Monitoring Stations**
-   - État des connexions
-   - Qualité signal
-   - Historique détections
-
-3. **Rapports**
-   - Génération PDF
-   - Export données
-   - Filtres personnalisés
-
-### Fonctionnalités Temps Réel
-- WebSocket pour détections live
-- Mise à jour automatique graphiques
-- Notifications événements
-
-## Performances et Optimisations
-
-1. **Cache**
-   - Empreintes acoustiques fréquentes
-   - Métadonnées morceaux
-   - Résultats requêtes communes
-
-2. **Indexation**
-   - Index sur ISRC
-   - Index temporels détections
-   - Index recherche full-text
-
-3. **Parallélisation**
-   - Traitement multi-stream
-   - Analyses audio parallèles
-   - Requêtes API concurrentes
-
-## Sécurité
-
-1. **Authentication**
-   - JWT tokens
-   - Rôles utilisateurs
-   - Sessions sécurisées
-
-2. **Protection Données**
-   - Chiffrement connexions
-   - Validation entrées
-   - Logs sécurisés
-
-## Déploiement
-
-### Prérequis
-- Python 3.8+
-- Node.js 14+
-- PostgreSQL 12+
-- FFmpeg
-
-### Configuration
+1. Cloner le repository :
 ```bash
-# Backend
+git clone https://github.com/votre-org/sodav-monitor.git
+cd sodav-monitor
+```
+
+2. Créer et activer un environnement virtuel :
+```bash
 python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# Frontend
-cd frontend
-npm install
+source venv/bin/activate  # Linux/Mac
+.\venv\Scripts\activate   # Windows
 ```
 
-### Variables d'Environnement
-```env
-DATABASE_URL=postgresql://user:pass@localhost/sodav
-AUDD_API_KEY=your_key
-MUSICBRAINZ_API_KEY=your_key
-```
-
-### Lancement
+3. Installer les dépendances :
 ```bash
-# Backend
-uvicorn main:app --reload
-
-# Frontend
-npm run dev
+pip install -r requirements.txt
 ```
 
-## Configuration
-
-1. Créez un fichier `.env` dans le dossier `backend/` :
-```env
-AUDD_API_KEY=votre_clé_api
-DATABASE_URL=sqlite:///./sodav_monitor.db
-HOST=0.0.0.0
-PORT=8000
-DEBUG=True
+4. Configurer les variables d'environnement :
+```bash
+cp .env.example .env
+# Éditer .env avec vos configurations
 ```
 
-2. Assurez-vous que les URLs des stations radio sont correctement configurées dans `frontend/src/services/radioBrowser.ts`
+5. Lancer l'application :
+```bash
+# En développement
+python backend/main.py
 
-## Utilisation
+# Avec Docker
+docker-compose up
+```
 
-1. Lancez le backend : `python main.py`
-2. Lancez le frontend : `npm start`
-3. Accédez à l'application via `http://localhost:3000`
+## 🛠 Technologies Utilisées
 
-## Développement
+- **Backend** : Python, FastAPI
+- **Frontend** : React, Next.js
+- **Base de données** : PostgreSQL, Redis
+- **Conteneurisation** : Docker
+- **Détection Audio** : Chromaprint, AcoustID
+- **Cloud** : AWS/GCP (selon le déploiement)
 
-- Backend : Python 3.8+, FastAPI, PostgreSQL
-- Frontend : React 18, TypeScript, Chakra UI
-- Base de données : PostgreSQL
+## 📊 Fonctionnalités
 
-## Licence
+- Détection en temps réel des morceaux de musique
+- Interface de monitoring en direct
+- Génération de rapports détaillés
+- Gestion des droits d'auteur
+- Analyses statistiques
+- API RESTful
 
-Copyright © 2025 LordThiouk. Tous droits réservés.
+## 🤝 Contribution
+
+Les contributions sont les bienvenues ! Pour contribuer :
+
+1. Forker le projet
+2. Créer une branche pour votre fonctionnalité
+3. Commiter vos changements
+4. Pousser vers la branche
+5. Ouvrir une Pull Request
+
+## 📝 Licence
+
+Ce projet est sous licence [À définir] - voir le fichier LICENSE pour plus de détails.
+
+## 👥 Contact
+
+Pour toute question ou suggestion, n'hésitez pas à nous contacter :
+- Email : [À définir]
+- Site web : [À définir]

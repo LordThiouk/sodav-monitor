@@ -12,6 +12,9 @@ from ..models import RadioStation, StationStatus, Track, TrackDetection, Artist
 from ..utils.radio_manager import RadioManager
 from ..utils.websocket import broadcast_station_update
 import logging
+from ..schemas.base import StationCreate, StationUpdate, StationResponse, StationStatusResponse
+from ..core.security import get_current_user
+from ..utils.stream_checker import check_stream_availability
 
 logger = logging.getLogger(__name__)
 
@@ -84,71 +87,138 @@ class DetectionsResponse(BaseModel):
     class Config:
         from_attributes = True
 
-@router.get("/", response_model=Dict[str, List[StationResponse]])
-async def get_channels(db: Session = Depends(get_db)):
-    """Get all radio channels with real-time status"""
+@router.get("/", response_model=List[StationResponse])
+async def get_all_stations(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Récupère la liste des stations radio."""
+    stations = db.query(RadioStation).offset(skip).limit(limit).all()
+    return stations
+
+@router.post("/", response_model=StationResponse)
+async def create_station(
+    station: StationCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Crée une nouvelle station radio."""
+    db_station = RadioStation(**station.dict())
     try:
-        # Get all stations
-        stations = db.query(RadioStation).all()
+        db.add(db_station)
+        db.commit()
+        db.refresh(db_station)
         
-        # Update each station's status in real-time
-        station_list = []
-        for station in stations:
-            # Check if station is currently active
-            try:
-                manager = RadioManager(db)
-                is_active = manager.check_station_status(station)
-                
-                # Update station status if changed
-                if is_active != station.is_active:
-                    station.is_active = is_active
-                    station.last_checked = datetime.now()
-                    station.status = StationStatus.active if is_active else StationStatus.inactive
-                    db.commit()
-                    
-                    # Broadcast status change
-                    await broadcast_station_update({
-                        "id": station.id,
-                        "name": station.name,
-                        "status": station.status.value,
-                        "is_active": station.is_active,
-                        "last_checked": station.last_checked.isoformat(),
-                        "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None,
-                        "stream_url": station.stream_url,
-                        "country": station.country,
-                        "language": station.language,
-                        "total_play_time": f"{int(station.total_play_time.total_seconds() // 3600):01d}:{int((station.total_play_time.total_seconds() % 3600) // 60):02d}:{int(station.total_play_time.total_seconds() % 60):02d}" if station.total_play_time else "0:00:00"
-                    })
-            except Exception as e:
-                logger.warning(f"Error checking station {station.name}: {str(e)}")
-                is_active = False
-            
-            # Add station to response list
-            station_dict = {
-                "id": station.id,
-                "name": station.name,
-                "stream_url": station.stream_url,
-                "country": station.country,
-                "language": station.language,
-                "status": station.status.value if station.status else "inactive",
-                "is_active": station.is_active,
-                "last_checked": station.last_checked.isoformat() if station.last_checked else None,
-                "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None,
-                "total_play_time": f"{int(station.total_play_time.total_seconds() // 3600):01d}:{int((station.total_play_time.total_seconds() % 3600) // 60):02d}:{int(station.total_play_time.total_seconds() % 60):02d}" if station.total_play_time else "0:00:00"
-            }
-            station_list.append(station_dict)
+        # Vérifie la disponibilité du flux en arrière-plan
+        background_tasks.add_task(check_stream_availability, db_station.stream_url)
         
-        return {
-            "channels": station_list,
-            "timestamp": datetime.now().isoformat(),
-            "total_count": len(station_list),
-            "active_count": sum(1 for s in station_list if s["is_active"]),
-            "inactive_count": sum(1 for s in station_list if not s["is_active"])
-        }
-        
+        return db_station
     except Exception as e:
-        logger.error(f"Error getting channels: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{station_id}", response_model=StationResponse)
+async def get_station(
+    station_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Récupère les détails d'une station radio."""
+    station = db.query(RadioStation).filter(RadioStation.id == station_id).first()
+    if not station:
+        raise HTTPException(status_code=404, detail="Station not found")
+    return station
+
+@router.put("/{station_id}", response_model=StationResponse)
+async def update_station(
+    station_id: int,
+    station_update: StationUpdate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Met à jour une station radio."""
+    db_station = db.query(RadioStation).filter(RadioStation.id == station_id).first()
+    if not db_station:
+        raise HTTPException(status_code=404, detail="Station not found")
+    
+    for field, value in station_update.dict(exclude_unset=True).items():
+        setattr(db_station, field, value)
+    
+    try:
+        db.commit()
+        db.refresh(db_station)
+        
+        # Si l'URL du flux a changé, vérifie sa disponibilité
+        if station_update.stream_url:
+            background_tasks.add_task(check_stream_availability, db_station.stream_url)
+        
+        return db_station
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/{station_id}")
+async def delete_station(
+    station_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Supprime une station radio."""
+    db_station = db.query(RadioStation).filter(RadioStation.id == station_id).first()
+    if not db_station:
+        raise HTTPException(status_code=404, detail="Station not found")
+    
+    try:
+        db.delete(db_station)
+        db.commit()
+        return {"message": "Station deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{station_id}/status", response_model=StationStatusResponse)
+async def get_station_status(
+    station_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Récupère le statut d'une station radio."""
+    station = db.query(RadioStation).filter(RadioStation.id == station_id).first()
+    if not station:
+        raise HTTPException(status_code=404, detail="Station not found")
+    
+    status = db.query(StationStatus).filter(
+        StationStatus.station_id == station_id
+    ).order_by(StationStatus.timestamp.desc()).first()
+    
+    if not status:
+        return StationStatusResponse(
+            station_id=station_id,
+            status="unknown",
+            last_check=datetime.utcnow(),
+            error=None
+        )
+    
+    return status
+
+@router.post("/{station_id}/check")
+async def check_station(
+    station_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Vérifie la disponibilité d'une station radio."""
+    station = db.query(RadioStation).filter(RadioStation.id == station_id).first()
+    if not station:
+        raise HTTPException(status_code=404, detail="Station not found")
+    
+    background_tasks.add_task(check_stream_availability, station.stream_url)
+    return {"message": "Station check initiated"}
 
 @router.post("/refresh")
 async def refresh_channels(db: Session = Depends(get_db)):

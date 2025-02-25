@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, distinct, case, and_
 from typing import List, Optional, Dict
@@ -21,8 +21,11 @@ from email.mime.application import MIMEApplication
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from database import get_db, SessionLocal
-from models import Report, ReportSubscription, User, TrackDetection, Track, RadioStation, ReportStatus, Artist
+from models import Report, ReportSubscription, User, TrackDetection, Track, RadioStation, ReportStatus, Artist, ReportType
 from utils.auth import get_current_user
+from schemas.base import ReportCreate, ReportResponse, ReportStatusResponse
+from reports.generator import ReportGenerator
+from utils.file_manager import get_report_path
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -36,13 +39,6 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)]  # Require authentication for all endpoints
 )
 
-class ReportCreate(BaseModel):
-    type: str  # 'detection', 'analytics', 'summary', 'artist', 'track', 'station'
-    format: str = "csv"  # 'csv', 'xlsx', 'json'
-    start_date: datetime
-    end_date: datetime
-    filters: Optional[Dict] = None
-
 class SubscriptionCreate(BaseModel):
     name: str
     email: EmailStr
@@ -52,26 +48,6 @@ class SubscriptionCreate(BaseModel):
     filters: Optional[Dict] = None
     include_graphs: bool = True
     language: str = "fr"
-
-class ReportResponse(BaseModel):
-    id: str
-    title: str
-    type: str
-    format: str
-    generatedAt: str
-    status: str
-    progress: Optional[float] = None
-    downloadUrl: Optional[str] = None
-    user: Optional[dict] = None
-
-class SubscriptionResponse(BaseModel):
-    id: str
-    name: str
-    frequency: str
-    type: str
-    nextDelivery: str
-    recipients: List[str]
-    user: Optional[dict] = None
 
 class ReportRequest(BaseModel):
     report_type: str  # "artist", "track", "station", "label", "comprehensive"
@@ -86,151 +62,222 @@ class ReportRequest(BaseModel):
 
 @router.get("/", response_model=List[ReportResponse])
 async def get_reports(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    skip: int = 0,
+    limit: int = 100,
+    report_type: Optional[ReportType] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
-    """Get all reports for the current user"""
-    try:
-        reports = db.query(Report).filter(
-            Report.user_id == current_user.id
-        ).order_by(Report.created_at.desc()).all()
-        
-        return [
-            ReportResponse(
-                id=str(report.id),
-                title=f"{report.type.capitalize()} Report",
-                type=report.type,
-                format=report.format,
-                generatedAt=report.created_at.isoformat(),
-                status=report.status,
-                progress=report.progress,
-                downloadUrl=f"/api/reports/{report.id}/download" if report.status == "completed" else None,
-                user={
-                    'id': current_user.id,
-                    'username': current_user.username,
-                    'email': current_user.email
-                }
-            )
-            for report in reports
-        ]
-    except Exception as e:
-        logger.error(f"Error getting reports: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Récupère la liste des rapports."""
+    query = db.query(Report)
+    
+    if report_type:
+        query = query.filter(Report.report_type == report_type)
+    if start_date:
+        query = query.filter(Report.created_at >= start_date)
+    if end_date:
+        query = query.filter(Report.created_at <= end_date)
+    
+    reports = query.order_by(Report.created_at.desc()).offset(skip).limit(limit).all()
+    return reports
 
 @router.post("/", response_model=ReportResponse)
 async def create_report(
     report: ReportCreate,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
-    """Create a new report"""
+    """Crée un nouveau rapport."""
+    db_report = Report(
+        report_type=report.report_type,
+        parameters=report.parameters,
+        status=ReportStatus.pending,
+        created_by=current_user.id
+    )
+    
     try:
-        # Validate report type
-        valid_types = ["detection", "analytics", "summary", "artist", "track", "station"]
-        if report.type not in valid_types:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid report type. Must be one of: {', '.join(valid_types)}"
-            )
-
-        # Validate format
-        valid_formats = ["csv", "xlsx", "json"]
-        if report.format not in valid_formats:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid format. Must be one of: {', '.join(valid_formats)}"
-            )
-
-        # Create new report
-        new_report = Report(
-            type=report.type,
-            format=report.format,
-            start_date=report.start_date,
-            end_date=report.end_date,
-            status="pending",
-            progress=0.0,
-            user_id=current_user.id,
-            created_at=datetime.now(),
-            filters=report.filters
-        )
-        db.add(new_report)
+        db.add(db_report)
         db.commit()
-        db.refresh(new_report)
-
-        # Start report generation in background
-        background_tasks.add_task(generate_report, new_report.id)
-
-        return ReportResponse(
-            id=str(new_report.id),
-            title=f"{new_report.type.capitalize()} Report",
-            type=new_report.type,
-            format=new_report.format,
-            generatedAt=new_report.created_at.isoformat(),
-            status=new_report.status,
-            progress=new_report.progress,
-            user={
-                'id': current_user.id,
-                'username': current_user.username,
-                'email': current_user.email
-            }
+        db.refresh(db_report)
+        
+        # Génère le rapport en arrière-plan
+        generator = ReportGenerator(db)
+        background_tasks.add_task(
+            generator.generate_report,
+            db_report.id,
+            report.report_type,
+            report.parameters
         )
-
-    except HTTPException:
-        raise
+        
+        return db_report
     except Exception as e:
-        logger.error(f"Error creating report: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{report_id}", response_model=ReportResponse)
+async def get_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Récupère les détails d'un rapport."""
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
+
+@router.get("/{report_id}/status", response_model=ReportStatusResponse)
+async def get_report_status(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Récupère le statut d'un rapport."""
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    return {
+        "id": report.id,
+        "status": report.status,
+        "progress": report.progress,
+        "error": report.error,
+        "updated_at": report.updated_at
+    }
+
+@router.get("/{report_id}/download")
+async def download_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Télécharge un rapport."""
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    if report.status != ReportStatus.completed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Report is not ready for download (status: {report.status})"
+        )
+    
+    file_path = get_report_path(report)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Report file not found")
+    
+    return FileResponse(
+        file_path,
+        filename=f"report_{report.id}_{report.report_type.value}.{report.format}",
+        media_type=f"application/{report.format}"
+    )
+
+@router.delete("/{report_id}")
+async def delete_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Supprime un rapport."""
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    try:
+        # Supprime le fichier physique
+        file_path = get_report_path(report)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        # Supprime l'enregistrement de la base de données
+        db.delete(report)
+        db.commit()
+        return {"message": "Report deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/generate/daily")
+async def generate_daily_report(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+    date: Optional[datetime] = None
+):
+    """Génère le rapport quotidien."""
+    try:
+        if not date:
+            date = datetime.utcnow().date()
+        
+        report = Report(
+            report_type=ReportType.daily,
+            parameters={"date": date.isoformat()},
+            status=ReportStatus.pending,
+            created_by=current_user.id
+        )
+        
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        
+        generator = ReportGenerator(db)
+        background_tasks.add_task(
+            generator.generate_daily_report,
+            report.id,
+            date
+        )
+        
+        return report
+    except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/subscriptions", response_model=List[SubscriptionResponse])
-async def get_subscriptions(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+@router.post("/generate/monthly")
+async def generate_monthly_report(
+    background_tasks: BackgroundTasks,
+    year: int = Query(..., ge=2000, le=datetime.utcnow().year),
+    month: int = Query(..., ge=1, le=12),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
-    """Get all report subscriptions for the current user"""
+    """Génère le rapport mensuel."""
     try:
-        subscriptions = db.query(ReportSubscription).filter(ReportSubscription.user_id == current_user.id).all()
-        return [
-            SubscriptionResponse(
-                id=str(sub.id),
-                name=sub.name,
-                frequency=sub.frequency,
-                type=sub.type,
-                nextDelivery=sub.next_delivery.isoformat(),
-                recipients=sub.recipients,
-                user={
-                    'id': current_user.id,
-                    'username': current_user.username,
-                    'email': current_user.email
-                }
-            )
-            for sub in subscriptions
-        ]
+        report = Report(
+            report_type=ReportType.monthly,
+            parameters={"year": year, "month": month},
+            status=ReportStatus.pending,
+            created_by=current_user.id
+        )
+        
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        
+        generator = ReportGenerator(db)
+        background_tasks.add_task(
+            generator.generate_monthly_report,
+            report.id,
+            year,
+            month
+        )
+        
+        return report
     except Exception as e:
-        logger.error(f"Error getting subscriptions: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error retrieving subscriptions")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/subscriptions", response_model=SubscriptionResponse)
+@router.post("/subscriptions", response_model=Dict)
 async def create_subscription(
     subscription: SubscriptionCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
-    """Create a new report subscription"""
+    """Crée un nouvel abonnement aux rapports."""
     try:
-        # Validate frequency
-        valid_frequencies = ["quotidien", "hebdomadaire", "mensuel"]
-        if subscription.frequency not in valid_frequencies:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Fréquence invalide. Doit être l'un de : {', '.join(valid_frequencies)}"
-            )
-
-        # Calculate next delivery
-        next_delivery = calculate_next_delivery(subscription.frequency)
-
-        new_subscription = ReportSubscription(
+        db_subscription = ReportSubscription(
             name=subscription.name,
             email=subscription.email,
             frequency=subscription.frequency,
@@ -239,23 +286,70 @@ async def create_subscription(
             filters=subscription.filters,
             include_graphs=subscription.include_graphs,
             language=subscription.language,
-            next_delivery=next_delivery,
-            user_id=current_user.id
+            created_by=current_user.id
         )
-        db.add(new_subscription)
-        db.commit()
-        db.refresh(new_subscription)
         
-        return {
-            "message": "Abonnement créé avec succès",
-            "subscription_id": new_subscription.id,
-            "next_delivery": next_delivery.strftime("%Y-%m-%d %H:%M:%S")
-        }
-    except HTTPException:
-        raise
+        db.add(db_subscription)
+        db.commit()
+        db.refresh(db_subscription)
+        
+        logger.info(f"Created new report subscription for {subscription.email}")
+        return {"message": "Subscription created successfully", "id": db_subscription.id}
     except Exception as e:
         logger.error(f"Error creating subscription: {str(e)}")
-        raise HTTPException(status_code=500, detail="Erreur lors de la création de l'abonnement")
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/subscriptions", response_model=List[Dict])
+async def get_subscriptions(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Récupère la liste des abonnements aux rapports."""
+    try:
+        subscriptions = db.query(ReportSubscription)\
+            .filter(ReportSubscription.created_by == current_user.id)\
+            .order_by(ReportSubscription.created_at.desc())\
+            .offset(skip)\
+            .limit(limit)\
+            .all()
+        
+        return [subscription.__dict__ for subscription in subscriptions]
+    except Exception as e:
+        logger.error(f"Error fetching subscriptions: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.delete("/subscriptions/{subscription_id}")
+async def delete_subscription(
+    subscription_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Supprime un abonnement aux rapports."""
+    try:
+        subscription = db.query(ReportSubscription)\
+            .filter(and_(
+                ReportSubscription.id == subscription_id,
+                ReportSubscription.created_by == current_user.id
+            ))\
+            .first()
+        
+        if not subscription:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        
+        db.delete(subscription)
+        db.commit()
+        
+        logger.info(f"Deleted subscription {subscription_id}")
+        return {"message": "Subscription deleted successfully"}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error deleting subscription: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 def get_detection_data(start_date: datetime, end_date: datetime, db: Session) -> pd.DataFrame:
     """Get detection data for the specified time range"""
@@ -449,40 +543,6 @@ async def generate_report(report_id: int):
     finally:
         db.close()
         logger.info("Report generation process completed")
-
-@router.get("/{report_id}/download")
-async def download_report(
-    report_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Download a generated report"""
-    try:
-        report = db.query(Report).filter(
-            Report.id == report_id,
-            Report.user_id == current_user.id
-        ).first()
-        
-        if not report:
-            raise HTTPException(status_code=404, detail="Report not found")
-        
-        if report.status != "completed":
-            raise HTTPException(status_code=400, detail="Report not ready for download")
-        
-        file_path = REPORTS_DIR / f"report_{report.id}.{report.format}"
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="Report file not found")
-        
-        return FileResponse(
-            str(file_path),
-            filename=f"report_{report.type}_{report.created_at.date()}.{report.format}",
-            media_type="application/octet-stream"
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error downloading report: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 def send_email_with_report(email: str, report_path: str, report_type: str, language: str = "fr"):
     """Send email with report attachment"""
@@ -755,23 +815,6 @@ async def list_subscriptions(
     ).all()
     return subscriptions
 
-@router.delete("/subscriptions/{subscription_id}")
-async def delete_subscription(
-    subscription_id: int,
-    db: Session = Depends(get_db)
-):
-    """Delete a subscription"""
-    subscription = db.query(ReportSubscription).filter(
-        ReportSubscription.id == subscription_id
-    ).first()
-    
-    if not subscription:
-        raise HTTPException(status_code=404, detail="Subscription not found")
-    
-    db.delete(subscription)
-    db.commit()
-    return {"message": "Subscription deleted successfully"}
-
 def calculate_next_delivery(frequency: str) -> datetime:
     """Calculate next delivery date based on frequency"""
     now = datetime.now()
@@ -792,4 +835,47 @@ def calculate_next_delivery(frequency: str) -> datetime:
             next_month = datetime(now.year, now.month + 1, 1, 6, 0, 0)
         return next_month
     else:
-        raise ValueError("Fréquence invalide") 
+        raise ValueError("Fréquence invalide")
+
+@router.post("/send/{report_id}")
+async def send_report_by_email(
+    report_id: int,
+    email: EmailStr,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Envoie un rapport par email."""
+    try:
+        report = db.query(Report).filter(Report.id == report_id).first()
+        if not report:
+            raise HTTPException(status_code=404, detail="Report not found")
+        
+        if report.status != ReportStatus.completed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Report is not ready to be sent (status: {report.status})"
+            )
+        
+        file_path = get_report_path(report)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Report file not found")
+        
+        # Envoie le rapport par email
+        subject = f"SODAV Monitor - Rapport {report.report_type.value}"
+        body = f"Veuillez trouver ci-joint votre rapport {report.report_type.value}."
+        
+        await send_email(
+            to_email=email,
+            subject=subject,
+            body=body,
+            attachment_path=file_path,
+            attachment_name=f"report_{report.id}_{report.report_type.value}.{report.format}"
+        )
+        
+        logger.info(f"Report {report_id} sent to {email}")
+        return {"message": "Report sent successfully"}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error sending report: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error sending report") 
