@@ -1,5 +1,5 @@
 ---
-description:  Règle de Détection Avancée pour l'Algorithme SODAV Monitor
+description: Règle de Détection Avancée pour l'Algorithme SODAV Monitor
 globs: *
 ---
 #### 🎧 **1. Identification du Type de Contenu**
@@ -7,7 +7,7 @@ globs: *
   - 🎶 **Musique** : Continuer le processus de détection, utilise /api/channels/detect-music pour la detection.
   - 🎙️ **Speech** : Ignorer la détection, enregistrer seulement les métadonnées de la diffusion.
 
----
+--- Ne confond pas ACOUSTID_API_KEY et AUDD_API_KEY c'est deux services distincts, pour la detection assure toi que les deux soient fournis
 
 #### 🎼 **2. Processus de Détection Hiérarchique**
 Si le contenu est identifié comme **musique**, suivre cet ordre de détection :
