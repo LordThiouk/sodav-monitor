@@ -3,11 +3,9 @@ import logging
 import sys
 from pathlib import Path
 
-# Add the parent directory to the Python path
-sys.path.append(str(Path(__file__).parent))
-
-from database import get_db, SessionLocal
-from models import Report, User, ReportStatus
+from backend.models.database import get_database_url, SessionLocal
+from backend.models.models import Report, User, ReportStatus
+from backend.routers.reports import get_summary_data
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -44,7 +42,7 @@ def create_test_report():
                 format="csv",
                 start_date=start_date,
                 end_date=end_date,
-                status=ReportStatus.pending.value,
+                status=ReportStatus.PENDING,
                 progress=0.0,
                 user_id=user.id,
                 created_at=datetime.now()
@@ -53,18 +51,19 @@ def create_test_report():
             db.commit()
             logger.info(f"Created report with ID: {report.id}")
             
-            # Generate report
-            from routers.reports import get_summary_data
-            
             # Get summary data
             data = get_summary_data(start_date, end_date, db)
             
+            # Create reports directory if it doesn't exist
+            report_dir = Path(__file__).parent / "reports"
+            report_dir.mkdir(parents=True, exist_ok=True)
+            
             # Save to CSV
-            report_path = Path(__file__).parent / "reports" / f"report_{report.id}.csv"
+            report_path = report_dir / f"report_{report.id}.csv"
             data.to_csv(report_path, index=False)
             
             # Update report status
-            report.status = ReportStatus.completed.value
+            report.status = ReportStatus.COMPLETED
             report.progress = 1.0
             report.completed_at = datetime.now()
             report.file_path = str(report_path)

@@ -1,16 +1,31 @@
+"""Tests pour le module radio."""
+
 import os
 import logging
 import requests
 import time
 import io
 from pydub import AudioSegment
-from fingerprint import AudioProcessor
-from config import Config
 import pytest
+from sqlalchemy.orm import Session
+from ..audio_processor import AudioProcessor
+from ..models.models import RadioStation, Track, TrackDetection
+from ..models.database import SessionLocal
+from ..utils.radio_manager import RadioManager
+from ..utils.fingerprint import generate_fingerprint
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class Config:
+    """Configuration pour les tests."""
+    MAX_RETRIES = 3
+    REQUEST_TIMEOUT = 10
+    CHUNK_SIZE = 8192
+    MAX_AUDIO_LENGTH = 30
+    ACOUSTID_API_KEY = os.getenv("ACOUSTID_API_KEY", "test_key")
+    AUDD_API_KEY = os.getenv("AUDD_API_KEY", "test_key")
 
 def create_session():
     """Create a requests session with proper headers"""
@@ -278,3 +293,177 @@ def main():
 if __name__ == "__main__":
     test_radio_detection(url="http://listen.senemultimedia.net:8090/stream")  # Call the function to test music detection
     main()
+
+@pytest.fixture(scope="function")
+def db_session() -> Session:
+    """Fixture pour la session de base de données de test."""
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+@pytest.fixture
+def audio_processor():
+    """Fixture pour le processeur audio."""
+    return AudioProcessor()
+
+@pytest.fixture
+def test_station(db_session):
+    """Fixture pour une station de test."""
+    station = RadioStation(
+        name="Test Radio",
+        stream_url="http://test.stream/audio",
+        country="SN",
+        language="fr",
+        is_active=True
+    )
+    db_session.add(station)
+    db_session.commit()
+    return station
+
+@pytest.fixture
+def test_track(db_session):
+    """Fixture pour une piste de test."""
+    track = Track(
+        title="Test Track",
+        artist="Test Artist",
+        duration=180,
+        fingerprint=b"test_fingerprint"
+    )
+    db_session.add(track)
+    db_session.commit()
+    return track
+
+def test_audio_processor_initialization(audio_processor):
+    """Test de l'initialisation du processeur audio."""
+    assert audio_processor is not None
+    assert hasattr(audio_processor, "process_stream")
+    assert hasattr(audio_processor, "extract_features")
+
+@pytest.mark.asyncio
+async def test_process_stream(audio_processor, test_station):
+    """Test du traitement du flux audio."""
+    result = await audio_processor.process_stream(test_station.stream_url)
+    assert result is not None
+    assert "features" in result
+    assert "confidence" in result
+
+def test_track_detection(db_session, test_station, test_track):
+    """Test de la détection de piste."""
+    detection = TrackDetection(
+        station_id=test_station.id,
+        track_id=test_track.id,
+        confidence=0.95,
+        play_duration=180
+    )
+    db_session.add(detection)
+    db_session.commit()
+    
+    saved_detection = db_session.query(TrackDetection).first()
+    assert saved_detection.station_id == test_station.id
+    assert saved_detection.track_id == test_track.id
+    assert saved_detection.confidence == 0.95
+
+@pytest.fixture
+def radio_manager(db_session):
+    """Fixture pour le gestionnaire radio."""
+    return RadioManager(db_session)
+
+def test_generate_fingerprint():
+    """Test de la génération d'empreintes audio."""
+    # Simuler un échantillon audio
+    audio_sample = b"test_audio_data"
+    fingerprint = generate_fingerprint(audio_sample)
+    assert fingerprint is not None
+    assert isinstance(fingerprint, bytes)
+
+def test_radio_station_creation(db_session, test_station):
+    """Test de la création d'une station radio."""
+    assert test_station.id is not None
+    assert test_station.name == "Test Radio"
+    assert test_station.is_active == True
+
+def test_track_detection(db_session, test_station):
+    """Test de la détection de pistes."""
+    # Créer une piste
+    track = Track(
+        title="Test Track",
+        artist="Test Artist",
+        duration=180
+    )
+    db_session.add(track)
+    db_session.commit()
+
+    # Créer une détection
+    detection = TrackDetection(
+        station_id=test_station.id,
+        track_id=track.id,
+        confidence=0.95,
+        play_duration=180
+    )
+    db_session.add(detection)
+    db_session.commit()
+
+    # Vérifier la détection
+    assert detection.id is not None
+    assert detection.confidence > 0.9
+    assert detection.station_id == test_station.id
+    assert detection.track_id == track.id
+
+def test_stream(radio_manager, test_station):
+    """Test de traitement du flux audio."""
+    try:
+        # Simuler des données audio
+        audio_data = os.urandom(Config.CHUNK_SIZE * 10)  # Données aléatoires pour le test
+        
+        # Créer un processeur audio avec des clés de test
+        processor = AudioProcessor()
+        
+        # Traiter les données
+        is_music, confidence = processor.process_stream(audio_data)
+        
+        # Vérifier les résultats
+        assert isinstance(is_music, bool)
+        assert isinstance(confidence, float)
+        assert 0 <= confidence <= 1
+        
+    except Exception as e:
+        pytest.fail(f"Test failed: {str(e)}")
+
+def test_radio_detection(radio_manager, test_station):
+    """Test de détection de musique."""
+    try:
+        # Simuler une détection
+        features = generate_fingerprint(os.urandom(Config.CHUNK_SIZE * 10))
+        assert len(features) > 0
+        
+        # Créer une piste de test
+        track = Track(
+            title="Test Track",
+            artist="Test Artist",
+            fingerprint=features.tobytes()
+        )
+        radio_manager.db.add(track)
+        radio_manager.db.commit()
+        
+        # Vérifier que la piste est bien créée
+        assert track.id is not None
+        
+        # Créer une détection
+        detection = TrackDetection(
+            station_id=test_station.id,
+            track_id=track.id,
+            confidence=0.85
+        )
+        radio_manager.db.add(detection)
+        radio_manager.db.commit()
+        
+        # Vérifier la détection
+        assert detection.id is not None
+        assert detection.confidence == 0.85
+        assert detection.station_id == test_station.id
+        assert detection.track_id == track.id
+        
+    except Exception as e:
+        pytest.fail(f"Test failed: {str(e)}")

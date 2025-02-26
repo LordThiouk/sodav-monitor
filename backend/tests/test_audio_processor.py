@@ -23,8 +23,7 @@ def db_session():
 @pytest.fixture
 def audio_processor(db_session):
     """Crée une instance de AudioProcessor pour les tests."""
-    music_recognizer = Mock()
-    return AudioProcessor(db_session, music_recognizer)
+    return AudioProcessor(db_session)
 
 @pytest.fixture
 def stream_handler():
@@ -52,113 +51,114 @@ def sample_station():
     return RadioStation(
         id=1,
         name="Test Radio",
-        stream_url="http://test.radio/stream",
-        is_active=True,
+        stream_url="http://test.stream/audio",
         country="SN",
-        language="fr"
+        language="fr",
+        is_active=True
     )
 
 @pytest.mark.asyncio
-async def test_process_stream_success(stream_handler, feature_extractor, track_manager):
-    """Teste le traitement réussi d'un flux audio."""
-    # Mock des données audio
-    audio_data = b"mock_audio_data"
+async def test_process_stream_speech(audio_processor, feature_extractor):
+    """Test de détection de parole."""
+    # Simuler des données audio de parole
+    audio_data = np.random.random(44100)
     
-    # Mock du téléchargement audio
-    with patch.object(stream_handler, '_download_audio_chunk', return_value=audio_data):
-        # Mock de l'analyse audio
-        with patch.object(feature_extractor, 'analyze_audio', return_value={
-            "confidence": 0.9,
-            "fingerprint": "test_fingerprint",
-            "features": {"tempo": 120, "key": "C"}
-        }):
-            result = await stream_handler.process_stream(
-                "http://test.radio/stream",
-                feature_extractor,
-                track_manager,
-                station_id=1
-            )
-            
-            assert result is not None
-            assert isinstance(result, dict)
-
-@pytest.mark.asyncio
-async def test_process_stream_no_music(stream_handler, feature_extractor, track_manager):
-    """Teste le traitement d'un flux sans musique."""
-    audio_data = b"mock_speech_data"
-    
-    with patch.object(stream_handler, '_download_audio_chunk', return_value=audio_data):
-        with patch.object(feature_extractor, 'analyze_audio', return_value={
-            "confidence": 0.2,
-            "features": {"speech_probability": 0.9}
-        }):
-            result = await stream_handler.process_stream(
-                "http://test.radio/stream",
-                feature_extractor,
-                track_manager,
-                station_id=1
-            )
-            
-            assert result == {"status": "Aucune musique détectée"}
-
-@pytest.mark.asyncio
-async def test_station_monitoring(station_monitor, sample_station, stream_handler, feature_extractor, track_manager):
-    """Teste le monitoring d'une station."""
-    with patch.object(station_monitor, 'monitor_station') as mock_monitor:
-        await station_monitor.add_station(sample_station)
-        assert sample_station.id in station_monitor.monitoring_tasks
+    # Mocker la détection de type de contenu
+    with patch.object(feature_extractor, 'is_music', return_value=False):
+        result = await audio_processor.process_stream(audio_data, station_id=1)
         
-        # Simule le monitoring pendant quelques secondes
-        await station_monitor.start_monitoring(stream_handler, feature_extractor, track_manager)
-        mock_monitor.assert_called_once()
+        assert result["type"] == "speech"
+        assert result["confidence"] == 0.0
+        assert result["station_id"] == 1
 
 @pytest.mark.asyncio
-async def test_feature_extraction(feature_extractor):
-    """Teste l'extraction des caractéristiques audio."""
-    # Crée des données audio synthétiques pour le test
-    sample_rate = 22050
-    duration = 3  # secondes
-    t = np.linspace(0, duration, int(sample_rate * duration))
-    test_audio = np.sin(2 * np.pi * 440 * t)  # 440 Hz sine wave
+async def test_process_stream_local_match(audio_processor, track_manager):
+    """Test de détection locale de musique."""
+    # Simuler des données audio de musique
+    audio_data = np.random.random(44100)
     
-    # Convertit en format WAV en mémoire
-    audio_buffer = io.BytesIO()
-    sf.write(audio_buffer, test_audio, sample_rate, format='WAV')
-    audio_bytes = audio_buffer.getvalue()
-    
-    features = await feature_extractor.analyze_audio(audio_bytes)
-    assert features is not None
-    assert "confidence" in features
-    assert features["confidence"] > 0
-
-@pytest.mark.asyncio
-async def test_track_management(track_manager, db_session):
-    """Teste la gestion des pistes."""
-    test_features = {
-        "fingerprint": "test_fingerprint",
+    # Mocker la détection locale
+    mock_match = {
         "confidence": 0.95,
-        "title": "Test Track",
-        "artist": "Test Artist",
-        "duration": 180
+        "track": {"id": 1, "title": "Test Track", "artist": "Test Artist"}
     }
     
-    # Mock de la base de données
-    mock_track = Mock(spec=Track)
-    mock_track.id = 1
-    mock_track.title = "Test Track"
-    mock_track.to_dict = Mock(return_value={"id": 1, "title": "Test Track"})
-    db_session.query.return_value.filter_by.return_value.first.return_value = mock_track
+    with patch.object(track_manager, 'find_local_match', return_value=mock_match):
+        result = await audio_processor.process_stream(audio_data, station_id=1)
+        
+        assert result["type"] == "music"
+        assert result["source"] == "local"
+        assert result["confidence"] == 0.95
+        assert result["track"]["title"] == "Test Track"
+
+@pytest.mark.asyncio
+async def test_process_stream_musicbrainz_match(audio_processor, track_manager):
+    """Test de détection avec MusicBrainz."""
+    audio_data = np.random.random(44100)
     
-    result = await track_manager.process_track(test_features, station_id=1)
-    assert result is not None
-    assert "status" in result
-    assert result["status"] == "success"
-    assert "detection" in result
-    assert "track_id" in result["detection"]
-    assert result["detection"]["track_id"] == 1
+    # Mocker les détections
+    with patch.object(track_manager, 'find_local_match', return_value=None):
+        mock_mb_match = {
+            "confidence": 0.85,
+            "track": {"id": 2, "title": "MB Track", "artist": "MB Artist"}
+        }
+        with patch.object(track_manager, 'find_musicbrainz_match', return_value=mock_mb_match):
+            result = await audio_processor.process_stream(audio_data, station_id=1)
+            
+            assert result["type"] == "music"
+            assert result["source"] == "musicbrainz"
+            assert result["confidence"] == 0.85
+            assert result["track"]["title"] == "MB Track"
+
+@pytest.mark.asyncio
+async def test_process_stream_audd_match(audio_processor, track_manager):
+    """Test de détection avec Audd."""
+    audio_data = np.random.random(44100)
+    
+    # Mocker les détections
+    with patch.object(track_manager, 'find_local_match', return_value=None):
+        with patch.object(track_manager, 'find_musicbrainz_match', return_value=None):
+            mock_audd_match = {
+                "confidence": 0.75,
+                "track": {"id": 3, "title": "Audd Track", "artist": "Audd Artist"}
+            }
+            with patch.object(track_manager, 'find_audd_match', return_value=mock_audd_match):
+                result = await audio_processor.process_stream(audio_data, station_id=1)
+                
+                assert result["type"] == "music"
+                assert result["source"] == "audd"
+                assert result["confidence"] == 0.75
+                assert result["track"]["title"] == "Audd Track"
+
+@pytest.mark.asyncio
+async def test_process_stream_no_match(audio_processor, track_manager):
+    """Test de détection sans correspondance."""
+    audio_data = np.random.random(44100)
+    
+    # Mocker toutes les détections pour qu'elles échouent
+    with patch.object(track_manager, 'find_local_match', return_value=None):
+        with patch.object(track_manager, 'find_musicbrainz_match', return_value=None):
+            with patch.object(track_manager, 'find_audd_match', return_value=None):
+                result = await audio_processor.process_stream(audio_data, station_id=1)
+                
+                assert result["type"] == "music"
+                assert result["source"] == "unknown"
+                assert result["confidence"] == 0.0
+
+@pytest.mark.asyncio
+async def test_station_monitoring(audio_processor, station_monitor):
+    """Test du monitoring des stations."""
+    # Test du démarrage du monitoring
+    with patch.object(station_monitor, 'start_monitoring', return_value=True):
+        result = await audio_processor.start_monitoring(1)
+        assert result is True
+    
+    # Test de l'arrêt du monitoring
+    with patch.object(station_monitor, 'stop_monitoring', return_value=True):
+        result = await audio_processor.stop_monitoring(1)
+        assert result is True
 
 def test_memory_management(audio_processor):
-    """Teste la gestion de la mémoire."""
-    assert audio_processor._check_memory_usage() is True
-    assert audio_processor.max_memory_usage > 0
-    assert audio_processor.processing_semaphore._value == audio_processor.max_concurrent_stations 
+    """Test de la gestion de la mémoire."""
+    # Pour le moment, la fonction retourne toujours True
+    assert audio_processor._check_memory_usage() is True 

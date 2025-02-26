@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 import os
 from dotenv import load_dotenv
@@ -109,3 +109,12 @@ def init_db():
     except Exception as e:
         logger.error(f"Error initializing database: {str(e)}")
         raise
+
+def get_test_db() -> Session:
+    """Obtenir une session de base de données de test."""
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    )
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    return TestingSessionLocal()

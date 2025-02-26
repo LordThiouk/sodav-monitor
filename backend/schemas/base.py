@@ -8,6 +8,14 @@ class TrackBase(BaseModel):
     duration: int
     confidence: float
 
+class TrackResponse(TrackBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
 class StreamBase(BaseModel):
     name: str
     type: str
@@ -16,12 +24,23 @@ class StreamBase(BaseModel):
     language: str
     stream_url: str
 
-class DetectionResponse(BaseModel):
+class DetectionBase(BaseModel):
     station_name: str
     track_title: str
     artist: str
-    detected_at: datetime
     confidence: float
+
+class DetectionCreate(DetectionBase):
+    detected_at: Optional[datetime] = None
+
+class DetectionResponse(DetectionBase):
+    id: int
+    detected_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
 
 class StreamRequest(BaseModel):
     stream_url: str
@@ -43,4 +62,70 @@ class AnalyticsResponse(BaseModel):
     averageConfidence: float
     detectionsByHour: List[ChartData]
     topArtists: List[Dict[str, Union[str, int]]]
-    systemHealth: SystemHealth 
+    systemHealth: SystemHealth
+
+class StationBase(BaseModel):
+    name: str
+    stream_url: str
+    region: Optional[str] = None
+    language: Optional[str] = None
+    type: Optional[str] = "radio"
+
+class StationCreate(StationBase):
+    pass
+
+class StationUpdate(StationBase):
+    status: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class StationResponse(StationBase):
+    id: int
+    status: str
+    is_active: bool
+    last_checked: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class StationStatusResponse(BaseModel):
+    id: int
+    name: str
+    status: str
+    is_active: bool
+    last_checked: Optional[datetime] = None
+
+class ReportBase(BaseModel):
+    title: str
+    type: str
+    format: str
+    period_start: datetime
+    period_end: datetime
+    filters: Optional[Dict[str, str]] = None
+
+class ReportCreate(ReportBase):
+    pass
+
+class ReportUpdate(ReportBase):
+    status: Optional[str] = None
+    file_path: Optional[str] = None
+    error_message: Optional[str] = None
+
+class ReportResponse(ReportBase):
+    id: int
+    status: str
+    file_path: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class ReportStatusResponse(BaseModel):
+    id: int
+    title: str
+    status: str
+    created_at: datetime
+    updated_at: datetime 

@@ -1,59 +1,54 @@
-import os
-from dotenv import load_dotenv
-import logging
-from sqlalchemy import create_engine, inspect
-from sqlalchemy.orm import sessionmaker
-from database import SessionLocal, engine, get_database_url
-from models import Base
+"""Tests des opérations de base de données."""
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import pytest
+from sqlalchemy.orm import Session
+from ..models.database import SessionLocal, engine, get_database_url
+from ..models.models import Base, RadioStation, Track, TrackDetection
+from datetime import datetime
 
-def test_database_connection():
-    """Test PostgreSQL database connection and basic operations"""
+@pytest.fixture(scope="function")
+def db_session() -> Session:
+    """Fixture pour la session de base de données de test."""
+    Base.metadata.create_all(bind=engine)
+    session = SessionLocal()
     try:
-        # Get database URL
-        database_url = get_database_url()
-        
-        # Print connection details (masking password)
-        masked_url = database_url.replace(database_url.split("@")[0].split(":")[-1], "***")
-        logger.info(f"Testing database connection to: {masked_url}")
-        
-        # Test SQLAlchemy connection
-        logger.info("Testing SQLAlchemy connection...")
-        
-        # Create tables if they don't exist
-        logger.info("Creating database tables if they don't exist...")
-        Base.metadata.create_all(bind=engine)
-        
-        # Test session creation and query
-        logger.info("Testing database session and query...")
-        db = SessionLocal()
-        try:
-            # Test simple query using SQLAlchemy
-            from sqlalchemy import text
-            result = db.execute(text("SELECT version()")).scalar()
-            logger.info(f"PostgreSQL version: {result}")
-            
-            # Get table names using SQLAlchemy inspector
-            inspector = inspect(engine)
-            tables = inspector.get_table_names()
-            logger.info(f"Available tables: {', '.join(tables)}")
-            
-            logger.info("✅ Database connection and queries successful!")
-            return True
-            
-        finally:
-            db.close()
-            
-    except Exception as e:
-        logger.error(f"❌ Database test failed: {str(e)}")
-        return False
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(bind=engine)
 
-if __name__ == "__main__":
-    # Load environment variables
-    load_dotenv()
+def test_database_connection(db_session):
+    """Test de la connexion à la base de données."""
+    assert db_session is not None
+    assert db_session.is_active
+
+def test_create_station(db_session):
+    """Test de la création d'une station radio."""
+    station = RadioStation(
+        name="Test Station",
+        stream_url="http://test.stream",
+        country="SN",
+        language="fr",
+        status="active"
+    )
+    db_session.add(station)
+    db_session.commit()
     
-    # Run the test
-    test_database_connection() 
+    saved_station = db_session.query(RadioStation).first()
+    assert saved_station.name == "Test Station"
+    assert saved_station.stream_url == "http://test.stream"
+
+def test_create_track(db_session):
+    """Test de la création d'une piste."""
+    track = Track(
+        title="Test Track",
+        artist="Test Artist",
+        duration=180,
+        fingerprint="test_fingerprint"
+    )
+    db_session.add(track)
+    db_session.commit()
+    
+    saved_track = db_session.query(Track).first()
+    assert saved_track.title == "Test Track"
+    assert saved_track.artist == "Test Artist" 

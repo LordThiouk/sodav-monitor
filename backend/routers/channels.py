@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from fastapi import BackgroundTasks
 import asyncio
 
-from ..database import get_db
+from backend.models.database import get_db
 from ..models import RadioStation, StationStatus, Track, TrackDetection, Artist
 from ..utils.radio_manager import RadioManager
 from ..utils.websocket import broadcast_station_update
@@ -15,6 +15,7 @@ import logging
 from ..schemas.base import StationCreate, StationUpdate, StationResponse, StationStatusResponse
 from ..core.security import get_current_user
 from ..utils.stream_checker import check_stream_availability
+from ..core.config import get_settings
 
 logger = logging.getLogger(__name__)
 

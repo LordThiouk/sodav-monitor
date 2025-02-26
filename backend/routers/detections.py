@@ -4,12 +4,13 @@ from sqlalchemy import desc
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
-from ..database import get_db
-from ..models import TrackDetection, Track, RadioStation, StationStatus
+from backend.models.database import get_db
+from ..models.models import TrackDetection, Track, RadioStation, StationStatus, Artist
 from ..schemas.base import DetectionCreate, DetectionResponse, TrackResponse
 from ..core.security import get_current_user
 from ..utils.websocket import broadcast_track_detection
 from ..detection.audio_processor.core import AudioProcessor
+from ..core.config import get_settings
 import logging
 
 router = APIRouter(prefix="/api/detections", tags=["detections"])

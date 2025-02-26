@@ -20,12 +20,13 @@ from email.mime.application import MIMEApplication
 # Add the parent directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from database import get_db, SessionLocal
-from models import Report, ReportSubscription, User, TrackDetection, Track, RadioStation, ReportStatus, Artist, ReportType
+from backend.models.database import get_db
+from ..models.models import Report, ReportSubscription, User, TrackDetection, Track, RadioStation, ReportStatus, Artist, ReportType, ReportFormat
 from utils.auth import get_current_user
 from schemas.base import ReportCreate, ReportResponse, ReportStatusResponse
 from reports.generator import ReportGenerator
 from utils.file_manager import get_report_path
+from ..core.config import get_settings
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -445,7 +446,7 @@ def get_summary_data(start_date: datetime, end_date: datetime, db: Session) -> p
 async def generate_report(report_id: int):
     """Background task to generate report"""
     logger.info(f"Starting report generation for report_id: {report_id}")
-    db = SessionLocal()
+    db = get_db()
     try:
         # Get report details
         report = db.query(Report).filter(Report.id == report_id).first()
@@ -600,7 +601,7 @@ def send_email_with_report(email: str, report_path: str, report_type: str, langu
     template = templates.get(language, templates["fr"])
     
     # Get summary statistics
-    db = SessionLocal()
+    db = get_db()
     stats = get_summary_stats(db, report_type, report.start_date, report.end_date)
     db.close()
 

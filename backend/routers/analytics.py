@@ -6,11 +6,12 @@ import logging
 from typing import Dict, List, Optional
 from pydantic import BaseModel
 
-from ..database import get_db
-from ..models import Track, TrackDetection, RadioStation, ArtistStats, TrackStats, DetectionHourly, AnalyticsData, Artist, StationStatus
+from backend.models.database import get_db
+from ..models.models import Track, TrackDetection, RadioStation, ArtistStats, TrackStats, DetectionHourly, AnalyticsData, Artist, StationStatus
 from ..analytics.stats_manager import StatsManager
 from ..schemas.base import AnalyticsResponse, ChartData, SystemHealth
 from ..core.security import get_current_user
+from ..core.config import get_settings
 
 router = APIRouter(
     tags=["analytics"],

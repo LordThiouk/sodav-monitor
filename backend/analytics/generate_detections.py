@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 import random
 import sys
 sys.path.append('.')
-from database import get_database_url
-from models import Track, TrackDetection, RadioStation, StationStatus
+from backend.models.database import get_database_url
+from backend.models.models import Track, TrackDetection, RadioStation, StationStatus
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

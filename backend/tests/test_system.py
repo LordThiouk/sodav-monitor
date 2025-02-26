@@ -1,96 +1,111 @@
-import asyncio
-import logging
+"""Tests système pour l'application."""
+
+import pytest
 from sqlalchemy.orm import Session
-from models import RadioStation, Track, TrackDetection
-from radio_manager import RadioManager
-from audio_processor import AudioProcessor
-from main import SessionLocal, engine
+from ..models.models import RadioStation, Track, TrackDetection
+from ..models.database import SessionLocal
+from ..utils.radio_manager import RadioManager
+from ..audio_processor import AudioProcessor
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-async def test_radio_browser():
-    """Test fetching radio stations from RadioBrowser API"""
+@pytest.fixture
+def db_session():
+    """Fixture pour la session de base de données."""
+    session = SessionLocal()
     try:
-        db = SessionLocal()
-        radio_manager = RadioManager(db)
-        
-        # Fetch Senegalese radio stations
-        logger.info("Fetching Senegalese radio stations...")
-        await radio_manager.update_station_list(country="Senegal")
-        
-        # Get active stations
-        stations = await radio_manager.get_active_stations()
-        logger.info(f"Found {len(stations)} active stations")
-        
-        for station in stations:
-            logger.info(f"Station: {station.name} ({station.stream_url})")
-            
-            # Test stream availability
-            is_available = await radio_manager.check_station_availability(station)
-            logger.info(f"Stream available: {is_available}")
-            
-        db.close()
-        return stations
-        
-    except Exception as e:
-        logger.error(f"Error testing radio browser: {str(e)}")
-        return []
+        yield session
+    finally:
+        session.close()
 
-async def test_audio_processing(stations):
-    """Test audio processing and track detection"""
-    try:
-        db = SessionLocal()
-        audio_processor = AudioProcessor(db)
-        
-        # Add a test track
-        test_track = Track(
-            title="Test Track",
-            artist="Test Artist",
-            fingerprint="1234,5678,9012",  # This is just a test fingerprint
-            fingerprint_hash="abcd1234"
+@pytest.fixture
+def radio_manager(db_session):
+    """Fixture pour le gestionnaire radio."""
+    return RadioManager(db_session)
+
+@pytest.fixture
+def test_stations(db_session):
+    """Fixture pour créer des stations de test."""
+    stations = [
+        RadioStation(
+            name="Radio Test 1",
+            stream_url="http://test1.stream/audio",
+            country="SN",
+            language="fr",
+            is_active=True
+        ),
+        RadioStation(
+            name="Radio Test 2",
+            stream_url="http://test2.stream/audio",
+            country="SN",
+            language="fr",
+            is_active=True
         )
-        db.add(test_track)
-        db.commit()
+    ]
+    for station in stations:
+        db_session.add(station)
+    db_session.commit()
+    return stations
+
+async def test_station_monitoring(radio_manager, test_stations):
+    """Test du monitoring des stations."""
+    try:
+        # Démarrer le monitoring pour chaque station
+        for station in test_stations:
+            await radio_manager.start_monitoring(station.id)
+            
+        # Vérifier que les stations sont bien monitorées
+        active_stations = radio_manager.get_active_stations()
+        assert len(active_stations) == len(test_stations)
         
-        # Process first available stream
-        for station in stations:
-            logger.info(f"Testing audio processing for station: {station.name}")
-            try:
-                await audio_processor.process_stream(station)
-                break  # Process only one station for testing
-            except Exception as e:
-                logger.error(f"Error processing station {station.name}: {str(e)}")
-                continue
-        
-        # Check detections
-        detections = db.query(TrackDetection).all()
-        logger.info(f"Found {len(detections)} track detections")
-        
-        for detection in detections:
-            logger.info(
-                f"Detected track '{detection.track.title}' on {detection.station.name} "
-                f"with {detection.confidence*100:.1f}% confidence"
+        # Arrêter le monitoring
+        for station in test_stations:
+            await radio_manager.stop_monitoring(station.id)
+            
+    except Exception as e:
+        pytest.fail(f"Test failed: {str(e)}")
+
+async def test_stream_processing(radio_manager, test_stations):
+    """Test du traitement des flux."""
+    try:
+        for station in test_stations:
+            # Traiter le flux
+            result = await radio_manager.process_station_stream(station.id)
+            assert result is not None
+            
+            # Vérifier les métriques
+            metrics = radio_manager.get_performance_metrics()
+            assert "total_detections" in metrics
+            assert "average_confidence" in metrics
+            assert "active_monitors" in metrics
+            
+    except Exception as e:
+        pytest.fail(f"Test failed: {str(e)}")
+
+def test_performance_metrics(radio_manager, test_stations, db_session):
+    """Test des métriques de performance."""
+    try:
+        # Créer quelques détections
+        for station in test_stations:
+            track = Track(
+                title=f"Test Track {station.id}",
+                artist="Test Artist",
+                fingerprint=b"test_fingerprint"
             )
+            db_session.add(track)
+            db_session.commit()
+            
+            detection = TrackDetection(
+                station_id=station.id,
+                track_id=track.id,
+                confidence=0.9
+            )
+            db_session.add(detection)
+        db_session.commit()
         
-        db.close()
+        # Vérifier les métriques
+        metrics = radio_manager.get_performance_metrics()
+        assert metrics["total_detections"] >= len(test_stations)
+        assert 0 <= metrics["average_confidence"] <= 1
+        assert metrics["active_monitors"] >= 0
         
     except Exception as e:
-        logger.error(f"Error testing audio processing: {str(e)}")
-
-async def main():
-    """Main test function"""
-    logger.info("Starting system test...")
-    
-    # Test radio browser
-    stations = await test_radio_browser()
-    
-    if stations:
-        # Test audio processing
-        await test_audio_processing(stations)
-    
-    logger.info("System test completed")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        pytest.fail(f"Test failed: {str(e)}")

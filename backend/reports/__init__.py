@@ -1,1 +1,5 @@
-"""Module d'initialisation pour le package reports."""
+"""Reports package for SODAV Monitor."""
+
+from .generator import ReportGenerator
+
+__all__ = ['ReportGenerator']

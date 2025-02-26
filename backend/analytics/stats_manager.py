@@ -19,7 +19,13 @@ class StatsManager:
             # Mise à jour des stats du morceau
             track_stats = self.db_session.query(TrackStats).filter_by(track_id=detection.track_id).first()
             if not track_stats:
-                track_stats = TrackStats(track_id=detection.track_id)
+                track_stats = TrackStats(
+                    track_id=detection.track_id,
+                    detection_count=0,
+                    total_play_time=timedelta(),
+                    average_confidence=0.0,
+                    last_detected=detection.detected_at
+                )
                 self.db_session.add(track_stats)
             
             track_stats.detection_count += 1
@@ -34,7 +40,12 @@ class StatsManager:
             if detection.track.artist_id:
                 artist_stats = self.db_session.query(ArtistStats).filter_by(artist_id=detection.track.artist_id).first()
                 if not artist_stats:
-                    artist_stats = ArtistStats(artist_id=detection.track.artist_id)
+                    artist_stats = ArtistStats(
+                        artist_id=detection.track.artist_id,
+                        detection_count=0,
+                        total_play_time=timedelta(),
+                        last_detected=detection.detected_at
+                    )
                     self.db_session.add(artist_stats)
                 
                 artist_stats.detection_count += 1
@@ -50,13 +61,21 @@ class StatsManager:
             if not station_track_stats:
                 station_track_stats = StationTrackStats(
                     station_id=detection.station_id,
-                    track_id=detection.track_id
+                    track_id=detection.track_id,
+                    play_count=0,
+                    total_play_time=timedelta(),
+                    last_played=detection.detected_at,
+                    average_confidence=0.0
                 )
                 self.db_session.add(station_track_stats)
             
             station_track_stats.play_count += 1
             station_track_stats.total_play_time += detection.play_duration
             station_track_stats.last_played = detection.detected_at
+            station_track_stats.average_confidence = (
+                (station_track_stats.average_confidence * (station_track_stats.play_count - 1) + detection.confidence)
+                / station_track_stats.play_count
+            )
 
             self.db_session.commit()
             logger.info(f"Updated stats for track {detection.track_id} on station {detection.station_id}")

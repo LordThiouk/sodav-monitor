@@ -9,17 +9,25 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 Base = declarative_base()
 
-class ReportType(enum.Enum):
+class ReportType(str, enum.Enum):
+    """Types de rapports disponibles."""
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
-    CUSTOM = "custom"
+    COMPREHENSIVE = "comprehensive"
 
-class ReportStatus(enum.Enum):
-    pending = "pending"
-    generating = "generating"
-    completed = "completed"
-    failed = "failed"
+class ReportStatus(str, enum.Enum):
+    """Statuts possibles pour les rapports."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class ReportFormat(str, enum.Enum):
+    """Formats de rapport disponibles."""
+    PDF = "pdf"
+    XLSX = "xlsx"
+    CSV = "csv"
 
 class StationStatus(enum.Enum):
     active = "active"
@@ -49,16 +57,16 @@ class User(Base):
 class Report(Base):
     __tablename__ = "reports"
 
-    id = Column(Integer, primary_key=True, index=True)
-    type = Column(String, nullable=False)  # detection, analytics, summary, artist, track, station
-    format = Column(String, default="csv", nullable=False)  # csv, xlsx, json
-    status = Column(String, default="pending", nullable=False)  # pending, generating, completed, failed
+    id = Column(Integer, primary_key=True)
+    type = Column(Enum(ReportType), nullable=False)
+    format = Column(Enum(ReportFormat), nullable=False)
+    status = Column(Enum(ReportStatus), default=ReportStatus.PENDING)
     progress = Column(Float, default=0.0, nullable=False)  # 0.0 to 1.0
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
-    file_path = Column(String, nullable=True)
+    file_path = Column(String)
     error_message = Column(Text, nullable=True)
     filters = Column(JSON, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -71,15 +79,14 @@ class Report(Base):
 class ReportSubscription(Base):
     __tablename__ = "report_subscriptions"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)  # Nom de l'abonnement
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
     email = Column(String, nullable=False)
-    frequency = Column(String, nullable=False)  # quotidien, hebdomadaire, mensuel
-    report_type = Column(String, nullable=False)  # artist, track, station, label, comprehensive
-    format = Column(String, default="xlsx")  # xlsx, csv, pdf
-    filters = Column(JSON, nullable=True)  # Filtres personnalisés
-    is_active = Column(Boolean, default=True)
+    frequency = Column(Enum(ReportType), nullable=False)
+    format = Column(Enum(ReportFormat), nullable=False)
+    active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     next_delivery = Column(DateTime, nullable=False)
     last_delivery = Column(DateTime, nullable=True)
     delivery_count = Column(Integer, default=0)  # Nombre de rapports envoyés
@@ -96,19 +103,20 @@ class ReportSubscription(Base):
 class RadioStation(Base):
     __tablename__ = "radio_stations"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
-    stream_url = Column(String)
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    stream_url = Column(String, nullable=False)
     country = Column(String)
     language = Column(String)
     region = Column(String, nullable=True)  # Added region field
     type = Column(String, default="radio")  # Added type field
     status = Column(Enum(StationStatus), default=StationStatus.inactive)
     is_active = Column(Boolean, default=False)
-    last_checked = Column(DateTime)
+    last_checked = Column(DateTime, default=datetime.utcnow)
     last_detection_time = Column(DateTime)
     total_play_time = Column(Interval, default=timedelta(seconds=0))
-    created_at = Column(DateTime, default=datetime.now)  # Added created_at field
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     detections = relationship("TrackDetection", back_populates="station")
     track_stats = relationship("StationTrackStats", back_populates="station")
@@ -129,7 +137,7 @@ class Artist(Base):
     external_ids = Column(JSON, nullable=True)  # Pour stocker les IDs externes (Spotify, Deezer, etc.)
     
     # Relations
-    tracks = relationship("Track", back_populates="artist", cascade="all, delete-orphan")
+    tracks = relationship("Track", back_populates="artist_rel", cascade="all, delete-orphan")
     stats = relationship("ArtistStats", back_populates="artist", uselist=False, cascade="all, delete-orphan")
     daily_stats = relationship("ArtistDaily", back_populates="artist", cascade="all, delete-orphan")
     monthly_stats = relationship("ArtistMonthly", back_populates="artist", cascade="all, delete-orphan")
@@ -142,23 +150,17 @@ class Track(Base):
     
     id = Column(Integer, primary_key=True)
     title = Column(String, nullable=False)
-    artist_id = Column(Integer, ForeignKey('artists.id'), nullable=False)  # Changer artist en artist_id
-    isrc = Column(String, nullable=True)
-    label = Column(String, nullable=True, index=True)
-    album = Column(String, nullable=True)
-    release_date = Column(DateTime, nullable=True)
-    play_count = Column(Integer, default=0)
-    total_play_time = Column(Interval, default=timedelta(0))
-    last_played = Column(DateTime, nullable=True)
-    external_ids = Column(JSON, nullable=True)
+    artist = Column(String, nullable=False)
+    artist_id = Column(Integer, ForeignKey('artists.id'), nullable=True)
+    duration = Column(Float)
+    fingerprint = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
-    fingerprint = Column(String, nullable=True)
-    fingerprint_raw = Column(LargeBinary, nullable=True)
-    
-    # Relations
-    artist = relationship("Artist", back_populates="tracks")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    external_ids = Column(JSON, nullable=True)
+
     detections = relationship("TrackDetection", back_populates="track")
     stats = relationship("TrackStats", back_populates="track", uselist=False)
+    artist_rel = relationship("Artist", back_populates="tracks")
 
 class TrackDetection(Base):
     __tablename__ = 'track_detections'
@@ -167,10 +169,11 @@ class TrackDetection(Base):
     station_id = Column(Integer, ForeignKey('radio_stations.id'), index=True)
     track_id = Column(Integer, ForeignKey('tracks.id'), index=True)
     confidence = Column(Float)
-    detected_at = Column(DateTime, default=datetime.now, index=True)
+    detected_at = Column(DateTime, default=datetime.utcnow, index=True)
     end_time = Column(DateTime, index=True)  # Timestamp de fin de lecture
     play_duration = Column(Interval)  # Durée réelle de lecture
     fingerprint = Column(String)  # Empreinte digitale du son pour validation
+    audio_hash = Column(String, index=True)  # Hash audio pour la détection locale
     
     # Relations
     station = relationship("RadioStation", back_populates="detections")
@@ -334,12 +337,8 @@ Index('idx_track_detections_composite',
     TrackDetection.detected_at
 )
 
-Index('idx_tracks_title_artist', Track.title, Track.artist_id)
-Index('idx_tracks_isrc', Track.isrc)
-Index('idx_tracks_label', Track.label)
+Index('idx_tracks_title_artist', Track.title, Track.artist)
 Index('idx_tracks_created', Track.created_at)
-Index('idx_artists_name', Artist.name)
-Index('idx_artists_label', Artist.label)
 
 Index('idx_artist_stats_artist_id', ArtistStats.artist_id)
 
