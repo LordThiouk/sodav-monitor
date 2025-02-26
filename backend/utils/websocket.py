@@ -1,220 +1,169 @@
+"""Module de gestion des WebSockets."""
+
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import logging
 from fastapi import WebSocket
 import json
-from ..redis_config import get_redis
+from .redis_config import get_redis
 import asyncio
 
 logger = logging.getLogger(__name__)
 
-class WebSocketManager:
-    def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
-        self.redis = None
-        self.pubsub = None
-        self.last_heartbeat: Dict[str, datetime] = {}
-        self.max_connections = 100  # Maximum number of concurrent connections
-        
-    async def connect(self, websocket: WebSocket, client_id: str):
-        """Connect a new WebSocket client"""
-        try:
-            if len(self.active_connections) >= self.max_connections:
-                await websocket.close(code=1008, reason="Too many connections")
-                logger.warning(f"Rejected client {client_id} due to connection limit")
-                return
-                
-            await websocket.accept()
-            self.active_connections[client_id] = websocket
-            self.last_heartbeat[client_id] = datetime.now()
-            
-            # Store client info in Redis
-            self.redis = await get_redis()
-            await self.redis.hset(
-                "websocket_clients",
-                client_id,
-                json.dumps({
-                    "connected_at": datetime.now().isoformat(),
-                    "client_id": client_id,
-                    "last_heartbeat": datetime.now().isoformat()
-                })
-            )
-            
-            logger.info(f"WebSocket client {client_id} connected ({len(self.active_connections)}/{self.max_connections})")
-            
-        except Exception as e:
-            logger.error(f"Error connecting WebSocket client {client_id}: {str(e)}")
-            raise
+class ConnectionManager:
+    """Gestionnaire de connexions WebSocket."""
     
-    async def disconnect(self, client_id: str):
-        """Disconnect a WebSocket client"""
-        try:
-            if client_id in self.active_connections:
-                await self.active_connections[client_id].close()
-                del self.active_connections[client_id]
-                
-            if client_id in self.last_heartbeat:
-                del self.last_heartbeat[client_id]
-            
-            # Remove client info from Redis
-            if self.redis:
-                await self.redis.hdel("websocket_clients", client_id)
-                
-            logger.info(f"WebSocket client {client_id} disconnected")
-            
-        except Exception as e:
-            logger.error(f"Error disconnecting WebSocket client {client_id}: {str(e)}")
+    def __init__(self, max_connections: int = 100):
+        self.active_connections: List[WebSocket] = []
+        self.redis = get_redis()
+        self.max_connections = max_connections
     
-    async def broadcast(self, message: dict):
-        """Broadcast message to all connected clients"""
-        try:
-            # Skip broadcasting heartbeat messages
-            if message.get("type") == "ping":
-                return
-                
-            # Publish message to Redis channel
-            self.redis = await get_redis()
-            await self.redis.publish(
-                "websocket_broadcast",
-                json.dumps(message)
-            )
-            
-            # Send to local connections
-            disconnected_clients = []
-            for client_id, connection in self.active_connections.items():
-                try:
-                    # Check if client is still active (had recent heartbeat)
-                    if client_id in self.last_heartbeat:
-                        last_beat = self.last_heartbeat[client_id]
-                        if datetime.now() - last_beat > timedelta(minutes=2):
-                            logger.warning(f"Client {client_id} heartbeat timeout")
-                            disconnected_clients.append(client_id)
-                            continue
-                            
-                    await connection.send_json(message)
-                except Exception as e:
-                    logger.error(f"Error sending to client {client_id}: {str(e)}")
-                    disconnected_clients.append(client_id)
-            
-            # Clean up disconnected clients
-            for client_id in disconnected_clients:
-                await self.disconnect(client_id)
-                
-        except Exception as e:
-            logger.error(f"Error broadcasting message: {str(e)}")
+    async def connect(self, websocket: WebSocket):
+        """Établir une connexion WebSocket."""
+        if len(self.active_connections) >= self.max_connections:
+            raise Exception("Maximum connections reached")
+        await websocket.accept()
+        self.active_connections.append(websocket)
     
-    async def update_heartbeat(self, client_id: str):
-        """Update client's last heartbeat time"""
-        try:
-            self.last_heartbeat[client_id] = datetime.now()
-            if self.redis:
-                client_info = json.loads(await self.redis.hget("websocket_clients", client_id))
-                client_info["last_heartbeat"] = datetime.now().isoformat()
-                await self.redis.hset(
-                    "websocket_clients",
-                    client_id,
-                    json.dumps(client_info)
-                )
-        except Exception as e:
-            logger.error(f"Error updating heartbeat for client {client_id}: {str(e)}")
-            
-    async def cleanup_stale_connections(self):
-        """Clean up stale connections based on heartbeat"""
-        while True:
-            try:
-                now = datetime.now()
-                disconnected_clients = []
-                
-                for client_id, last_beat in self.last_heartbeat.items():
-                    if now - last_beat > timedelta(minutes=2):
-                        disconnected_clients.append(client_id)
-                        
-                for client_id in disconnected_clients:
-                    logger.warning(f"Removing stale client {client_id}")
-                    await self.disconnect(client_id)
-                    
-                await asyncio.sleep(60)  # Check every minute
-                    
-            except Exception as e:
-                logger.error(f"Error in cleanup task: {str(e)}")
-                await asyncio.sleep(60)  # Wait before retrying
+    def disconnect(self, websocket: WebSocket):
+        """Fermer une connexion WebSocket."""
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
     
-    async def start_listener(self):
-        """Start Redis subscription listener"""
-        try:
-            self.redis = await get_redis()
-            self.pubsub = self.redis.pubsub()
-            await self.pubsub.subscribe("websocket_broadcast")
-            
-            # Listen for messages
-            while True:
-                try:
-                    message = await self.pubsub.get_message(ignore_subscribe_messages=True)
-                    if message and message["type"] == "message":
-                        data = json.loads(message["data"])
-                        await self.broadcast(data)
-                except Exception as e:
-                    logger.error(f"Error in Redis listener: {str(e)}")
-                await asyncio.sleep(0.1)
-                
-        except Exception as e:
-            logger.error(f"Error starting Redis listener: {str(e)}")
-            
-    async def stop_listener(self):
-        """Stop Redis subscription listener"""
-        if self.pubsub:
-            await self.pubsub.unsubscribe("websocket_broadcast")
-            await self.pubsub.close()
-
-# Create global WebSocket manager instance
-manager = WebSocketManager()
-
-async def broadcast_station_update(station_data: Dict):
-    """Broadcast station status update to all connected clients"""
-    if manager.active_connections:
-        message = {
-            "type": "station_update",
-            "timestamp": datetime.now().isoformat(),
-            "data": {
-                "id": station_data.get("id"),
-                "name": station_data.get("name"),
-                "status": station_data.get("status"),
-                "is_active": station_data.get("is_active"),
-                "last_checked": station_data.get("last_checked"),
-                "last_detection_time": station_data.get("last_detection_time"),
-                "stream_url": station_data.get("stream_url"),
-                "country": station_data.get("country"),
-                "language": station_data.get("language"),
-                "total_play_time": station_data.get("total_play_time")
-            }
-        }
-        await manager.broadcast(message)
-
-async def broadcast_track_detection(track_data: Dict):
-    """Broadcast track detection to all connected clients"""
-    if manager.active_connections:
-        message = {
-            "type": "track_detection",
-            "timestamp": datetime.now().isoformat(),
-            "data": {
-                "title": track_data.get("title"),
-                "artist": track_data.get("artist"),
-                "album": track_data.get("album"),
-                "isrc": track_data.get("isrc"),
-                "label": track_data.get("label"),
-                "confidence": track_data.get("confidence"),
-                "play_duration": track_data.get("play_duration"),
-                "station": {
-                    "id": track_data.get("station_id"),
-                    "name": track_data.get("station_name")
-                },
-                "detected_at": track_data.get("detected_at")
-            }
-        }
-        
-        for connection in manager.active_connections.values():
+    async def broadcast(self, message: Dict):
+        """Diffuser un message à tous les clients connectés."""
+        disconnected = []
+        for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except Exception as e:
-                logger.error(f"Error sending WebSocket message: {str(e)}")
-                manager.active_connections.remove(connection)
+            except:
+                disconnected.append(connection)
+        
+        # Nettoyer les connexions fermées
+        for connection in disconnected:
+            self.disconnect(connection)
+
+manager = ConnectionManager()
+
+async def broadcast_track_detection(track_data: Dict):
+    """Diffuser une détection de piste à tous les clients."""
+    try:
+        # Valider les données
+        if not isinstance(track_data.get("station_id"), int) or \
+           not track_data.get("track_id") or \
+           not track_data.get("title") or \
+           not track_data.get("artist"):
+            await send_error(None, "Données de piste invalides")
+            return
+
+        # Publier sur Redis pour la synchronisation entre les workers
+        redis = get_redis()
+        redis.publish("track_detections", json.dumps(track_data))
+        
+        # Diffuser via WebSocket
+        await manager.broadcast({
+            "type": "track_detection",
+            "data": track_data
+        })
+    except Exception as e:
+        # Logger l'erreur mais ne pas la propager
+        print(f"Erreur lors de la diffusion de la détection: {str(e)}")
+
+async def broadcast_station_update(station_data: Dict):
+    """Diffuser une mise à jour de station à tous les clients."""
+    try:
+        # Valider les données
+        if not isinstance(station_data.get("id"), int) or \
+           not station_data.get("name") or \
+           not station_data.get("stream_url"):
+            await send_error(None, "Données de station invalides")
+            return
+
+        # Publier sur Redis pour la synchronisation
+        redis = get_redis()
+        redis.publish("station_updates", json.dumps(station_data))
+        
+        # Diffuser via WebSocket
+        await manager.broadcast({
+            "type": "station_update",
+            "data": station_data
+        })
+    except Exception as e:
+        print(f"Erreur lors de la diffusion de la mise à jour de la station: {str(e)}")
+
+async def broadcast_station_status(station_data: Dict):
+    """Diffuser le statut d'une station à tous les clients."""
+    try:
+        # Publier sur Redis pour la synchronisation
+        redis = get_redis()
+        redis.publish("station_status", json.dumps(station_data))
+        
+        # Diffuser via WebSocket
+        await manager.broadcast({
+            "type": "station_status",
+            "data": station_data
+        })
+    except Exception as e:
+        print(f"Erreur lors de la diffusion du statut: {str(e)}")
+
+async def broadcast_system_status(status_data: Dict):
+    """Diffuser le statut du système à tous les clients."""
+    try:
+        await manager.broadcast({
+            "type": "system_status",
+            "data": status_data
+        })
+    except Exception as e:
+        print(f"Erreur lors de la diffusion du statut système: {str(e)}")
+
+async def send_error(websocket: WebSocket, error: str):
+    """Envoyer un message d'erreur à un client spécifique."""
+    try:
+        await websocket.send_json({
+            "type": "error",
+            "message": error
+        })
+    except Exception as e:
+        print(f"Erreur lors de l'envoi du message d'erreur: {str(e)}")
+
+async def send_heartbeat(websocket: WebSocket):
+    """Envoyer un heartbeat à un client spécifique."""
+    try:
+        await websocket.send_json({
+            "type": "heartbeat",
+            "timestamp": str(datetime.utcnow())
+        })
+    except Exception as e:
+        print(f"Erreur lors de l'envoi du heartbeat: {str(e)}")
+
+async def process_websocket_message(data: str, websocket: WebSocket):
+    """Traiter un message WebSocket reçu."""
+    try:
+        message = json.loads(data)
+        
+        # Valider le message
+        if not message:
+            await send_error(websocket, "Message vide")
+            return
+            
+        if "type" not in message:
+            await send_error(websocket, "Type de message manquant")
+            return
+            
+        message_type = message.get("type")
+        
+        if message_type == "heartbeat":
+            await send_heartbeat(websocket)
+        elif message_type == "subscribe":
+            # TODO: Implémenter la logique d'abonnement
+            pass
+        elif message_type == "unsubscribe":
+            # TODO: Implémenter la logique de désabonnement
+            pass
+        else:
+            await send_error(websocket, f"Type de message non reconnu: {message_type}")
+            
+    except json.JSONDecodeError:
+        await send_error(websocket, "Message JSON invalide")
+    except Exception as e:
+        await send_error(websocket, f"Erreur lors du traitement du message: {str(e)}")

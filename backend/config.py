@@ -31,7 +31,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
 
     # Configuration des APIs externes
-    AUDD_API_KEY: Optional[str] = None
+    ACOUSTID_API_KEY: Optional[str] = None  # Clé API pour AcoustID/Chromaprint
+    AUDD_API_KEY: Optional[str] = None      # Clé API pour Audd.io
     MUSICBRAINZ_APP_NAME: str = "SODAV Monitor"
     MUSICBRAINZ_VERSION: str = "1.0"
     MUSICBRAINZ_CONTACT: str = "contact@sodav.sn"
@@ -40,6 +41,11 @@ class Settings(BaseSettings):
     DETECTION_INTERVAL: int = 15  # secondes
     MIN_CONFIDENCE_THRESHOLD: float = 0.8
     FINGERPRINT_ALGORITHM: str = "chromaprint"
+    
+    # Seuils de détection par service
+    ACOUSTID_CONFIDENCE_THRESHOLD: float = 0.7
+    AUDD_CONFIDENCE_THRESHOLD: float = 0.6
+    LOCAL_CONFIDENCE_THRESHOLD: float = 0.8
 
     # Configuration des logs
     LOG_LEVEL: str = "INFO"
@@ -66,11 +72,21 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "allow"  # Allow extra fields from environment
+
+    def validate_api_keys(self) -> None:
+        """Valide la présence des clés API requises."""
+        if not self.ACOUSTID_API_KEY:
+            raise ValueError("ACOUSTID_API_KEY est requis pour l'identification via AcoustID/Chromaprint")
+        if not self.AUDD_API_KEY:
+            raise ValueError("AUDD_API_KEY est requis pour l'identification via Audd.io")
 
 @lru_cache()
 def get_settings() -> Settings:
     """Retourne une instance mise en cache des paramètres."""
-    return Settings()
+    settings = Settings()
+    settings.validate_api_keys()  # Vérifie les clés API au démarrage
+    return settings
 
 # Configuration des chemins
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -167,6 +183,11 @@ DETECTION_ALGORITHMS = {
         "threshold": 0.7,
         "sample_rate": 44100,
         "duration": 30
+    },
+    "audd": {
+        "threshold": 0.6,
+        "sample_rate": 44100,
+        "duration": 20
     }
 }
 

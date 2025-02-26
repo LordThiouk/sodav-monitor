@@ -5,22 +5,45 @@ import io
 from pydub import AudioSegment
 import os
 from datetime import datetime
-from config import Config
+from backend.config import Settings
 import librosa
 import numpy as np
+from backend.detection.audio_processor.local_detection import LocalDetector
+from backend.detection.audio_processor.external_services import ExternalServiceHandler
+from sqlalchemy.orm import Session
+import asyncio
+import acoustid
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 class MusicBrainzRecognizer:
-    def __init__(self):
+    def __init__(self, db_session: Optional[Session] = None):
         """Initialize MusicBrainz recognizer"""
+        self.settings = Settings()
+        
+        # Validate required API keys
+        if not self.settings.ACOUSTID_API_KEY:
+            raise ValueError("ACOUSTID_API_KEY est requis pour l'identification via AcoustID/Chromaprint")
+        if not self.settings.AUDD_API_KEY:
+            raise ValueError("AUDD_API_KEY est requis pour l'identification via Audd.io")
+        
         # Set up MusicBrainz
         musicbrainzngs.set_useragent(
-            Config.MUSICBRAINZ_APP_NAME,
-            "1.0",
-            "https://github.com/LordThiouk/sodav-monitor"
+            self.settings.MUSICBRAINZ_APP_NAME,
+            self.settings.MUSICBRAINZ_VERSION,
+            self.settings.MUSICBRAINZ_CONTACT
         )
+        
+        # Set up AcoustID
+        self.acoustid_api_key = self.settings.ACOUSTID_API_KEY
+        
+        # Initialize detectors
+        self.local_detector = LocalDetector(db_session) if db_session else None
+        self.external_handler = ExternalServiceHandler(
+            db_session=db_session,
+            audd_api_key=self.settings.AUDD_API_KEY
+        ) if db_session else None
     
     def _analyze_audio_features(self, audio_data: bytes) -> Dict[str, float]:
         """
@@ -39,51 +62,48 @@ class MusicBrainzRecognizer:
             # Normalize samples
             samples = samples / np.max(np.abs(samples))
             
-            # Get sample rate
-            sample_rate = audio.frame_rate
-            
             # Calculate features
-            # Spectral Centroid - higher for music, lower for speech
-            cent = librosa.feature.spectral_centroid(y=samples, sr=sample_rate)[0]
+            sr = audio.frame_rate
             
-            # RMS Energy - music typically has more consistent energy
-            rms = librosa.feature.rms(y=samples)[0]
+            # Spectral centroid
+            centroid = librosa.feature.spectral_centroid(y=samples, sr=sr)
+            centroid_mean = float(np.mean(centroid))
             
-            # Zero Crossing Rate - typically higher for speech
-            zcr = librosa.feature.zero_crossing_rate(samples)[0]
+            # Zero crossing rate
+            zcr = librosa.feature.zero_crossing_rate(samples)
+            zcr_mean = float(np.mean(zcr))
             
-            # Calculate statistics
-            features = {
-                "centroid_mean": float(np.mean(cent)),
-                "centroid_std": float(np.std(cent)),
-                "rms_mean": float(np.mean(rms)),
-                "rms_std": float(np.std(rms)),
-                "zcr_mean": float(np.mean(zcr)),
-                "zcr_std": float(np.std(zcr))
-            }
+            # RMS energy
+            rms = librosa.feature.rms(y=samples)
+            rms_mean = float(np.mean(rms))
             
-            # Calculate music likelihood score (0-100)
-            # Higher centroid mean and RMS with lower variance typically indicates music
-            music_score = (
-                (features["centroid_mean"] / 5000) * 30 +  # Up to 30 points for high centroid
-                (1 - features["centroid_std"] / features["centroid_mean"]) * 20 +  # Up to 20 points for consistent centroid
-                (features["rms_mean"] * 100) * 30 +  # Up to 30 points for high RMS
-                (1 - features["zcr_mean"]) * 20  # Up to 20 points for low zero crossing rate
+            # Calculate music likelihood based on features
+            # Higher centroid and zcr typically indicate music
+            music_likelihood = float(
+                min(100, max(0, 
+                    centroid_mean * 0.4 +  # Weight spectral centroid
+                    zcr_mean * 30 +        # Weight zero crossing rate
+                    rms_mean * 100         # Weight RMS energy
+                ))
             )
             
-            # Clip score to 0-100 range
-            music_score = max(0, min(100, music_score))
-            features["music_likelihood"] = music_score
-            
-            return features
+            return {
+                "centroid_mean": centroid_mean,
+                "zcr_mean": zcr_mean,
+                "rms_mean": rms_mean,
+                "music_likelihood": music_likelihood
+            }
             
         except Exception as e:
             logger.error(f"Error analyzing audio features: {str(e)}")
             return {"error": str(e)}
     
-    def recognize_from_audio_data(self, audio_data: bytes) -> Dict[str, Any]:
+    async def recognize_from_audio_data(self, audio_data: bytes) -> Dict[str, Any]:
         """
-        Analyze audio and search MusicBrainz if it appears to be music
+        Analyze audio and attempt recognition using multiple services in order:
+        1. Local detection
+        2. MusicBrainz/AcoustID
+        3. Audd
         """
         try:
             logger.info("Starting music recognition process")
@@ -97,109 +117,53 @@ class MusicBrainzRecognizer:
             music_likelihood = features.get("music_likelihood", 0)
             logger.info(f"Music likelihood score: {music_likelihood}")
             
-            if music_likelihood < 60:  # Threshold for music detection
+            if music_likelihood < self.settings.MIN_CONFIDENCE_THRESHOLD * 100:
                 return {"error": "Audio does not appear to be music"}
             
-            # Load audio for fingerprinting
-            audio = AudioSegment.from_file(io.BytesIO(audio_data))
-            duration_ms = len(audio)  # Get duration in milliseconds
-            duration_minutes = duration_ms / 1000 / 60  # Convert to minutes
-            
-            # Convert to WAV for fingerprinting
-            wav_data = io.BytesIO()
-            audio.export(wav_data, format="wav")
-            wav_data.seek(0)
-            
-            # Generate fingerprint using acoustid
-            import acoustid
-            try:
-                if not Config.ACOUSTID_API_KEY:
-                    raise ValueError("ACOUSTID_API_KEY not set in environment. Please get an API key from https://acoustid.org/api-key")
-                    
-                duration, fingerprint = acoustid.fingerprint_file(wav_data)
-                matches = acoustid.lookup(Config.ACOUSTID_API_KEY, fingerprint, duration)
-                
-                if not matches:
-                    return {"error": "No matching recordings found"}
-                
-                # Get the best match
-                best_match = matches[0]
-                recording_id = best_match.get('recordings', [{}])[0].get('id')
-                
-                if not recording_id:
-                    return {"error": "No recording ID found"}
-                
-                # Get detailed recording info from MusicBrainz
+            # Try local detection first
+            if self.local_detector:
                 try:
-                    mb_recording = musicbrainzngs.get_recording_by_id(
-                        recording_id,
-                        includes=["artists", "releases", "isrcs"]
-                    )
-                    
-                    if not mb_recording or "recording" not in mb_recording:
-                        return {"error": "Recording not found in MusicBrainz"}
-                    
-                    recording = mb_recording["recording"]
-                    
-                    # Get release info if available
-                    release = None
-                    if "release-list" in recording:
-                        release_id = recording["release-list"][0]["id"]
-                        try:
-                            release_info = musicbrainzngs.get_release_by_id(
-                                release_id,
-                                includes=["labels"]
-                            )
-                            if release_info and "release" in release_info:
-                                release = release_info["release"]
-                        except Exception as e:
-                            logger.error(f"Error getting detailed release info: {str(e)}")
-                    
-                    # Get duration from MusicBrainz or use calculated duration
-                    mb_duration_ms = recording.get("length", 0)
-                    if isinstance(mb_duration_ms, str):
-                        try:
-                            mb_duration_ms = float(mb_duration_ms)
-                        except (ValueError, TypeError):
-                            mb_duration_ms = 0
-                    
-                    # Use MusicBrainz duration if available, otherwise use calculated duration
-                    final_duration_minutes = (mb_duration_ms / 1000 / 60) if mb_duration_ms > 0 else duration_minutes
-                    
-                    # Calculate confidence based on acoustid score and our music likelihood
-                    acoustid_score = float(best_match.get('score', 0))
-                    combined_confidence = (acoustid_score * 80 + (music_likelihood / 100) * 20)
-                    
-                    return {
-                        "title": recording.get("title", "Unknown"),
-                        "artist": recording.get("artist-credit-phrase", "Unknown Artist"),
-                        "album": release["title"] if release else None,
-                        "release_date": release.get("date") if release else None,
-                        "isrc": recording.get("isrc-list", [None])[0] if "isrc-list" in recording else None,
-                        "label": release["label-info-list"][0]["label"]["name"] if release and "label-info-list" in release else None,
-                        "external_metadata": {
-                            "musicbrainz_id": recording.get("id"),
-                            "release_id": release["id"] if release else None,
-                            "acoustid": best_match.get('id')
-                        },
-                        "confidence": combined_confidence,
-                        "duration_minutes": final_duration_minutes
-                    }
-                    
+                    logger.info("Attempting local detection")
+                    local_result = self.local_detector.search_local(audio_data)
+                    if local_result and not "error" in local_result:
+                        if local_result.get("confidence", 0) >= self.settings.LOCAL_CONFIDENCE_THRESHOLD:
+                            logger.info("Local detection successful")
+                            return local_result
+                        else:
+                            logger.info("Local detection confidence too low")
                 except Exception as e:
-                    logger.error(f"Error getting MusicBrainz recording: {str(e)}")
-                    return {"error": f"MusicBrainz lookup failed: {str(e)}"}
-                    
-            except acoustid.FingerprintGenerationError as e:
-                logger.error(f"Error generating fingerprint: {str(e)}")
-                return {"error": f"Fingerprint generation failed: {str(e)}"}
-            except acoustid.WebServiceError as e:
-                logger.error(f"AcoustID service error: {str(e)}")
-                return {"error": f"AcoustID service error: {str(e)}"}
-            except ValueError as e:
-                logger.error(f"Error with AcoustID API key: {str(e)}")
-                return {"error": str(e)}
+                    logger.error(f"Local detection failed: {str(e)}")
+            
+            # If local detection fails or is not available, try external services
+            if self.external_handler:
+                # Try MusicBrainz/AcoustID
+                try:
+                    logger.info("Attempting MusicBrainz/AcoustID recognition")
+                    mb_result = await self.external_handler.recognize_with_musicbrainz(audio_data)
+                    if mb_result and not "error" in mb_result:
+                        if mb_result.get("confidence", 0) >= self.settings.ACOUSTID_CONFIDENCE_THRESHOLD:
+                            logger.info("MusicBrainz/AcoustID recognition successful")
+                            return mb_result
+                        else:
+                            logger.info("MusicBrainz/AcoustID confidence too low")
+                except Exception as e:
+                    logger.error(f"MusicBrainz/AcoustID detection failed: {str(e)}")
                 
+                # If MusicBrainz/AcoustID fails or confidence is too low, try Audd
+                try:
+                    logger.info("Attempting Audd recognition")
+                    audd_result = await self.external_handler.recognize_with_audd(audio_data)
+                    if audd_result and not "error" in audd_result:
+                        if audd_result.get("confidence", 0) >= self.settings.AUDD_CONFIDENCE_THRESHOLD:
+                            logger.info("Audd recognition successful")
+                            return audd_result
+                        else:
+                            logger.info("Audd confidence too low")
+                except Exception as e:
+                    logger.error(f"Audd detection failed: {str(e)}")
+            
+            return {"error": "All detection methods failed or returned low confidence results"}
+            
         except Exception as e:
             logger.error(f"Error in music recognition: {str(e)}")
             return {"error": str(e)}

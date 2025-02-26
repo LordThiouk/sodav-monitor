@@ -1,18 +1,21 @@
+"""Module de mise à jour des statistiques."""
 import logging
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, text
-from ..models import (
+from models import (
     RadioStation, Track, TrackDetection, StationTrackStats,
     TrackStats, ArtistStats, AnalyticsData, DetectionHourly,
     DetectionDaily, DetectionMonthly, StationStats, ArtistDaily,
     ArtistMonthly, TrackDaily, TrackMonthly, StationStatus
 )
-from .logging_config import setup_logging
+from utils.logging_config import setup_logging
 
 logger = setup_logging(__name__)
 
 class StatsUpdater:
+    """Gestionnaire des statistiques."""
+    
     def __init__(self, db_session: Session):
         self.db_session = db_session
         self.logger = logger
