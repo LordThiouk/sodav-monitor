@@ -6,7 +6,7 @@ import librosa
 import soundfile as sf
 from typing import Dict, Any, Optional
 import io
-from ...utils.logging_config import setup_logging
+from utils.logging_config import setup_logging
 
 logger = setup_logging(__name__)
 

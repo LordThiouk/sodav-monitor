@@ -7,7 +7,7 @@ import av
 from typing import Dict, Any, Optional, Tuple
 import numpy as np
 from pydub import AudioSegment
-from ...utils.logging_config import setup_logging
+from utils.logging_config import setup_logging
 
 logger = setup_logging(__name__)
 

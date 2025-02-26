@@ -5,10 +5,10 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 import asyncio
-from ..music_recognition import MusicRecognizer
-from ...models.models import RadioStation
-from ...utils.logging_config import setup_logging
-from ...utils.stats_updater import StatsUpdater
+import numpy as np
+from models.models import RadioStation, Track, TrackDetection
+from utils.logging_config import setup_logging
+from utils.stats_updater import StatsUpdater
 from .stream_handler import StreamHandler
 from .feature_extractor import FeatureExtractor
 from .track_manager import TrackManager
@@ -20,99 +20,134 @@ logger = setup_logging(__name__)
 class AudioProcessor:
     """Classe principale pour le traitement audio des flux radio."""
     
-    def __init__(self, db_session: Session, music_recognizer: MusicRecognizer):
-        """Initialise le processeur audio avec les dépendances nécessaires."""
-        self.db_session = db_session
-        self.music_recognizer = music_recognizer
-        self.logger = logging.getLogger(__name__)
+    def __init__(self, db_session: Session, sample_rate: int = 44100):
+        """Initialise le processeur audio.
         
-        # Configuration des limites de ressources
-        self.max_concurrent_stations = 10
-        self.max_memory_usage = 1024 * 1024 * 250  # 250 MB maximum
-        self.processing_timeout = 30  # 30 secondes par station
-        self.chunk_duration = 20  # 20 secondes d'échantillonnage
-        
-        # Sémaphores pour le contrôle des ressources
-        self.processing_semaphore = asyncio.Semaphore(self.max_concurrent_stations)
-        self.memory_semaphore = asyncio.Semaphore(self.max_concurrent_stations)
-        
-        # Composants
+        Args:
+            db_session: Session de base de données SQLAlchemy
+            sample_rate: Fréquence d'échantillonnage en Hz
+        """
+        self.db = db_session
+        self.sample_rate = sample_rate
         self.stream_handler = StreamHandler()
         self.feature_extractor = FeatureExtractor()
-        self.track_manager = TrackManager(db_session)
-        self.station_monitor = StationMonitor(db_session)
-        
-        # État de traitement
-        self.current_tracks = {}
+        self.track_manager = TrackManager()
+        self.station_monitor = StationMonitor()
         self.stats_updater = StatsUpdater(db_session)
-        self.processing_stations = set()
-    
-    async def process_all_stations(self, stations: List[RadioStation]) -> Dict[str, Any]:
-        """Traite tous les flux radio en parallèle."""
-        results_queue = asyncio.Queue()
-        tasks = []
         
-        for station in stations:
-            if not station.is_active:
-                continue
+        logger.info(f"AudioProcessor initialisé avec sample_rate={sample_rate}")
+        
+    async def process_stream(self, audio_data: np.ndarray, station_id: Optional[int] = None) -> Dict[str, Any]:
+        """Traite un segment audio pour détecter la présence de musique.
+        
+        Args:
+            audio_data: Données audio sous forme de tableau numpy
+            station_id: ID de la station (optionnel)
             
-            task = asyncio.create_task(
-                self._process_station_safe(station, results_queue)
-            )
-            tasks.append(task)
-        
-        await asyncio.gather(*tasks)
-        
-        results = {}
-        while not results_queue.empty():
-            station_result = await results_queue.get()
-            results.update(station_result)
-        
-        return results
-    
-    async def _process_station_safe(self, station: RadioStation, results_queue: asyncio.Queue) -> Dict[str, Any]:
-        """Traite une station de manière sécurisée avec gestion des ressources."""
+        Returns:
+            Dictionnaire contenant les résultats de la détection
+        """
         try:
-            async with self.processing_semaphore:
-                if not self._check_memory_usage():
-                    self.logger.warning(f"Mémoire insuffisante pour traiter la station {station.name}")
-                    return {station.name: {"error": "Mémoire insuffisante"}}
-                
-                if station.id in self.processing_stations:
-                    self.logger.info(f"Station {station.name} déjà en cours de traitement")
-                    return {station.name: {"status": "En cours de traitement"}}
-                
-                self.processing_stations.add(station.id)
-                try:
-                    result = await self.stream_handler.process_stream(
-                        station.stream_url,
-                        self.feature_extractor,
-                        self.track_manager,
-                        station.id
-                    )
-                    await results_queue.put({station.name: result})
-                finally:
-                    self.processing_stations.remove(station.id)
-                    
+            # 1. Identifier le type de contenu
+            features = self.feature_extractor.extract_features(audio_data)
+            is_music = self.feature_extractor.is_music(features)
+            
+            if not is_music:
+                return {
+                    "type": "speech",
+                    "confidence": 0.0,
+                    "station_id": station_id
+                }
+            
+            # 2. Détection hiérarchique
+            # a) Détection locale
+            local_match = await self.track_manager.find_local_match(features)
+            if local_match:
+                return {
+                    "type": "music",
+                    "source": "local",
+                    "confidence": local_match["confidence"],
+                    "track": local_match["track"],
+                    "station_id": station_id
+                }
+            
+            # b) Détection avec MusicBrainz
+            mb_match = await self.track_manager.find_musicbrainz_match(features)
+            if mb_match:
+                return {
+                    "type": "music",
+                    "source": "musicbrainz",
+                    "confidence": mb_match["confidence"],
+                    "track": mb_match["track"],
+                    "station_id": station_id
+                }
+            
+            # c) Détection avec Audd
+            audd_match = await self.track_manager.find_audd_match(features)
+            if audd_match:
+                return {
+                    "type": "music",
+                    "source": "audd",
+                    "confidence": audd_match["confidence"],
+                    "track": audd_match["track"],
+                    "station_id": station_id
+                }
+            
+            # Aucune correspondance trouvée
+            return {
+                "type": "music",
+                "source": "unknown",
+                "confidence": 0.0,
+                "station_id": station_id
+            }
+            
         except Exception as e:
-            self.logger.error(f"Erreur lors du traitement de {station.name}: {str(e)}")
-            await results_queue.put({station.name: {"error": str(e)}})
+            logger.error(f"Erreur lors du traitement du flux: {str(e)}")
+            return {
+                "type": "error",
+                "error": str(e),
+                "station_id": station_id
+            }
+    
+    async def start_monitoring(self, station_id: int) -> bool:
+        """Démarre le monitoring d'une station.
+        
+        Args:
+            station_id: ID de la station à monitorer
+            
+        Returns:
+            True si le monitoring est démarré avec succès
+        """
+        try:
+            return await self.station_monitor.start_monitoring(
+                self.stream_handler,
+                self.feature_extractor,
+                self.track_manager
+            )
+        except Exception as e:
+            logger.error(f"Erreur lors du démarrage du monitoring: {str(e)}")
+            return False
+    
+    async def stop_monitoring(self, station_id: int) -> bool:
+        """Arrête le monitoring d'une station.
+        
+        Args:
+            station_id: ID de la station
+            
+        Returns:
+            True si le monitoring est arrêté avec succès
+        """
+        try:
+            return await self.station_monitor.stop_monitoring()
+        except Exception as e:
+            logger.error(f"Erreur lors de l'arrêt du monitoring: {str(e)}")
+            return False
     
     def _check_memory_usage(self) -> bool:
-        """Vérifie si l'utilisation de la mémoire est dans les limites acceptables."""
-        try:
-            import psutil
-            process = psutil.Process()
-            memory_usage = process.memory_info().rss
-            return memory_usage < self.max_memory_usage
-        except Exception as e:
-            self.logger.error(f"Erreur lors de la vérification de la mémoire: {str(e)}")
-            return True  # En cas d'erreur, on suppose que la mémoire est suffisante
-    
-    async def start_monitoring(self):
-        """Démarre le monitoring des stations."""
-        await self.station_monitor.start_monitoring(
-            self.stream_handler,
-            self.feature_extractor,
-            self.track_manager
-        ) 
+        """Vérifie l'utilisation de la mémoire.
+        
+        Returns:
+            True si l'utilisation de la mémoire est acceptable
+        """
+        # TODO: Implémenter la vérification de la mémoire
+        return True 
