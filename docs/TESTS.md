@@ -22,11 +22,23 @@ Ce document détaille la stratégie de tests et leur implémentation pour le bac
   - Intégration MusicBrainz
   - Intégration Audd
 
+- `test_analytics.py` : Tests des statistiques
+  - Mise à jour des stats de détection
+  - Génération de rapports journaliers
+  - Analyse des tendances
+  - Stats par artiste/piste/station
+
+- `test_reports.py` : Tests de génération de rapports
+  - Génération PDF/Excel/CSV
+  - Gestion des abonnements
+  - Mise à jour des statuts
+
 ### Tests d'Intégration
 - `test_api.py` : Tests des endpoints API
   - Routes d'authentification
   - Routes de détection
   - Routes de rapports
+  - WebSocket
 
 - `test_system.py` : Tests système
   - Performance
@@ -51,18 +63,21 @@ Ce document détaille la stratégie de tests et leur implémentation pour le bac
 - `feature_extractor` : Extracteur de caractéristiques
 - `track_manager` : Gestionnaire de pistes
 - `station_monitor` : Moniteur de stations
+- `stats_manager` : Gestionnaire de statistiques
+- `report_generator` : Générateur de rapports
 
 ## Journal des modifications
 
-### 2024-03-21
-- Ajout des tests unitaires pour le module de détection audio
-- Configuration initiale de pytest
-- Mise en place des fixtures de base
+### 2024-03-25
+- Ajout des tests pour les analytics et les rapports
+- Suppression des tests obsolètes
+- Réorganisation de la structure des tests
+- Mise à jour de la documentation
 
-### 2024-03-22
-- Implémentation des tests d'intégration API
+### 2024-03-24
+- Consolidation des tests API
+- Amélioration des tests WebSocket
 - Ajout des tests de performance
-- Configuration de la couverture de code
 
 ### 2024-03-23
 - Tests de gestion de la mémoire
@@ -96,6 +111,7 @@ Ce document détaille la stratégie de tests et leur implémentation pour le bac
   - Gestion des flux
   - Authentification
   - Rapports
+  - Analytics
 
 ### Métriques
 - Lignes de code
@@ -120,9 +136,9 @@ Ce document détaille la stratégie de tests et leur implémentation pour le bac
 ## Prochaines Étapes
 
 ### Court Terme
-1. Compléter les tests manquants
-2. Améliorer la couverture de code
-3. Optimiser les performances des tests
+1. Améliorer la couverture de code des nouveaux modules
+2. Optimiser les performances des tests
+3. Ajouter des tests de stress pour WebSocket
 
 ### Long Terme
 1. Tests de charge
