@@ -9,8 +9,8 @@ from ..models import Base
 from ..database import engine
 from ..utils.logging_config import setup_logging
 from ..redis_config import init_redis, close_redis
-from ..utils.stats_updater import StatsUpdater
-from ..utils.websocket import manager
+from ..utils.analytics.stats_updater import StatsUpdater
+from ..utils.streams.websocket import manager
 
 logger = logging.getLogger(__name__)
 

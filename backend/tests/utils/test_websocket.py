@@ -5,13 +5,10 @@ from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime
 import json
 
-from backend.utils.websocket import (
-    ConnectionManager,
+from backend.utils.streams.websocket import (
+    WebSocketManager,
     broadcast_track_detection,
-    broadcast_station_status,
-    broadcast_system_status,
-    send_heartbeat,
-    process_websocket_message
+    broadcast_station_update
 )
 
 @pytest.fixture

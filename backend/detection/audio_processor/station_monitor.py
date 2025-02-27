@@ -1,12 +1,12 @@
-"""Module de monitoring des stations radio."""
+"""Module for monitoring radio stations."""
 
 import logging
 import asyncio
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from models.models import RadioStation
-from utils.logging_config import setup_logging
+from backend.models.models import RadioStation
+from backend.utils.logging_config import setup_logging
 
 logger = setup_logging(__name__)
 

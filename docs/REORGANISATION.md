@@ -339,4 +339,333 @@ Séparation des routes en modules distincts avec responsabilités spécifiques :
 1. Complete performance test suite
 2. Enhance external service mocking
 3. Implement remaining error scenarios
-4. Improve analytics test coverage 
+4. Improve analytics test coverage
+
+### 2024-03-27
+#### Test Documentation and Performance Testing
+- Added comprehensive documentation for audio processor performance tests in `docs/TESTS.md`:
+  - Detailed test structure and components
+  - Performance targets and benchmarks
+  - Test running instructions
+  - Benchmark configuration
+- Implemented performance testing infrastructure:
+  - Added `pytest-benchmark` dependency
+  - Created performance test suite in `backend/tests/detection/audio_processor/test_audio_processor_performance.py`
+  - Set up memory usage monitoring
+  - Defined performance targets and thresholds
+- Test organization improvements:
+  - Consolidated audio processor tests
+  - Added detailed documentation for each test component
+  - Updated test running instructions
+  - Added benchmark reporting capabilities
+
+#### Audio Processor Module Reorganization
+- Restructured the audio processor module for better organization and maintainability:
+  - Moved `audio_processor.py` to `detection/audio_processor/core.py`
+  - Created proper module structure with `__init__.py`
+  - Separated core functionality from advanced features
+  - Improved code documentation and type hints
+  - Added comprehensive error handling
+
+- Updated test organization to match new structure:
+  - Created `tests/detection/audio_processor/` directory
+  - Implemented `test_core.py` for unit tests
+  - Added `test_performance.py` for benchmarks
+  - Improved test documentation and fixtures
+  - Added memory usage monitoring
+
+- Code quality improvements:
+  - Consistent naming conventions
+  - Better error messages
+  - Comprehensive docstrings
+  - Type annotations
+  - Performance optimizations
+
+#### Next Steps
+1. Implement remaining audio processor features:
+   - Real audio feature extraction
+   - Advanced fingerprint matching
+   - Stream buffering
+   - Resource management
+
+2. Enhance test coverage:
+   - Integration tests with real audio
+   - More performance benchmarks
+   - Edge case handling
+   - Resource cleanup verification
+
+3. Documentation updates:
+   - API documentation
+   - Usage examples
+   - Performance guidelines
+   - Testing instructions
+
+#### Stream Handler Implementation
+- Created new `StreamHandler` module for efficient audio stream processing:
+  - Implemented buffer management with configurable size and channels
+  - Added chunk processing with overflow protection
+  - Implemented stream status monitoring
+  - Added processing delay tracking
+  - Improved error handling and validation
+
+- Added comprehensive test suite for StreamHandler:
+  - Initialization tests with various configurations
+  - Buffer management and overflow tests
+  - Stream processing validation
+  - Status reporting verification
+  - Processing delay measurements
+
+- Code improvements:
+  - Asynchronous processing support
+  - Memory-efficient buffer handling
+  - Comprehensive error checking
+  - Detailed logging
+  - Performance optimization
+
+#### Next Steps for Stream Processing
+1. Implement network stream handling:
+   - HTTP/HTTPS stream support
+   - ICY metadata parsing
+   - Connection retry logic
+   - Error recovery
+
+2. Add advanced buffer features:
+   - Circular buffer implementation
+   - Real-time resampling
+   - Format conversion
+   - Memory usage optimization
+
+3. Enhance monitoring capabilities:
+   - Stream health metrics
+   - Buffer statistics
+   - Performance analytics
+   - Resource usage tracking
+
+## 2024-03-27: Feature Extractor Implementation
+
+### Changes Made
+- Implemented new `FeatureExtractor` class in `backend/detection/audio_processor/feature_extractor.py`:
+  - Robust audio feature extraction with configurable parameters
+  - Comprehensive music detection using multiple metrics
+  - Efficient processing of both mono and stereo audio
+  - Memory-efficient feature computation
+  - Detailed logging and error handling
+
+### Key Features
+- **Feature Extraction**:
+  - Mel-scaled spectrogram computation
+  - MFCC extraction with configurable parameters
+  - Spectral contrast analysis
+  - Chromagram generation
+  - Automatic stereo to mono conversion
+
+- **Music Detection**:
+  - Multi-metric approach combining:
+    - Rhythm strength analysis
+    - Harmonic ratio calculation
+    - Spectral flux measurement
+  - Confidence score calculation
+  - Robust validation of input features
+
+- **Performance Optimization**:
+  - Efficient numpy operations
+  - Minimized memory footprint
+  - Optimized FFT computations
+  - Configurable processing parameters
+
+### Testing Infrastructure
+- Comprehensive test suite in `backend/tests/detection/audio_processor/test_feature_extractor.py`:
+  - Unit tests for all major components
+  - Integration tests for end-to-end functionality
+  - Performance benchmarks for critical operations
+  - Edge case handling validation
+  - Input validation testing
+
+### Next Steps
+1. **Feature Enhancement**:
+   - Implement additional audio features (e.g., spectral rolloff, zero crossing rate)
+   - Add more sophisticated music detection algorithms
+   - Optimize feature computation for real-time processing
+
+2. **Performance Improvements**:
+   - Profile and optimize memory usage
+   - Implement parallel processing for large audio files
+   - Add caching for frequently computed features
+
+3. **Integration**:
+   - Connect with stream processing pipeline
+   - Implement feature persistence
+   - Add real-time visualization capabilities
+
+#### Stream Handler Implementation
+- Created new `StreamHandler` module for efficient audio stream processing:
+  - Implemented buffer management with configurable size and channels
+  - Added chunk processing with overflow protection
+  - Implemented stream status monitoring
+  - Added processing delay tracking
+  - Improved error handling and validation
+
+- Added comprehensive test suite for StreamHandler:
+  - Initialization tests with various configurations
+  - Buffer management and overflow tests
+  - Stream processing validation
+  - Status reporting verification
+  - Processing delay measurements
+
+- Code improvements:
+  - Asynchronous processing support
+  - Memory-efficient buffer handling
+  - Comprehensive error checking
+  - Detailed logging
+  - Performance optimization
+
+#### Next Steps for Stream Processing
+1. Implement network stream handling:
+   - HTTP/HTTPS stream support
+   - ICY metadata parsing
+   - Connection retry logic
+   - Error recovery
+
+2. Add advanced buffer features:
+   - Circular buffer implementation
+   - Real-time resampling
+   - Format conversion
+   - Memory usage optimization
+
+3. Enhance monitoring capabilities:
+   - Stream health metrics
+   - Buffer statistics
+   - Performance analytics
+   - Resource usage tracking
+
+## 2024-03-27: Nettoyage et Consolidation des Tests
+
+### Fichiers Supprimés
+- `test_detect_music.py` (fusionné dans `detection/test_detection.py`)
+- `test_detection.py` (fusionné dans `detection/test_detection.py`)
+- `test_audio_processor.py` (redondant avec les tests dans `detection/audio_processor/`)
+
+### Fichiers Déplacés
+- `test_analytics.py` → `analytics/test_analytics.py`
+- `test_reports.py` → `reports/test_reports.py`
+
+### Structure Finale des Tests
+```
+backend/tests/
+├── analytics/                # Tests des fonctionnalités analytiques
+│   └── test_analytics.py
+├── api/                     # Tests des endpoints API
+│   ├── test_api.py
+│   └── test_websocket.py
+├── core/                    # Tests des fonctionnalités core
+│   ├── test_database.py
+│   └── test_system.py
+├── detection/              # Tests de détection musicale
+│   ├── audio_processor/    # Tests du processeur audio
+│   │   ├── test_core.py
+│   │   ├── test_feature_extractor.py
+│   │   ├── test_performance.py
+│   │   └── test_stream_handler.py
+│   ├── external/          # Tests des services externes
+│   │   ├── test_external_services.py
+│   │   └── test_musicbrainz_recognizer.py
+│   └── test_detection.py  # Tests principaux de détection
+├── reports/               # Tests de génération de rapports
+│   └── test_reports.py
+├── utils/                # Tests des utilitaires
+│   ├── test_auth.py
+│   ├── test_redis_config.py
+│   └── test_validators.py
+└── conftest.py          # Fixtures partagées
+```
+
+### Améliorations
+- Meilleure organisation des tests par fonctionnalité
+- Élimination de la duplication de code
+- Tests plus faciles à maintenir et à comprendre
+- Meilleure isolation des tests
+- Fixtures mieux organisées
+
+### Prochaines Étapes
+1. Vérifier la couverture de code pour chaque module
+2. Ajouter des tests manquants si nécessaire
+3. Optimiser les fixtures partagées
+4. Améliorer la documentation des tests
+5. Mettre en place des tests de performance par module
+
+## 2024-03-27: Réorganisation des Utilitaires
+
+### Nouvelle Structure
+```
+backend/utils/
+├── analytics/          # Utilitaires d'analyse
+│   ├── analytics_manager.py
+│   └── stats_updater.py
+├── auth/              # Authentification et sécurité
+│   └── auth.py
+├── database/          # Opérations de base de données
+│   └── checks.py
+├── monitoring/        # Surveillance et santé
+│   ├── health_check.py
+│   └── check_durations.py
+├── radio/            # Gestion des radios
+│   └── manager.py
+└── streams/          # Gestion des flux
+    ├── stream_checker.py
+    └── websocket.py
+```
+
+### Fichiers Déplacés
+- `analytics_manager.py` et `stats_updater.py` → `analytics/`
+- `auth.py` → `auth/`
+- `health_check.py` et `check_durations.py` → `monitoring/`
+- `stream_checker.py` et `websocket.py` → `streams/`
+- `fingerprint.py` → `detection/audio_processor/`
+- `musicbrainz_recognizer.py` → `detection/external/`
+
+### Améliorations
+- Meilleure organisation des utilitaires par domaine fonctionnel
+- Séparation claire des responsabilités
+- Réduction de la complexité des modules
+- Meilleure maintenabilité du code
+- Documentation plus claire
+
+### Prochaines Étapes
+1. Mettre à jour les imports dans les modules dépendants
+2. Vérifier et mettre à jour les tests correspondants
+3. Ajouter des tests manquants pour les nouveaux modules
+4. Améliorer la documentation des utilitaires
+5. Optimiser les performances des utilitaires 
+
+### Mise à Jour des Imports
+Les imports ont été mis à jour dans les fichiers suivants pour refléter la nouvelle structure :
+
+#### Routeurs
+- `routers/detections.py` : Mise à jour des imports WebSocket
+- `routers/channels.py` : Mise à jour des imports WebSocket et StreamChecker
+- `routers/reports.py` : Mise à jour des imports Auth
+
+#### Détection Audio
+- `detection/audio_processor/track_manager.py` : Mise à jour des imports StatsUpdater
+- `detection/audio_processor/core.py` : Mise à jour des imports StatsUpdater
+- `detection/external/test_musicbrainz_recognizer.py` : Mise à jour des imports MusicBrainzRecognizer
+
+#### Tests
+- `tests/utils/test_stream_checker.py` : Mise à jour des imports StreamChecker
+- `tests/utils/test_websocket.py` : Mise à jour des imports WebSocket
+- `tests/utils/test_auth.py` : Mise à jour des imports Auth
+
+#### Core
+- `core/events.py` : Mise à jour des imports StatsUpdater et WebSocket
+
+### Améliorations
+- Imports plus clairs et mieux organisés
+- Meilleure cohérence dans la structure des imports
+- Réduction des dépendances circulaires
+- Meilleure maintenabilité du code
+
+### Prochaines Étapes
+1. Vérifier que tous les tests passent avec les nouveaux imports
+2. Mettre à jour la documentation des imports
+3. Optimiser les imports pour réduire les dépendances
+4. Ajouter des tests d'importation pour éviter les imports circulaires 

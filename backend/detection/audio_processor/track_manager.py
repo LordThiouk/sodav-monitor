@@ -1,11 +1,12 @@
-"""Module de gestion des pistes audio détectées."""
+"""Module for managing track detection and storage."""
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from models.models import Track, TrackDetection, RadioStation, StationTrackStats, Artist
-from utils.logging_config import setup_logging
+from backend.models.models import Track, TrackDetection, RadioStation, StationTrackStats, Artist
+from backend.utils.logging_config import setup_logging
+from backend.utils.analytics.stats_updater import StatsUpdater
 import numpy as np
 
 logger = setup_logging(__name__)

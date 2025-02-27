@@ -10,16 +10,19 @@ import asyncio
 from backend.models.database import get_db
 from ..models import RadioStation, StationStatus, Track, TrackDetection, Artist
 from ..utils.radio_manager import RadioManager
-from ..utils.websocket import broadcast_station_update
+from ..utils.streams.websocket import broadcast_station_update
+from ..utils.streams.stream_checker import StreamChecker
 import logging
 from ..schemas.base import StationCreate, StationUpdate, StationResponse, StationStatusResponse
 from ..core.security import get_current_user
-from ..utils.stream_checker import check_stream_availability
 from ..core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
+
+# Initialize StreamChecker
+stream_checker = StreamChecker()
 
 class StationResponse(BaseModel):
     id: int
@@ -114,7 +117,7 @@ async def create_station(
         db.refresh(db_station)
         
         # Vérifie la disponibilité du flux en arrière-plan
-        background_tasks.add_task(check_stream_availability, db_station.stream_url)
+        background_tasks.add_task(stream_checker.check_stream_availability, db_station.stream_url)
         
         return db_station
     except Exception as e:
@@ -155,7 +158,7 @@ async def update_station(
         
         # Si l'URL du flux a changé, vérifie sa disponibilité
         if station_update.stream_url:
-            background_tasks.add_task(check_stream_availability, db_station.stream_url)
+            background_tasks.add_task(stream_checker.check_stream_availability, db_station.stream_url)
         
         return db_station
     except Exception as e:
@@ -218,7 +221,7 @@ async def check_station(
     if not station:
         raise HTTPException(status_code=404, detail="Station not found")
     
-    background_tasks.add_task(check_stream_availability, station.stream_url)
+    background_tasks.add_task(stream_checker.check_stream_availability, station.stream_url)
     return {"message": "Station check initiated"}
 
 @router.post("/refresh")

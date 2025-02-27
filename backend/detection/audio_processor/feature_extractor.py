@@ -1,26 +1,54 @@
-"""Module d'extraction des caractéristiques audio."""
+"""Audio feature extraction and analysis functionality."""
 
 import logging
 import numpy as np
 import librosa
 import soundfile as sf
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import io
-from utils.logging_config import setup_logging
+from datetime import datetime
+from backend.utils.logging_config import setup_logging
 
 logger = setup_logging(__name__)
 
 class FeatureExtractor:
-    """Extracteur de caractéristiques audio."""
+    """Handles audio feature extraction and music detection."""
     
-    def __init__(self):
-        """Initialise l'extracteur de caractéristiques."""
-        self.logger = logging.getLogger(__name__)
-        self.sample_rate = 22050
-        self.hop_length = 512
-        self.n_mels = 128
-        self.n_mfcc = 20
-    
+    def __init__(self, 
+                 sample_rate: int = 22050,
+                 n_mels: int = 128,
+                 n_fft: int = 2048,
+                 hop_length: int = 512):
+        """Initialize the feature extractor.
+        
+        Args:
+            sample_rate: Audio sampling rate in Hz
+            n_mels: Number of Mel bands
+            n_fft: Length of the FFT window
+            hop_length: Number of samples between successive frames
+            
+        Raises:
+            ValueError: If any parameter is invalid
+        """
+        if sample_rate <= 0:
+            raise ValueError("Sample rate must be greater than 0")
+        if n_mels <= 0:
+            raise ValueError("Number of Mel bands must be greater than 0")
+        if n_fft <= 0:
+            raise ValueError("FFT window length must be greater than 0")
+        if hop_length <= 0:
+            raise ValueError("Hop length must be greater than 0")
+            
+        self.sample_rate = sample_rate
+        self.n_mels = n_mels
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        
+        logger.info(
+            f"FeatureExtractor initialized: sample_rate={sample_rate}, "
+            f"n_mels={n_mels}, n_fft={n_fft}, hop_length={hop_length}"
+        )
+        
     async def analyze_audio(self, audio_data: bytes) -> Optional[Dict[str, Any]]:
         """Analyse un segment audio et extrait ses caractéristiques."""
         try:
@@ -33,10 +61,10 @@ class FeatureExtractor:
             samples = librosa.util.normalize(samples)
             
             # Extrait les caractéristiques
-            features = self._extract_features(samples)
+            features = self.extract_features(samples)
             
             # Analyse le rythme
-            rhythm_strength = self._detect_rhythm_strength(samples, self.sample_rate)
+            rhythm_strength = self._calculate_rhythm_strength(features["mel_spectrogram"])
             features["rhythm_strength"] = rhythm_strength
             
             # Calcule la confiance globale
@@ -45,134 +73,211 @@ class FeatureExtractor:
             return features
             
         except Exception as e:
-            self.logger.error(f"Erreur lors de l'analyse audio: {str(e)}")
+            logger.error(f"Erreur lors de l'analyse audio: {str(e)}")
             return None
     
-    def _extract_features(self, samples: np.ndarray) -> Dict[str, Any]:
-        """Extrait les caractéristiques audio d'un signal."""
-        features = {}
+    def extract_features(self, audio_data: np.ndarray) -> Dict[str, np.ndarray]:
+        """Extract audio features from the input data.
         
-        try:
-            # Spectrogramme mel
-            mel_spec = librosa.feature.melspectrogram(
-                y=samples,
-                sr=self.sample_rate,
-                n_mels=self.n_mels,
-                hop_length=self.hop_length
-            )
-            mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
-            features["mel_mean"] = np.mean(mel_spec_db)
-            features["mel_std"] = np.std(mel_spec_db)
+        Args:
+            audio_data: Audio signal as numpy array
             
-            # MFCC
-            mfcc = librosa.feature.mfcc(
-                y=samples,
-                sr=self.sample_rate,
-                n_mfcc=self.n_mfcc,
-                hop_length=self.hop_length
-            )
-            features["mfcc_mean"] = np.mean(mfcc, axis=1).tolist()
-            features["mfcc_std"] = np.std(mfcc, axis=1).tolist()
+        Returns:
+            Dictionary containing extracted features:
+                - mel_spectrogram: Mel-scaled spectrogram
+                - mfcc: Mel-frequency cepstral coefficients
+                - spectral_contrast: Spectral contrast
+                - chroma: Chromagram
+                
+        Raises:
+            ValueError: If audio_data is empty
+            TypeError: If audio_data is not a numpy array
+        """
+        if not isinstance(audio_data, np.ndarray):
+            raise TypeError("Audio data must be a numpy array")
+        if audio_data.size == 0:
+            raise ValueError("Audio data cannot be empty")
             
-            # Chromagramme
-            chroma = librosa.feature.chroma_stft(
-                y=samples,
-                sr=self.sample_rate,
-                hop_length=self.hop_length
-            )
-            features["chroma_mean"] = np.mean(chroma, axis=1).tolist()
+        # Convert to mono if stereo
+        if len(audio_data.shape) > 1:
+            audio_data = np.mean(audio_data, axis=1)
             
-            # Énergie spectrale
-            spectral_centroids = librosa.feature.spectral_centroid(
-                y=samples,
-                sr=self.sample_rate,
-                hop_length=self.hop_length
-            )
-            features["spectral_centroid_mean"] = float(np.mean(spectral_centroids))
+        # Calculate expected number of frames
+        n_frames = 1 + (len(audio_data) - self.n_fft) // self.hop_length
             
-            # Détection de tempo
-            tempo, _ = librosa.beat.beat_track(
-                y=samples,
-                sr=self.sample_rate,
-                hop_length=self.hop_length
-            )
-            features["tempo"] = float(tempo)
+        # Extract features
+        mel_spec = librosa.feature.melspectrogram(
+            y=audio_data,
+            sr=self.sample_rate,
+            n_mels=self.n_mels,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length
+        )
+        
+        # Convert to dB scale and normalize
+        mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+        mel_spec_norm = (mel_spec_db - np.min(mel_spec_db)) / (np.max(mel_spec_db) - np.min(mel_spec_db) + 1e-6)
+        
+        # Ensure all features have the same number of frames
+        mel_spec_norm = mel_spec_norm[:, :n_frames]
+        
+        mfcc = librosa.feature.mfcc(
+            S=mel_spec_db[:, :n_frames],
+            n_mfcc=20
+        )
+        
+        contrast = librosa.feature.spectral_contrast(
+            y=audio_data,
+            sr=self.sample_rate,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length
+        )[:, :n_frames]
+        
+        chroma = librosa.feature.chroma_stft(
+            y=audio_data,
+            sr=self.sample_rate,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length
+        )[:, :n_frames]
+        
+        logger.debug(
+            f"Features extracted: mel_spec={mel_spec.shape}, mfcc={mfcc.shape}, "
+            f"contrast={contrast.shape}, chroma={chroma.shape}"
+        )
+        
+        return {
+            "mel_spectrogram": mel_spec_norm,
+            "mfcc": mfcc,
+            "spectral_contrast": contrast,
+            "chroma": chroma
+        }
+        
+    def is_music(self, features: Dict[str, np.ndarray]) -> Tuple[bool, float]:
+        """Determine if the audio segment contains music.
+        
+        Args:
+            features: Dictionary of extracted features
             
-            # Analyse des bandes de fréquence
-            frequencies = self._analyze_frequency_bands(samples)
-            features.update(frequencies)
-            
-            return features
-            
-        except Exception as e:
-            self.logger.error(f"Erreur lors de l'extraction des caractéristiques: {str(e)}")
-            return {}
-    
-    def _detect_rhythm_strength(self, samples: np.ndarray, sample_rate: int) -> float:
-        """Détecte la force du rythme dans un signal audio."""
-        try:
-            # Calcule l'enveloppe du signal
-            onset_env = librosa.onset.onset_strength(
-                y=samples,
-                sr=sample_rate,
-                hop_length=self.hop_length
-            )
-            
-            # Détecte les pics dans l'enveloppe
-            peaks = librosa.util.peak_pick(
-                onset_env,
-                pre_max=3,
-                post_max=3,
-                pre_avg=3,
-                post_avg=5,
-                delta=0.5,
-                wait=10
-            )
-            
-            # Calcule la force moyenne des pics
-            if len(peaks) > 0:
-                peak_heights = onset_env[peaks]
-                rhythm_strength = float(np.mean(peak_heights))
-            else:
-                rhythm_strength = 0.0
-            
-            return min(1.0, rhythm_strength / 10.0)  # Normalise entre 0 et 1
-            
-        except Exception as e:
-            self.logger.error(f"Erreur lors de la détection du rythme: {str(e)}")
+        Returns:
+            Tuple containing:
+                - bool: True if music is detected
+                - float: Confidence score between 0 and 1
+                
+        Raises:
+            ValueError: If features dictionary is missing required keys
+            TypeError: If features are not numpy arrays
+        """
+        required_features = ["mel_spectrogram", "mfcc", "spectral_contrast", "chroma"]
+        for feature in required_features:
+            if feature not in features:
+                raise ValueError(f"Missing required feature: {feature}")
+            if not isinstance(features[feature], np.ndarray):
+                raise TypeError(f"Feature {feature} must be a numpy array")
+                
+        # Calculate music detection metrics
+        rhythm_strength = self._calculate_rhythm_strength(features["mel_spectrogram"])
+        harmonic_ratio = self._calculate_harmonic_ratio(features["spectral_contrast"])
+        spectral_flux = self._calculate_spectral_flux(features["mel_spectrogram"])
+        
+        # Combine metrics with weights
+        weights = {
+            "rhythm": 0.4,
+            "harmonic": 0.4,
+            "flux": 0.2
+        }
+        
+        confidence = float(
+            weights["rhythm"] * rhythm_strength +
+            weights["harmonic"] * harmonic_ratio +
+            weights["flux"] * spectral_flux
+        )
+        
+        # Music detection decision
+        music_threshold = 0.6
+        is_music = bool(confidence > music_threshold)
+        
+        logger.debug(
+            f"Music detection: rhythm={rhythm_strength:.2f}, harmonic={harmonic_ratio:.2f}, "
+            f"flux={spectral_flux:.2f}, confidence={confidence:.2f}"
+        )
+        
+        return is_music, confidence
+        
+    def _calculate_rhythm_strength(self, mel_spec: np.ndarray) -> float:
+        """Calculate rhythm strength from mel spectrogram."""
+        # Calculate onset strength
+        onset_env = librosa.onset.onset_strength(S=mel_spec)
+        
+        if len(onset_env) < 2:
             return 0.0
-    
-    def _analyze_frequency_bands(self, samples: np.ndarray) -> Dict[str, float]:
-        """Analyse les différentes bandes de fréquence."""
-        try:
-            # Calcule le spectrogramme
-            D = librosa.stft(samples)
-            frequencies = librosa.fft_frequencies(sr=self.sample_rate)
             
-            # Définit les bandes de fréquence
-            bands = {
-                "sub_bass": (20, 60),
-                "bass": (60, 250),
-                "low_mids": (250, 500),
-                "mids": (500, 2000),
-                "high_mids": (2000, 4000),
-                "highs": (4000, 20000)
-            }
+        # Calculate tempo and beat frames
+        tempo, beat_frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=self.sample_rate)
+        
+        if len(beat_frames) < 2:
+            return 0.0
             
-            results = {}
-            magnitudes = np.abs(D)
+        # Calculate beat regularity
+        beat_intervals = np.diff(beat_frames)
+        if len(beat_intervals) > 0:
+            regularity = 1.0 - np.std(beat_intervals) / (np.mean(beat_intervals) + 1e-6)
+        else:
+            regularity = 0.0
             
-            # Calcule l'énergie pour chaque bande
-            for band_name, (low, high) in bands.items():
-                mask = (frequencies >= low) & (frequencies <= high)
-                band_energy = np.mean(magnitudes[mask])
-                results[f"{band_name}_energy"] = float(band_energy)
+        # Calculate onset strength variation
+        onset_mean = np.mean(onset_env)
+        if onset_mean > 0:
+            onset_variation = np.std(onset_env) / onset_mean
+        else:
+            onset_variation = 0.0
             
-            return results
+        # Combine metrics
+        rhythm_strength = 0.5 * regularity + 0.5 * min(1.0, onset_variation)
+        return float(rhythm_strength)
+        
+    def _calculate_harmonic_ratio(self, contrast: np.ndarray) -> float:
+        """Calculate harmonic ratio from spectral contrast."""
+        if contrast.size == 0:
+            return 0.0
             
-        except Exception as e:
-            self.logger.error(f"Erreur lors de l'analyse des fréquences: {str(e)}")
-            return {}
+        # Calculate mean contrast in different frequency bands
+        band_means = np.mean(np.abs(contrast), axis=1)
+        
+        # Weight the bands (emphasize mid-frequencies where harmonics typically occur)
+        weights = np.array([0.1, 0.2, 0.3, 0.2, 0.1, 0.05, 0.05])
+        weighted_contrast = np.sum(band_means * weights)
+        
+        # Normalize to [0, 1]
+        max_contrast = np.max(np.abs(contrast))
+        if max_contrast > 0:
+            return float(min(1.0, weighted_contrast / max_contrast))
+        return 0.0
+        
+    def _calculate_spectral_flux(self, mel_spec: np.ndarray) -> float:
+        """Calculate spectral flux from mel spectrogram."""
+        if mel_spec.shape[1] < 2:
+            return 0.0
+            
+        # Calculate frame-to-frame spectral difference
+        diff = np.diff(mel_spec, axis=1)
+        flux = np.mean(np.abs(diff))
+        
+        # Normalize to [0, 1]
+        max_diff = np.max(np.abs(mel_spec))
+        if max_diff > 0:
+            return float(min(1.0, flux / max_diff))
+        return 0.0
+        
+    def get_audio_duration(self, audio_data: np.ndarray) -> float:
+        """Calculate the duration of the audio in seconds."""
+        if not isinstance(audio_data, np.ndarray):
+            raise TypeError("Audio data must be a numpy array")
+        if audio_data.size == 0:
+            raise ValueError("Audio data cannot be empty")
+            
+        # Get number of samples (handle both mono and stereo)
+        n_samples = audio_data.shape[0]
+        return float(n_samples / self.sample_rate)
     
     def _calculate_confidence(self, features: Dict[str, Any]) -> float:
         """Calcule le score de confiance global basé sur les caractéristiques."""
@@ -197,5 +302,5 @@ class FeatureExtractor:
             return min(1.0, max(0.0, score))
             
         except Exception as e:
-            self.logger.error(f"Erreur lors du calcul de la confiance: {str(e)}")
+            logger.error(f"Erreur lors du calcul de la confiance: {str(e)}")
             return 0.0 

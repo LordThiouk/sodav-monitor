@@ -10,11 +10,177 @@ import requests
 import musicbrainzngs
 import aiohttp
 import tempfile
-from ...utils.logging_config import setup_logging
+from utils.logging_config import setup_logging
 from .audio_analysis import AudioAnalyzer
 from sqlalchemy.orm import Session
+import asyncio
 
 logger = setup_logging(__name__)
+
+class ExternalServiceError(Exception):
+    """Exception raised for errors in external service calls."""
+    pass
+
+class MusicBrainzService:
+    """Service for interacting with the MusicBrainz API."""
+    
+    def __init__(self, api_key: str, base_url: str = "https://api.musicbrainz.org/v1"):
+        self.api_key = api_key
+        self.base_url = base_url
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+    
+    async def detect_track(self, audio_data: bytes) -> Optional[Dict[str, Any]]:
+        """
+        Detect a track using MusicBrainz API.
+        
+        Args:
+            audio_data: Raw audio data bytes
+            
+        Returns:
+            Dict containing track information or None if no match found
+            
+        Raises:
+            ExternalServiceError: If API request fails
+        """
+        try:
+            async with aiohttp.ClientSession(headers=self.headers) as session:
+                async with session.post(
+                    f"{self.base_url}/lookup",
+                    data=audio_data,
+                    timeout=30
+                ) as response:
+                    if response.status != 200:
+                        raise ExternalServiceError(f"MusicBrainz API error: {response.status}")
+                    
+                    data = await response.json()
+                    if not data.get("results"):
+                        return None
+                    
+                    result = data["results"][0]
+                    return {
+                        "title": result["title"],
+                        "artist": result["artist"],
+                        "confidence": result["score"]
+                    }
+                    
+        except asyncio.TimeoutError:
+            raise ExternalServiceError("MusicBrainz request timed out")
+        except aiohttp.ClientError as e:
+            raise ExternalServiceError(f"MusicBrainz request failed: {str(e)}")
+        except Exception as e:
+            raise ExternalServiceError(f"Unexpected error in MusicBrainz request: {str(e)}")
+    
+    async def detect_track_with_retry(
+        self, 
+        audio_data: bytes, 
+        max_retries: int = 3,
+        retry_delay: float = 1.0
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect a track with automatic retry on failure.
+        
+        Args:
+            audio_data: Raw audio data bytes
+            max_retries: Maximum number of retry attempts
+            retry_delay: Delay between retries in seconds
+            
+        Returns:
+            Dict containing track information or None if no match found
+        """
+        for attempt in range(max_retries):
+            try:
+                return await self.detect_track(audio_data)
+            except ExternalServiceError as e:
+                if attempt == max_retries - 1:
+                    raise
+                logger.warning(f"MusicBrainz detection failed (attempt {attempt + 1}): {str(e)}")
+                await asyncio.sleep(retry_delay * (attempt + 1))
+        return None
+
+class AuddService:
+    """Service for interacting with the Audd API."""
+    
+    def __init__(self, api_key: str, base_url: str = "https://api.audd.io"):
+        self.api_key = api_key
+        self.base_url = base_url
+        
+    async def detect_track(self, audio_data: bytes) -> Optional[Dict[str, Any]]:
+        """
+        Detect a track using Audd API.
+        
+        Args:
+            audio_data: Raw audio data bytes
+            
+        Returns:
+            Dict containing track information or None if no match found
+            
+        Raises:
+            ExternalServiceError: If API request fails
+        """
+        try:
+            data = aiohttp.FormData()
+            data.add_field("api_token", self.api_key)
+            data.add_field("file", audio_data)
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.base_url,
+                    data=data,
+                    timeout=30
+                ) as response:
+                    if response.status != 200:
+                        raise ExternalServiceError(f"Audd API error: {response.status}")
+                    
+                    result = await response.json()
+                    if result.get("status") == "error":
+                        raise ExternalServiceError(f"Audd API error: {result.get('error')}")
+                    
+                    if not result.get("result"):
+                        return None
+                    
+                    track = result["result"]
+                    return {
+                        "title": track["title"],
+                        "artist": track["artist"],
+                        "confidence": track["score"]
+                    }
+                    
+        except asyncio.TimeoutError:
+            raise ExternalServiceError("Audd request timed out")
+        except aiohttp.ClientError as e:
+            raise ExternalServiceError(f"Audd request failed: {str(e)}")
+        except Exception as e:
+            raise ExternalServiceError(f"Unexpected error in Audd request: {str(e)}")
+    
+    async def detect_track_with_retry(
+        self, 
+        audio_data: bytes, 
+        max_retries: int = 3,
+        retry_delay: float = 1.0
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect a track with automatic retry on failure.
+        
+        Args:
+            audio_data: Raw audio data bytes
+            max_retries: Maximum number of retry attempts
+            retry_delay: Delay between retries in seconds
+            
+        Returns:
+            Dict containing track information or None if no match found
+        """
+        for attempt in range(max_retries):
+            try:
+                return await self.detect_track(audio_data)
+            except ExternalServiceError as e:
+                if attempt == max_retries - 1:
+                    raise
+                logger.warning(f"Audd detection failed (attempt {attempt + 1}): {str(e)}")
+                await asyncio.sleep(retry_delay * (attempt + 1))
+        return None
 
 class ExternalServiceHandler:
     def __init__(self, db_session: Session, audd_api_key: Optional[str] = None):

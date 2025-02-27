@@ -8,7 +8,7 @@ from backend.models.database import get_db
 from ..models.models import TrackDetection, Track, RadioStation, StationStatus, Artist
 from ..schemas.base import DetectionCreate, DetectionResponse, TrackResponse
 from ..core.security import get_current_user
-from ..utils.websocket import broadcast_track_detection
+from ..utils.streams.websocket import broadcast_track_detection
 from ..detection.audio_processor.core import AudioProcessor
 from ..core.config import get_settings
 import logging

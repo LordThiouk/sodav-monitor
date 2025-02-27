@@ -10,7 +10,7 @@ import librosa
 from io import BytesIO
 from pydub import AudioSegment
 from scipy.signal import windows
-from ...utils.logging_config import setup_logging
+from utils.logging_config import setup_logging
 
 logger = setup_logging(__name__)
 

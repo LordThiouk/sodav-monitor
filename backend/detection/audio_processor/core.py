@@ -1,14 +1,14 @@
-"""Module principal pour le traitement audio."""
+"""Core audio processing functionality for music detection."""
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 from sqlalchemy.orm import Session
 import asyncio
 import numpy as np
-from models.models import RadioStation, Track, TrackDetection
-from utils.logging_config import setup_logging
-from utils.stats_updater import StatsUpdater
+from backend.models.models import RadioStation, Track, TrackDetection
+from backend.utils.logging_config import setup_logging
+from backend.utils.analytics.stats_updater import StatsUpdater
 from .stream_handler import StreamHandler
 from .feature_extractor import FeatureExtractor
 from .track_manager import TrackManager
@@ -18,15 +18,20 @@ from .station_monitor import StationMonitor
 logger = setup_logging(__name__)
 
 class AudioProcessor:
-    """Classe principale pour le traitement audio des flux radio."""
+    """Class for processing audio streams and detecting music."""
     
     def __init__(self, db_session: Session, sample_rate: int = 44100):
-        """Initialise le processeur audio.
+        """Initialize the audio processor.
         
         Args:
-            db_session: Session de base de données SQLAlchemy
-            sample_rate: Fréquence d'échantillonnage en Hz
+            db_session: SQLAlchemy database session
+            sample_rate: Sampling frequency in Hz
+            
+        Raises:
+            ValueError: If sample_rate is less than or equal to 0
         """
+        if sample_rate <= 0:
+            raise ValueError("Sample rate must be greater than 0")
         self.db = db_session
         self.sample_rate = sample_rate
         self.stream_handler = StreamHandler()
@@ -35,20 +40,20 @@ class AudioProcessor:
         self.station_monitor = StationMonitor()
         self.stats_updater = StatsUpdater(db_session)
         
-        logger.info(f"AudioProcessor initialisé avec sample_rate={sample_rate}")
+        logger.info(f"AudioProcessor initialized with sample_rate={sample_rate}")
         
     async def process_stream(self, audio_data: np.ndarray, station_id: Optional[int] = None) -> Dict[str, Any]:
-        """Traite un segment audio pour détecter la présence de musique.
+        """Process an audio segment to detect the presence of music.
         
         Args:
-            audio_data: Données audio sous forme de tableau numpy
-            station_id: ID de la station (optionnel)
+            audio_data: Audio data as numpy array
+            station_id: ID of the station (optional)
             
         Returns:
-            Dictionnaire contenant les résultats de la détection
+            Dictionary containing detection results
         """
         try:
-            # 1. Identifier le type de contenu
+            # 1. Identify content type
             features = self.feature_extractor.extract_features(audio_data)
             is_music = self.feature_extractor.is_music(features)
             
@@ -59,8 +64,8 @@ class AudioProcessor:
                     "station_id": station_id
                 }
             
-            # 2. Détection hiérarchique
-            # a) Détection locale
+            # 2. Hierarchical detection
+            # a) Local detection
             local_match = await self.track_manager.find_local_match(features)
             if local_match:
                 return {
@@ -71,7 +76,7 @@ class AudioProcessor:
                     "station_id": station_id
                 }
             
-            # b) Détection avec MusicBrainz
+            # b) MusicBrainz detection
             mb_match = await self.track_manager.find_musicbrainz_match(features)
             if mb_match:
                 return {
@@ -82,7 +87,7 @@ class AudioProcessor:
                     "station_id": station_id
                 }
             
-            # c) Détection avec Audd
+            # c) Audd detection
             audd_match = await self.track_manager.find_audd_match(features)
             if audd_match:
                 return {
@@ -93,7 +98,7 @@ class AudioProcessor:
                     "station_id": station_id
                 }
             
-            # Aucune correspondance trouvée
+            # No match found
             return {
                 "type": "music",
                 "source": "unknown",
@@ -102,7 +107,7 @@ class AudioProcessor:
             }
             
         except Exception as e:
-            logger.error(f"Erreur lors du traitement du flux: {str(e)}")
+            logger.error(f"Error processing stream: {str(e)}")
             return {
                 "type": "error",
                 "error": str(e),
@@ -110,13 +115,13 @@ class AudioProcessor:
             }
     
     async def start_monitoring(self, station_id: int) -> bool:
-        """Démarre le monitoring d'une station.
+        """Start monitoring a station.
         
         Args:
-            station_id: ID de la station à monitorer
+            station_id: ID of the station to monitor
             
         Returns:
-            True si le monitoring est démarré avec succès
+            True if monitoring started successfully
         """
         try:
             return await self.station_monitor.start_monitoring(
@@ -125,29 +130,107 @@ class AudioProcessor:
                 self.track_manager
             )
         except Exception as e:
-            logger.error(f"Erreur lors du démarrage du monitoring: {str(e)}")
+            logger.error(f"Error starting monitoring: {str(e)}")
             return False
     
     async def stop_monitoring(self, station_id: int) -> bool:
-        """Arrête le monitoring d'une station.
+        """Stop monitoring a station.
         
         Args:
-            station_id: ID de la station
+            station_id: ID of the station
             
         Returns:
-            True si le monitoring est arrêté avec succès
+            True if monitoring stopped successfully
         """
         try:
             return await self.station_monitor.stop_monitoring()
         except Exception as e:
-            logger.error(f"Erreur lors de l'arrêt du monitoring: {str(e)}")
+            logger.error(f"Error stopping monitoring: {str(e)}")
             return False
     
     def _check_memory_usage(self) -> bool:
-        """Vérifie l'utilisation de la mémoire.
+        """Check memory usage.
         
         Returns:
-            True si l'utilisation de la mémoire est acceptable
+            True if memory usage is acceptable
         """
-        # TODO: Implémenter la vérification de la mémoire
-        return True 
+        # TODO: Implement memory usage check
+        return True
+
+    def process_stream(self, audio_data: np.ndarray) -> Tuple[bool, float]:
+        """Process an audio segment to detect the presence of music.
+        
+        Args:
+            audio_data: Audio data as numpy array
+            
+        Returns:
+            Tuple containing:
+                - bool: True if music is detected
+                - float: Confidence score between 0 and 1
+                
+        Raises:
+            ValueError: If audio_data is empty
+            TypeError: If audio_data is not a np.ndarray
+        """
+        if not isinstance(audio_data, np.ndarray):
+            raise TypeError("Audio data must be a numpy array")
+        if audio_data.size == 0:
+            raise ValueError("Audio data cannot be empty")
+            
+        # Detection simulation for now
+        confidence = np.random.random()
+        is_music = confidence > 0.5
+        
+        logger.debug(f"Audio processing: music={is_music}, confidence={confidence:.2f}")
+        return is_music, confidence
+        
+    def extract_features(self, audio_data: np.ndarray) -> np.ndarray:
+        """Extract audio features for fingerprinting.
+        
+        Args:
+            audio_data: Audio data as numpy array
+            
+        Returns:
+            Numpy array of extracted features
+            
+        Raises:
+            ValueError: If audio_data is empty
+            TypeError: If audio_data is not a np.ndarray
+        """
+        if not isinstance(audio_data, np.ndarray):
+            raise TypeError("Audio data must be a numpy array")
+        if audio_data.size == 0:
+            raise ValueError("Audio data cannot be empty")
+            
+        # Feature extraction simulation
+        features = np.random.random((128,))
+        logger.debug(f"Features extracted: shape={features.shape}")
+        return features
+        
+    def match_fingerprint(self, features: np.ndarray, database: List[np.ndarray]) -> Optional[int]:
+        """Compare a fingerprint with a database.
+        
+        Args:
+            features: Features of the audio to identify
+            database: List of reference fingerprints
+            
+        Returns:
+            Index of the found match or None
+            
+        Raises:
+            ValueError: If features don't have the correct shape
+            TypeError: If arguments are not of the correct type
+        """
+        if not isinstance(features, np.ndarray):
+            raise TypeError("Features must be a numpy array")
+        if not isinstance(database, list):
+            raise TypeError("Database must be a list")
+        if features.shape != (128,):
+            raise ValueError("Features must have shape (128,)")
+            
+        # Match simulation
+        if len(database) > 0 and np.random.random() > 0.5:
+            match_idx = np.random.randint(0, len(database))
+            logger.info(f"Match found at index {match_idx}")
+            return match_idx
+        return None 

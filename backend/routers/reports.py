@@ -22,7 +22,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from backend.models.database import get_db
 from ..models.models import Report, ReportSubscription, User, TrackDetection, Track, RadioStation, ReportStatus, Artist, ReportType, ReportFormat
-from utils.auth import get_current_user
+from utils.auth.auth import get_current_user
 from schemas.base import ReportCreate, ReportResponse, ReportStatusResponse
 from reports.generator import ReportGenerator
 from utils.file_manager import get_report_path

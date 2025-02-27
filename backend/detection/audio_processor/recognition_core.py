@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 import musicbrainzngs
 from sqlalchemy.orm import Session
-from ...utils.logging_config import setup_logging
+from utils.logging_config import setup_logging
 from .local_detection import LocalDetector
 from .external_services import ExternalServiceHandler
 from .db_operations import DatabaseHandler

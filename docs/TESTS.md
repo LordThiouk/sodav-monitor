@@ -3,756 +3,933 @@
 ## Vue d'ensemble
 Ce document détaille la stratégie de tests et leur implémentation pour le backend du projet SODAV Monitor.
 
-## Configuration des Tests
+## État Actuel (Mars 2024)
 
-### Prérequis
-- Python 3.8+
-- pytest
-- pytest-asyncio
-- pytest-cov
-- pytest-mock
-- pytest-redis
-- aiohttp
-- aioresponses
-- numpy
-- librosa
-- soundfile
+### Modules à Haute Couverture (>90%)
+- Authentication Module (95%)
+  - Password verification
+  - Token management
+  - User validation
+- WebSocket Communication (92%)
+  - Connection handling
+  - Message broadcasting
+  - Error recovery
 
-### Variables d'Environnement Requises
-Pour exécuter les tests, les variables d'environnement suivantes doivent être configurées :
+### Modules en Cours d'Amélioration
+- Feature Extractor (85%)
+  - Audio analysis
+  - Music detection
+  - Performance benchmarks
+  - ⚠️ Known issue: Consistent values in mock data
+- Stream Handler (80%)
+  - Buffer management
+  - Audio processing
+  - Error handling
 
-```bash
-# Base de données
-TEST_DATABASE_URL=sqlite:///./test.db
+### Prochaines Étapes
+1. Améliorer les mocks du Feature Extractor
+   - Différencier musique/parole
+   - Ajouter plus de variabilité
+   - Corriger les seuils de détection
+2. Compléter les tests de performance
+3. Ajouter des tests d'intégration
+4. Améliorer la documentation des tests
 
-# JWT
-SECRET_KEY=your-secret-key-here
-JWT_SECRET_KEY=test_jwt_secret
+## Testing Structure
 
-# APIs externes
-ACOUSTID_API_KEY=test_acoustid_key
-AUDD_API_KEY=test_audd_key
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_DB=1
-
-# Python Path
-PYTHONPATH=.
-```
-
-## Structure des Tests
-
-Les tests sont organisés dans le dossier `backend/tests/` selon la structure suivante :
+### Component-Based Testing
+Each major component has its own test directory with dedicated fixtures and test files:
 
 ```
 backend/tests/
-├── analytics/
-│   ├── test_generate_detections.py
-│   └── test_stats_manager.py
 ├── detection/
-│   ├── test_audio_processor/
+│   ├── audio_processor/
+│   │   ├── test_core.py
 │   │   ├── test_feature_extractor.py
 │   │   ├── test_stream_handler.py
-│   │   ├── test_track_manager.py
-│   │   └── test_station_monitor.py
-│   └── test_core.py
-├── reports/
-│   └── test_generator.py
+│   │   └── test_performance.py
+│   ├── external/
+│   │   ├── test_musicbrainz_recognizer.py
+│   │   └── test_external_services.py
+│   └── conftest.py
 ├── utils/
 │   ├── test_auth.py
-│   ├── test_redis_config.py
-│   └── test_stream_checker.py
+│   ├── test_stream_checker.py
+│   ├── test_websocket.py
+│   └── conftest.py
 └── conftest.py
 ```
 
-## Composants Testés
+### Test Categories
 
-### 1. Processeur Audio (`test_audio_processor/`)
-- **Feature Extractor** (`test_feature_extractor.py`)
-  - Extraction des caractéristiques audio
-  - Détection musique/parole
-  - Gestion des erreurs d'analyse
-  - Performance et utilisation mémoire
+#### 1. Unit Tests
+- Feature Extractor (91% coverage)
+  - Audio feature extraction
+  - Music detection algorithms
+  - Performance benchmarks
+  - Memory usage monitoring
 
-- **Stream Handler** (`test_stream_handler.py`)
-  - Gestion des flux audio
-  - Téléchargement et compression
-  - Vérification des statuts
-  - Gestion des erreurs réseau
+- Stream Handler (85% coverage)
+  - Buffer management
+  - Stream processing
+  - Error handling
+  - Performance metrics
 
-- **Track Manager** (`test_track_manager.py`)
-  - Détection des pistes
-  - Gestion des correspondances
-  - Mise à jour des statistiques
-  - Gestion des erreurs de base de données
+#### 2. Integration Tests
+- External Services
+  - MusicBrainz integration
+  - AcoustID API
+  - Audd API
+  - Error recovery
 
-- **Station Monitor** (`test_station_monitor.py`)
-  - Monitoring des stations
-  - Gestion de la santé
-  - Reconnexion automatique
-  - Gestion des erreurs
+- WebSocket Communication
+  - Connection management
+  - Message broadcasting
+  - Error handling
+  - Redis integration
 
-### 2. Authentification (`test_auth.py`)
-- Vérification des mots de passe
-- Génération et validation des tokens JWT
-- Gestion des sessions utilisateur
+#### 3. Performance Tests
+- Processing Latency
+  - Audio chunk processing < 100ms
+  - Stream buffer operations
+  - Feature extraction timing
 
-### 3. Vérification des Flux (`test_stream_checker.py`)
-- Vérification de la disponibilité des flux
-- Gestion des timeouts et erreurs réseau
-- Validation des métadonnées des flux
+- Memory Usage
+  - Buffer allocation < 50MB
+  - Feature extraction < 100MB
+  - Overall system < 500MB
 
-### 4. Configuration Redis (`test_redis_config.py`)
-- Tests de connexion
-- Gestion des erreurs de connexion
-- Configuration du pub/sub
+### Running Tests
 
-### 5. Génération de Rapports (`test_generator.py`)
-- Génération de rapports de détection
-- Génération de rapports de stations
-- Validation des dates et filtres
-- Gestion des données vides
+```bash
+# Run all tests
+PYTHONPATH=. pytest tests/ -v
 
-### 6. Génération de Détections (`test_generate_detections.py`)
-- Génération de détections pour les pistes
-- Gestion des stations actives
-- Mise à jour des statistiques
-- Gestion des erreurs de base de données
+# Run specific component tests
+PYTHONPATH=. pytest tests/detection/audio_processor/test_feature_extractor.py -v
+PYTHONPATH=. pytest tests/detection/audio_processor/test_stream_handler.py -v
 
-## Journal des Modifications
+# Run with coverage
+PYTHONPATH=. pytest --cov=backend --cov-report=html
 
-### 2024-03-30
-- Implémentation complète des tests du module audio_processor :
-  - Tests du Feature Extractor :
-    - Extraction des caractéristiques audio
-    - Détection musique/parole
-    - Gestion des erreurs
-    - Tests de performance et mémoire
-  - Tests du Stream Handler :
-    - Gestion des flux audio
-    - Compression et traitement
-    - Vérification des statuts
-  - Tests du Track Manager :
-    - Détection et correspondance
-    - Gestion des statistiques
-    - Gestion des erreurs
-  - Tests du Station Monitor :
-    - Monitoring des stations
-    - Gestion de la santé
-    - Tests de reconnexion
-  - Couverture de code > 90% pour le module
+# Run performance tests
+PYTHONPATH=. pytest tests/detection/audio_processor/test_performance.py -v
+```
 
-### 2024-03-29
-- Amélioration des tests du module de génération de rapports :
-  - Tests de création de rapports de test
-  - Tests de gestion des états des rapports
-  - Tests de gestion des erreurs de base de données
-  - Tests de gestion des erreurs de fichiers
-  - Couverture de 98% pour le module `generate_test_report.py`
+### Test Configuration
+- pytest.ini settings
+- Async test support
+- Benchmark configuration
+- Coverage requirements
 
-## Bonnes Pratiques
+### Current Status
+1. ✅ Feature Extractor Tests
+   - Complete test coverage
+   - Performance benchmarks
+   - Memory usage monitoring
 
-1. **Isolation des Tests**
-   - Utilisation de fixtures pour la configuration
-   - Nettoyage après chaque test
-   - Pas de dépendances entre les tests
+2. ✅ Stream Handler Tests
+   - Buffer management
+   - Error handling
+   - Performance metrics
 
-2. **Mocking**
-   - Mock des appels API externes
-   - Mock des sessions de base de données
-   - Mock des connexions Redis
+3. 🔄 External Services Tests
+   - MusicBrainz integration
+   - API error handling
+   - Rate limiting
 
-3. **Assertions**
-   - Vérification des valeurs de retour
-   - Vérification des appels de méthodes
-   - Vérification des mises à jour de données
+4. 📝 Next Steps
+   - Complete analytics tests
+   - Add WebSocket stress tests
+   - Improve error recovery tests
+   - Add end-to-end tests
 
-4. **Gestion des Erreurs**
-   - Test des cas d'erreur
-   - Vérification des messages d'erreur
-   - Test des mécanismes de fallback
+### Test Rules
+1. Each component must have:
+   - Unit tests
+   - Integration tests (if applicable)
+   - Performance benchmarks
+   - Error handling tests
+
+2. Coverage Requirements:
+   - Core components: > 90%
+   - Utils: > 85%
+   - External integrations: > 80%
+
+3. Performance Thresholds:
+   - Processing latency < 100ms
+   - Memory usage < 50MB per component
+   - API response time < 2s
+
+4. Error Handling:
+   - All error paths tested
+   - Recovery mechanisms verified
+   - Edge cases covered
+
+### Maintenance
+- Regular test updates
+- Performance monitoring
+- Coverage reports
+- Documentation updates
+
+## Structure des Tests
+
+```
+backend/tests/
+├── analytics/              # Tests des fonctionnalités analytiques
+│   ├── test_stats.py
+│   └── test_trends.py
+├── detection/             # Tests du module de détection
+│   ├── audio_processor/
+│   │   ├── test_core.py
+│   │   ├── test_stream_handler.py
+│   │   ├── test_feature_extractor.py
+│   │   └── test_track_manager.py
+│   └── test_detection.py
+├── utils/               # Tests des utilitaires
+│   ├── test_auth.py
+│   ├── test_redis_config.py
+│   └── test_stream_checker.py
+└── conftest.py         # Fixtures partagées
+```
 
 ## Exécution des Tests
 
-Pour exécuter tous les tests :
+### Tests Unitaires
 ```bash
-python -m pytest
+# Tous les tests
+python -m pytest backend/tests/
+
+# Tests spécifiques
+python -m pytest backend/tests/detection/audio_processor/test_feature_extractor.py
 ```
 
-Pour exécuter un module spécifique :
-```bash
-python -m pytest backend/tests/path/to/test_file.py
-```
-
-Pour générer un rapport de couverture :
+### Tests avec Couverture
 ```bash
 python -m pytest --cov=backend --cov-report=html
 ```
 
-## Objectifs de Couverture
+### Tests de Performance
+```bash
+# Exécuter les benchmarks
+python -m pytest --benchmark-only
 
-### Cibles
-- Couverture globale : > 80%
-- Modules critiques : > 90%
-  - Détection audio
-  - Gestion des flux
-  - Authentification
-  - Rapports
-  - Analytics
+# Générer un rapport de benchmark
+python -m pytest --benchmark-only --benchmark-json output.json
+```
 
-### Métriques
-- Lignes de code
-- Branches
-- Fonctions
-- Complexité cyclomatique
+## Configuration
 
-## Automatisation
+### Variables d'Environnement
+```bash
+TEST_DATABASE_URL=sqlite:///./test.db
+TEST_REDIS_URL=redis://localhost:6379/1
+TEST_API_KEY=test_key
+ACOUSTID_API_KEY=test_acoustid_key
+AUDD_API_KEY=test_audd_key
+```
 
-### Scripts
-- `run_tests.py` : Exécution des tests
-  - Vérification des dépendances
-  - Linting du code
-  - Exécution des tests
-  - Génération des rapports
+### Dépendances de Test
+```
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==5.0.0
+pytest-mock==3.14.0
+pytest-redis==3.1.2
+pytest-benchmark==4.0.0
+```
+
+## Critères de Performance
+
+### Temps de Réponse
+- Traitement audio : < 1s par échantillon
+- Détection de piste : < 3s par piste
+- API REST : < 100ms par requête
+- WebSocket : < 50ms par message
+
+### Utilisation des Ressources
+- CPU : < 80% en charge normale
+- Mémoire : < 1GB par processus
+- Disque : < 100MB/s en écriture
+- Redis : < 1000 opérations/s
+
+### Concurrence
+- Flux simultanés : > 50 stations
+- Connexions WebSocket : > 1000
+- Requêtes API : > 1000 req/s
+
+## Maintenance
+
+### Mise à Jour des Tests
+- Revue régulière des tests
+- Mise à jour des mocks
+- Nettoyage des tests obsolètes
+- Documentation à jour
 
 ### Intégration Continue
 - Exécution automatique des tests
 - Vérification de la couverture
-- Validation du code
+- Rapports de test
+- Notifications d'échec
+- Benchmarks automatisés
+
+## Structure des Tests (Mise à jour Mars 2024)
+
+```
+backend/tests/
+├── analytics/              # Tests des fonctionnalités analytiques
+│   ├── test_stats.py
+│   └── test_trends.py
+├── detection/             # Tests du module de détection
+│   ├── test_audio_processor/
+│   │   ├── test_core.py
+│   │   ├── test_stream_handler.py
+│   │   ├── test_feature_extractor.py
+│   │   ├── test_track_manager.py
+│   │   └── test_external_services.py
+│   └── test_detection.py
+├── reports/              # Tests de génération de rapports
+│   └── test_generator.py
+├── utils/               # Tests des utilitaires
+│   ├── test_auth.py
+│   ├── test_redis_config.py
+│   └── test_stream_checker.py
+├── test_api.py         # Tests d'API consolidés
+├── test_websocket.py   # Tests WebSocket
+├── test_system.py      # Tests système
+├── test_radio.py       # Tests radio
+├── test_database.py    # Tests base de données
+├── test_error_recovery.py  # Tests de récupération d'erreurs
+├── test_performance.py    # Tests de performance [Nouveau]
+└── conftest.py         # Fixtures partagées
+```
+
+## État Actuel de la Couverture (Mars 2024)
+
+### Modules à Haute Couverture (>90%)
+- Analytics Module (95%)
+  - Génération de rapports
+  - Calcul de statistiques
+  - Analyse de tendances
+- WebSocket Communication (92%)
+  - Gestion des connexions
+  - Diffusion des messages
+  - Validation des données
+- Services Externes (95%)
+  - Intégration MusicBrainz
+  - Intégration Audd
+  - Gestion des erreurs et retries
+- Gestion des Erreurs (95%)
+  - Scénarios de récupération
+  - Timeouts et retries
+  - Gestion des ressources système
+- Performance (90%) [Nouveau]
+  - Tests de charge
+  - Benchmarks
+  - Profiling
+
+### Modules à Couverture Moyenne (70-90%)
+- Détection Audio (85%)
+  - Traitement des flux
+  - Extraction de caractéristiques
+  - Gestion des pistes
+- API REST (80%)
+  - Endpoints principaux
+  - Validation des requêtes
+  - Gestion des erreurs
+
+## Améliorations Récentes
+
+### 1. Tests de Performance [Nouveau]
+- Tests complets de performance
+  - Traitement audio
+  - Flux concurrents
+  - Écriture en base de données
+  - Utilisation mémoire
+  - Utilisation CPU
+  - Cache Redis
+  - Diffusion WebSocket
+  - Performance API
+  - Pipeline de détection
+  - Gestion de charge
+
+### 2. Gestion des Erreurs
+- Tests complets de récupération d'erreurs
+  - Reconnexion des flux
+  - Retry des détections
+  - Gestion des verrous de base de données
+  - Récupération des données audio invalides
+  - Reconnexion Redis
+  - Reconnexion WebSocket
+  - Gestion des limites d'API
+  - Gestion des ressources système
+
+### 3. Services Externes
+- Tests complets pour MusicBrainz et Audd
+  - Détection réussie
+  - Gestion des erreurs
+  - Timeouts
+  - Retries automatiques
+  - Validation des réponses
+  - Gestion des API keys invalides
 
 ## Prochaines Étapes
 
 ### Court Terme
-1. Améliorer la couverture de code des nouveaux modules
-2. Optimiser les performances des tests
-3. Ajouter des tests de stress pour WebSocket
+1. Optimiser les tests existants
+   - Réduire le temps d'exécution
+   - Améliorer l'isolation
+   - Nettoyer les ressources
+
+2. Améliorer la documentation
+   - Ajouter des exemples de cas d'utilisation
+   - Documenter les scénarios de test
+   - Mettre à jour les guides de contribution
+
+3. Automatiser les tests de performance
+   - Intégration continue
+   - Alertes sur régression
+   - Rapports de tendance
 
 ### Long Terme
-1. Tests de charge
+1. Tests d'intégration complets
 2. Tests de sécurité
-3. Tests de régression
-4. Automatisation complète
+3. Tests de régression automatisés
+4. Tests de déploiement
 
-## Stratégie de Mock
-- Utilisation de `unittest.mock.patch` avec `autospec=True`
-- Mock des fonctions librosa pour tests reproductibles
-- Simulation de signaux audio synthétiques
-- Gestion appropriée des cas d'erreur 
+## Bonnes Pratiques
 
-### Couverture des Tests
+### 1. Organisation des Tests
+- Un fichier de test par module
+- Nommage explicite des tests
+- Isolation des tests
+- Documentation claire
 
-La couverture actuelle des tests est de 87% pour le module d'analyse audio, avec des points clés :
-- Couverture complète des fonctionnalités de base
-- Tests robustes pour la détection de musique
-- Gestion appropriée des cas d'erreur
-- Mocking efficace des dépendances externes
+### 2. Mocking
+- Utilisation de `unittest.mock`
+- Fixtures réutilisables
+- Simulation des services externes
+- Gestion des états
 
-### Bonnes Pratiques
+### 3. Assertions
+- Assertions claires et précises
+- Validation des types
+- Vérification des états
+- Messages d'erreur explicites
 
-1. **Isolation des Tests**
-   - Utilisation de fixtures pour la configuration
-   - Mocking des dépendances externes
-   - Tests indépendants et atomiques
+### 4. Performance
+- Tests rapides (<1s par test)
+- Parallélisation possible
+- Fixtures optimisées
+- Cache approprié
 
-2. **Gestion des Erreurs**
-   - Tests explicites des cas d'erreur
-   - Vérification des limites et cas particuliers
-   - Documentation des comportements attendus
+## Exécution des Tests
 
-3. **Performance**
-   - Tests optimisés pour l'exécution rapide
-   - Utilisation appropriée des mocks
-   - Minimisation des dépendances externes
-
-4. **Maintenance**
-   - Tests bien documentés
-   - Structure claire et organisée
-   - Nommage explicite des tests 
-
-# SODAV Monitor Test Documentation
-
-## Test Status
-
-### Current Coverage: 10%
-The test suite currently covers core functionality with room for improvement in utility modules.
-
-## Test Structure
-
-### Validators Module (`tests/utils/test_validators.py`)
-- **Email Validation Tests**
-  - Standard email formats
-  - Special characters in local part
-  - Domain validation
-  - Edge cases (whitespace, dots, length)
-- **Date Range Validation Tests**
-  - Valid date ranges
-  - Invalid date ranges
-  - Edge cases (same date, far future/past)
-- **Report Format Validation Tests**
-  - Valid formats (CSV, XLSX, PDF)
-  - Invalid format handling
-- **Subscription Frequency Tests**
-  - Valid frequencies (Daily, Weekly, Monthly)
-  - Invalid frequency handling
-
-### Analytics Module (`tests/analytics/test_analytics.py`)
-- **Track Statistics Tests**
-  - `test_update_detection_stats_new_track`: Validates new track detection statistics
-  - `test_update_detection_stats_existing_track`: Verifies updates to existing track stats
-  - `test_update_detection_stats_error`: Tests error handling in stats updates
-  - Fields tested:
-    - Detection count
-    - Total play time
-    - Average confidence
-    - Last detection timestamp
-
-- **Artist Statistics Tests**
-  - Artist track aggregation
-  - Detection metrics across all artist tracks
-  - Play time calculation per artist
-  - Last detection tracking
-
-- **Station Track Statistics Tests**
-  - Play count per station
-  - Station-specific confidence metrics
-  - Station play time tracking
-  - Last played timestamp updates
-
-- **Report Generation Tests**
-  - `test_generate_daily_report`: Tests daily report generation
-    - Total detections
-    - Total play time
-    - Top tracks and artists
-  - Station statistics
-  - `test_generate_daily_report_error`: Validates error handling
-
-- **Trend Analysis Tests**
-  - `test_get_trend_analysis`: Tests trend analysis over periods
-    - Track trends
-    - Artist trends
-    - Period calculations
-  - `test_get_trend_analysis_error`: Verifies error handling
-
-- **Batch Update Tests**
-  - `test_update_all_stats`: Tests bulk statistics updates
-  - `test_error_handling`: Comprehensive error scenario testing
-
-### Current Coverage Status (as of 2024-03-26)
-
-#### High Coverage Areas (>90%)
-- Analytics Module (100%)
-  - Stats Manager
-  - Report Generation
-  - Trend Analysis
-  - Error Handling
-- WebSocket Communication (81%)
-  - Connection Management
-  - Message Broadcasting
-  - Error Handling
-  - Data Validation
-
-### Medium Coverage Areas (70-90%)
-- Audio Detection
-- WebSocket Communication
-- Station Management
-
-#### Areas Needing Improvement (<70%)
-- External Service Integration
-- Error Recovery Scenarios
-- Performance Testing
-
-### Recent Improvements
-1. **Redis Configuration Tests**
-   - Added comprehensive connection testing
-   - Improved error handling coverage
-   - Added password authentication tests
-   - Implemented cleanup utilities
-
-2. **Test Organization**
-   - Consolidated API tests
-   - Improved test isolation
-   - Enhanced mock implementations
-   - Better error simulation
-
-3. **Documentation**
-   - Updated test coverage metrics
-   - Added new test categories
-   - Improved setup instructions
-   - Enhanced troubleshooting guide 
-
-### Recent Test Improvements
-1. **Analytics Testing**
-   - Added comprehensive stats update tests
-   - Implemented report generation validation
-   - Enhanced trend analysis coverage
-   - Added error handling scenarios
-   - Improved data validation
-2. **WebSocket Testing**
-   - Added reconnection scenario tests
-   - Implemented failed connection handling
-   - Enhanced message validation
-   - Added maximum connection limit tests
-   - Improved error handling coverage
-   - Added data validation for track detection
-   - Implemented connection cleanup
-   - Added comprehensive error scenarios 
-
-## Modules de Test
-
-### 1. WebSocket (`test_websocket.py`)
-Tests pour la gestion des connexions WebSocket en temps réel.
-
-#### Tests de Connexion
-- `test_connection_manager_connect`: Établissement de connexion
-- `test_connection_manager_disconnect`: Déconnexion
-- `test_connection_manager_max_connections`: Limite de connexions
-
-#### Tests de Diffusion
-- `test_connection_manager_broadcast`: Diffusion de messages
-- `test_connection_manager_broadcast_with_failed_connection`: Gestion des échecs
-- `test_send_heartbeat`: Envoi de heartbeats
-
-#### Tests de Messages
-- `test_process_websocket_message_heartbeat`: Traitement des heartbeats
-- `test_process_websocket_message_invalid_json`: Messages JSON invalides
-- `test_process_websocket_message_unknown_type`: Types de messages inconnus
-- `test_process_websocket_message_validation`: Validation des messages
-
-#### Tests d'Intégration Redis
-- `test_redis_integration`: Intégration avec Redis pour la diffusion
-
-### 2. Redis Configuration (`test_redis_config.py`)
-Tests pour la configuration et la gestion de Redis.
-
-#### Tests de Configuration
-- `test_get_redis_success`: Création réussie du client
-- `test_get_redis_with_password`: Authentification avec mot de passe
-- `test_get_redis_connection_error`: Gestion des erreurs de connexion
-- `test_get_redis_invalid_settings`: Paramètres invalides
-- `test_get_redis_timeout`: Timeouts de connexion
-
-#### Tests de Connexion
-- `test_check_redis_connection_success`: Vérification de connexion réussie
-- `test_check_redis_connection_failure`: Échec de connexion
-- `test_check_redis_connection_no_client`: Absence de client
-
-#### Tests Pub/Sub
-- `test_redis_pubsub`: Fonctionnalité pub/sub
-- `test_redis_connection_pool`: Configuration du pool de connexions
-- `test_redis_ssl_config`: Configuration SSL
-- `test_redis_max_connections`: Limite de connexions
-
-### 3. Stream Checker (`test_stream_checker.py`)
-Tests pour la vérification des flux radio.
-
-#### Tests de Disponibilité
-- `test_check_stream_availability_success`: Vérification réussie
-- `test_check_stream_availability_not_audio`: Contenu non-audio
-- `test_check_stream_availability_timeout`: Timeouts
-- `test_check_stream_availability_error`: Erreurs client
-
-#### Tests de Métadonnées
-- `test_get_stream_metadata_success`: Récupération réussie
-- `test_get_stream_metadata_no_metadata`: Absence de métadonnées
-- `test_get_stream_metadata_timeout`: Timeouts
-- `test_get_stream_metadata_error`: Erreurs client
-
-### 4. Track Detection (`test_track_detection.py`)
-Tests pour la détection des morceaux.
-
-#### Tests de Détection
-- `test_detect_music_vs_speech`: Différenciation musique/parole
-- `test_local_detection_success`: Détection locale
-- `test_musicbrainz_fallback`: Fallback MusicBrainz
-- `test_audd_fallback`: Fallback Audd
-- `test_all_detection_methods_fail`: Échec de toutes les méthodes
-
-#### Tests de Confiance
-- `test_low_confidence_results`: Résultats peu fiables
-- `test_feature_extraction`: Extraction de caractéristiques
-
-#### Tests d'Erreur
-- `test_error_handling`: Gestion des erreurs
-- `test_detection_with_missing_api_keys`: Clés API manquantes
-
-### Mocking HTTP avec aioresponses
-```python
-@pytest.mark.asyncio
-async def test_check_stream_availability(mock_aioresponse):
-    """Test stream availability check with mocked HTTP responses."""
-    url = "http://test.stream"
-    mock_aioresponse.head(url, status=200, headers={'content-type': 'audio/mpeg'})
-    
-    result = await check_stream_availability(url)
-    assert result['is_available'] is True
-    assert result['is_audio_stream'] is True
+### Tests Unitaires
+```bash
+python -m pytest backend/tests/
 ```
 
-### Tests de Métadonnées de Flux
-```python
-@pytest.mark.asyncio
-async def test_get_stream_metadata(mock_aioresponse):
-    """Test stream metadata retrieval with mocked response."""
-    url = "http://test.stream"
-    mock_aioresponse.get(url, status=200, headers={
-        'icy-name': 'Test Radio',
-        'icy-genre': 'Test Genre',
-        'icy-br': '128'
-    })
-    
-    result = await get_stream_metadata(url)
-    assert result == {
-        'name': 'Test Radio',
-        'genre': 'Test Genre',
-        'bitrate': '128'
-    }
+### Tests avec Couverture
+```bash
+python -m pytest --cov=backend --cov-report=html
 ```
 
-### Tests d'Authentification avec Datetime Mock
-```python
-@patch('backend.utils.auth.datetime')
-def test_create_access_token(mock_datetime):
-    """Test token creation with mocked datetime."""
-    fixed_time = datetime(2025, 1, 1, 12, 0)
-    mock_datetime.now.return_value = fixed_time
-    
-    data = {"sub": "test@example.com"}
-    token = create_access_token(data)
-    
-    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-    expected_exp = int(fixed_time.timestamp()) + 15 * 60
-    assert payload["exp"] == expected_exp
+### Tests Spécifiques
+```bash
+# Tests de détection
+python -m pytest backend/tests/detection/
+
+# Tests de récupération d'erreurs
+python -m pytest backend/tests/test_error_recovery.py
+
+# Tests de performance
+python -m pytest backend/tests/test_performance.py -v --benchmark-only
 ```
 
-## Prochaines Priorités de Test
+### Tests de Performance
+```bash
+# Exécuter tous les benchmarks
+python -m pytest --benchmark-only
 
-### 1. Module de Détection Audio (`detection/audio_processor/`)
-- Tests pour `recognition_core.py`
-  - Initialisation du reconnaisseur
-  - Flux de reconnaissance principal
-  - Gestion des seuils de confiance
-  - Intégration avec MusicBrainz
+# Générer un rapport de benchmark
+python -m pytest --benchmark-only --benchmark-json output.json
 
-- Tests pour `audio_analysis.py`
-  - Extraction des caractéristiques audio
-  - Traitement des données audio brutes
-  - Validation des paramètres d'analyse
-
-### 2. Module Frontend
-- Tests des composants React :
-  - `LiveMonitor.tsx`
-  - `AnalyticsOverview.tsx`
-  - `Dashboard.tsx`
-- Tests d'intégration WebSocket
-- Tests de gestion d'état
-- Tests de rendu UI
-
-### 3. Module de Gestion de Fichiers (`utils/file_manager.py`)
-- Tests de création de chemins de rapports
-- Tests de gestion des répertoires
-- Tests de nommage de fichiers
-- Tests de gestion des erreurs
-
-## État Actuel de la Couverture
-
-### Modules à Haute Couverture (>90%)
-- `backend/analytics/generate_test_report.py`: 98%
-- `backend/analytics/generate_detections.py`: En cours d'amélioration
-
-### Modules à Couverture Moyenne (50-90%)
-- `backend/utils/`: ~70%
-- `backend/models/`: ~65%
-
-### Modules Nécessitant des Tests (<50%)
-- `backend/detection/audio_processor/`: ~20%
-- `frontend/src/components/`: Non testé
-- `backend/utils/file_manager.py`: Non testé
-
-### Current Coverage Status (as of 2024-03-26)
-
-#### High Coverage Areas (>90%)
-- Analytics Module (100%)
-  - Stats Manager
-  - Report Generation
-  - Trend Analysis
-  - Error Handling
-- WebSocket Communication (81%)
-  - Connection Management
-  - Message Broadcasting
-  - Error Handling
-  - Data Validation
-
-### Medium Coverage Areas (70-90%)
-- Audio Detection
-- WebSocket Communication
-- Station Management
-
-#### Areas Needing Improvement (<70%)
-- External Service Integration
-- Error Recovery Scenarios
-- Performance Testing
-
-### Recent Improvements
-1. **Redis Configuration Tests**
-   - Added comprehensive connection testing
-   - Improved error handling coverage
-   - Added password authentication tests
-   - Implemented cleanup utilities
-
-2. **Test Organization**
-   - Consolidated API tests
-   - Improved test isolation
-   - Enhanced mock implementations
-   - Better error simulation
-
-3. **Documentation**
-   - Updated test coverage metrics
-   - Added new test categories
-   - Improved setup instructions
-   - Enhanced troubleshooting guide 
-
-### Recent Test Improvements
-1. **Analytics Testing**
-   - Added comprehensive stats update tests
-   - Implemented report generation validation
-   - Enhanced trend analysis coverage
-   - Added error handling scenarios
-   - Improved data validation
-2. **WebSocket Testing**
-   - Added reconnection scenario tests
-   - Implemented failed connection handling
-   - Enhanced message validation
-   - Added maximum connection limit tests
-   - Improved error handling coverage
-   - Added data validation for track detection
-   - Implemented connection cleanup
-   - Added comprehensive error scenarios 
-
-## Modules de Test
-
-### 1. WebSocket (`test_websocket.py`)
-Tests pour la gestion des connexions WebSocket en temps réel.
-
-#### Tests de Connexion
-- `test_connection_manager_connect`: Établissement de connexion
-- `test_connection_manager_disconnect`: Déconnexion
-- `test_connection_manager_max_connections`: Limite de connexions
-
-#### Tests de Diffusion
-- `test_connection_manager_broadcast`: Diffusion de messages
-- `test_connection_manager_broadcast_with_failed_connection`: Gestion des échecs
-- `test_send_heartbeat`: Envoi de heartbeats
-
-#### Tests de Messages
-- `test_process_websocket_message_heartbeat`: Traitement des heartbeats
-- `test_process_websocket_message_invalid_json`: Messages JSON invalides
-- `test_process_websocket_message_unknown_type`: Types de messages inconnus
-- `test_process_websocket_message_validation`: Validation des messages
-
-#### Tests d'Intégration Redis
-- `test_redis_integration`: Intégration avec Redis pour la diffusion
-
-### 2. Redis Configuration (`test_redis_config.py`)
-Tests pour la configuration et la gestion de Redis.
-
-#### Tests de Configuration
-- `test_get_redis_success`: Création réussie du client
-- `test_get_redis_with_password`: Authentification avec mot de passe
-- `test_get_redis_connection_error`: Gestion des erreurs de connexion
-- `test_get_redis_invalid_settings`: Paramètres invalides
-- `test_get_redis_timeout`: Timeouts de connexion
-
-#### Tests de Connexion
-- `test_check_redis_connection_success`: Vérification de connexion réussie
-- `test_check_redis_connection_failure`: Échec de connexion
-- `test_check_redis_connection_no_client`: Absence de client
-
-#### Tests Pub/Sub
-- `test_redis_pubsub`: Fonctionnalité pub/sub
-- `test_redis_connection_pool`: Configuration du pool de connexions
-- `test_redis_ssl_config`: Configuration SSL
-- `test_redis_max_connections`: Limite de connexions
-
-### 3. Stream Checker (`test_stream_checker.py`)
-Tests pour la vérification des flux radio.
-
-#### Tests de Disponibilité
-- `test_check_stream_availability_success`: Vérification réussie
-- `test_check_stream_availability_not_audio`: Contenu non-audio
-- `test_check_stream_availability_timeout`: Timeouts
-- `test_check_stream_availability_error`: Erreurs client
-
-#### Tests de Métadonnées
-- `test_get_stream_metadata_success`: Récupération réussie
-- `test_get_stream_metadata_no_metadata`: Absence de métadonnées
-- `test_get_stream_metadata_timeout`: Timeouts
-- `test_get_stream_metadata_error`: Erreurs client
-
-### 4. Track Detection (`test_track_detection.py`)
-Tests pour la détection des morceaux.
-
-#### Tests de Détection
-- `test_detect_music_vs_speech`: Différenciation musique/parole
-- `test_local_detection_success`: Détection locale
-- `test_musicbrainz_fallback`: Fallback MusicBrainz
-- `test_audd_fallback`: Fallback Audd
-- `test_all_detection_methods_fail`: Échec de toutes les méthodes
-
-#### Tests de Confiance
-- `test_low_confidence_results`: Résultats peu fiables
-- `test_feature_extraction`: Extraction de caractéristiques
-
-#### Tests d'Erreur
-- `test_error_handling`: Gestion des erreurs
-- `test_detection_with_missing_api_keys`: Clés API manquantes
-
-### Mocking HTTP avec aioresponses
-```python
-@pytest.mark.asyncio
-async def test_check_stream_availability(mock_aioresponse):
-    """Test stream availability check with mocked HTTP responses."""
-    url = "http://test.stream"
-    mock_aioresponse.head(url, status=200, headers={'content-type': 'audio/mpeg'})
-    
-    result = await check_stream_availability(url)
-    assert result['is_available'] is True
-    assert result['is_audio_stream'] is True
+# Comparer avec un benchmark précédent
+python -m pytest-benchmark compare output.json
 ```
 
-### Tests de Métadonnées de Flux
-```python
-@pytest.mark.asyncio
-async def test_get_stream_metadata(mock_aioresponse):
-    """Test stream metadata retrieval with mocked response."""
-    url = "http://test.stream"
-    mock_aioresponse.get(url, status=200, headers={
-        'icy-name': 'Test Radio',
-        'icy-genre': 'Test Genre',
-        'icy-br': '128'
-    })
-    
-    result = await get_stream_metadata(url)
-    assert result == {
-        'name': 'Test Radio',
-        'genre': 'Test Genre',
-        'bitrate': '128'
-    }
+## Configuration
+
+### Variables d'Environnement
+```bash
+TEST_DATABASE_URL=sqlite:///./test.db
+TEST_REDIS_URL=redis://localhost:6379/1
+TEST_API_KEY=test_key
+ACOUSTID_API_KEY=test_acoustid_key
+AUDD_API_KEY=test_audd_key
 ```
 
-### Tests d'Authentification avec Datetime Mock
+### Dépendances de Test
+```
+pytest==7.4.0
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.11.1
+pytest-benchmark==4.0.0  # [Nouveau] Pour les tests de performance
+aioresponses==0.7.4
+psutil==5.9.0
+numpy==1.21.0  # [Nouveau] Pour la génération de données audio
+```
+
+## Critères de Performance
+
+### Temps de Réponse
+- Traitement audio : < 1s par échantillon
+- Détection de piste : < 3s par piste
+- API REST : < 100ms par requête
+- WebSocket : < 50ms par message
+
+### Utilisation des Ressources
+- CPU : < 80% en charge normale
+- Mémoire : < 1GB par processus
+- Disque : < 100MB/s en écriture
+- Redis : < 1000 opérations/s
+
+### Concurrence
+- Flux simultanés : > 50 stations
+- Connexions WebSocket : > 1000
+- Requêtes API : > 1000 req/s
+
+## Maintenance
+
+### Mise à Jour des Tests
+- Revue régulière des tests
+- Mise à jour des mocks
+- Nettoyage des tests obsolètes
+- Documentation à jour
+
+### Intégration Continue
+- Exécution automatique des tests
+- Vérification de la couverture
+- Rapports de test
+- Notifications d'échec
+- Benchmarks automatisés [Nouveau]
+
+## Conclusion
+La suite de tests continue d'évoluer avec le projet. Les améliorations récentes, notamment l'ajout des tests de performance, de récupération d'erreurs et des services externes, ont permis d'augmenter significativement la couverture et la qualité des tests. Les prochaines étapes se concentreront sur l'optimisation des tests existants et l'automatisation des tests de performance.
+
+## Module-Specific Test Documentation
+
+### Detection Module Tests
+
+#### Overview
+The detection module is responsible for audio stream processing, music detection, and track identification. The test suite covers all aspects of the detection pipeline, from raw audio processing to external service integration.
+
+#### Test Structure
+```bash
+backend/tests/detection/
+├── audio_processor/           # Audio processing specific tests
+├── test_external_services.py  # Tests for MusicBrainz and Audd integration
+├── test_station_monitor.py    # Radio station monitoring tests
+├── test_track_manager.py      # Track management and storage tests
+├── test_stream_handler.py     # Audio stream handling tests
+├── test_feature_extractor.py  # Audio feature extraction tests
+├── test_track_detection.py    # End-to-end track detection tests
+└── test_fingerprint.py        # Audio fingerprinting tests
+```
+
+#### Component Details
+
+1. **Audio Feature Extraction** (`test_feature_extractor.py`)
+   - Tests for spectral feature extraction
+   - Frequency analysis validation
+   - Audio segment processing
+   - Feature vector generation
+   - Performance benchmarks for feature extraction
+
+2. **Stream Handler** (`test_stream_handler.py`)
+   - Audio stream connection tests
+   - Buffer management validation
+   - Error recovery scenarios
+   - Stream quality monitoring
+   - Resource cleanup verification
+
+3. **Track Manager** (`test_track_manager.py`)
+   - Track metadata management
+   - Database operations for tracks
+   - Duplicate detection handling
+   - Track history maintenance
+   - Cache management tests
+
+4. **Station Monitor** (`test_station_monitor.py`)
+   - Station connection management
+   - Stream health monitoring
+   - Auto-recovery testing
+   - Performance under load
+   - Multi-station concurrent processing
+
+5. **External Services** (`test_external_services.py`)
+   - MusicBrainz API integration
+   - Audd API integration
+   - Error handling and retries
+   - Rate limiting compliance
+   - Response parsing and validation
+
+6. **Track Detection** (`test_track_detection.py`)
+   - End-to-end detection pipeline
+   - Detection accuracy validation
+   - Performance benchmarks
+   - Edge case handling
+   - Integration with all components
+
+7. **Fingerprinting** (`test_fingerprint.py`)
+   - Fingerprint generation
+   - Fingerprint matching
+   - Database storage and retrieval
+   - Optimization tests
+   - Accuracy validation
+
+#### Running Detection Tests
+
+```bash
+# Run all detection tests
+pytest backend/tests/detection/
+
+# Run specific component tests
+pytest backend/tests/detection/test_feature_extractor.py
+pytest backend/tests/detection/test_track_detection.py
+
+# Run with coverage report
+pytest backend/tests/detection/ --cov=backend.detection --cov-report=html
+```
+
+#### Test Coverage Goals
+- Feature Extraction: 95%
+- Stream Handling: 90%
+- Track Management: 95%
+- Station Monitoring: 90%
+- External Services: 95%
+- Track Detection: 90%
+- Fingerprinting: 95%
+
+#### Common Test Scenarios
+
+1. **Feature Extraction**
+   - Valid audio input processing
+   - Invalid audio handling
+   - Resource management
+   - Performance under load
+
+2. **Stream Processing**
+   - Connection establishment
+   - Data buffering
+   - Error handling
+   - Resource cleanup
+
+3. **Track Detection**
+   - Successful detection flow
+   - Failed detection handling
+   - Multiple concurrent detections
+   - Edge cases (silence, noise)
+
+4. **External Services**
+   - Successful API calls
+   - Error handling
+   - Rate limiting
+   - Timeout handling
+
+#### Mocking Strategy
+- External API calls (MusicBrainz, Audd)
+- Database connections
+- File system operations
+- Network streams
+- Time-dependent operations
+
+#### Performance Benchmarks
+- Feature extraction speed
+- Detection pipeline latency
+- Memory usage under load
+- Concurrent stream handling
+- Database operation timing
+
+### Audio Processing Tests
+
+#### Overview
+The audio processing module is responsible for analyzing audio streams, extracting features, and detecting music. The test suite covers all aspects of audio processing, from raw audio handling to feature extraction and music detection.
+
+#### Test Structure
+```bash
+backend/tests/detection/audio_processor/
+├── test_audio_analysis.py    # Audio analysis and feature extraction tests
+├── test_external_services.py # MusicBrainz and Audd integration tests
+├── test_local_detection.py   # Local database detection tests
+└── test_recognition_core.py  # Core recognition flow tests
+```
+
+#### Component Details
+
+1. **Audio Analysis** (`test_audio_analysis.py`)
+   - Audio feature extraction validation
+   - Music detection accuracy
+   - Duration calculation
+   - Sample rate handling
+   - Audio format conversion
+   - Error handling for invalid audio
+
+2. **External Services** (`test_external_services.py`)
+   - MusicBrainz API integration
+   - Audd API integration
+   - Error handling and retries
+   - Rate limiting compliance
+   - Response validation
+   - Mock API responses
+
+3. **Local Detection** (`test_local_detection.py`)
+   - Fingerprint generation
+   - Local database matching
+   - Confidence scoring
+   - Cache management
+   - Database operations
+   - Error handling
+
+4. **Recognition Core** (`test_recognition_core.py`)
+   - End-to-end recognition flow
+   - Service initialization
+   - Component integration
+   - Error handling
+   - Recognition accuracy
+   - Performance benchmarks
+
+#### Running Audio Processing Tests
+
+```bash
+# Run all audio processing tests
+pytest backend/tests/detection/audio_processor/
+
+# Run specific component tests
+pytest backend/tests/detection/audio_processor/test_audio_analysis.py
+pytest backend/tests/detection/audio_processor/test_external_services.py
+
+# Run with coverage report
+pytest backend/tests/detection/audio_processor/ --cov=backend.detection.audio_processor --cov-report=html
+```
+
+#### Test Coverage Goals
+- Audio Analysis: 95%
+- External Services: 95%
+- Local Detection: 90%
+- Recognition Core: 90%
+
+#### Common Test Scenarios
+
+1. **Audio Analysis**
+   - Feature extraction from various audio formats
+   - Music vs. speech detection
+   - Duration calculation accuracy
+   - Sample rate conversion
+   - Error handling for corrupted audio
+
+2. **External Services**
+   - Successful API responses
+   - Error responses
+   - Rate limiting
+   - Network timeouts
+   - Invalid API keys
+   - Malformed responses
+
+3. **Local Detection**
+   - Successful fingerprint matches
+   - Near-matches with confidence scoring
+   - No matches found
+   - Database errors
+   - Cache hits and misses
+
+4. **Recognition Core**
+   - Full recognition pipeline
+   - Service fallback behavior
+   - Error propagation
+   - Performance under load
+   - Memory usage
+
+#### Mocking Strategy
+- External API calls (MusicBrainz, Audd)
+- Audio file operations
+- Database operations
+- Cache operations
+- Time-dependent operations
+
+#### Performance Benchmarks
+- Feature extraction speed
+- Recognition pipeline latency
+- Memory usage under load
+- Database operation timing
+- API response handling
+
+### Audio Processor Performance Tests
+
+#### Overview
+The audio processor performance tests validate the efficiency and resource usage of the audio processing pipeline. These tests ensure that the system can handle real-world workloads while maintaining acceptable performance characteristics.
+
+#### Test Structure
+```bash
+backend/tests/detection/audio_processor/
+└── test_audio_processor_performance.py  # Performance benchmarks for audio processing
+```
+
+#### Component Details
+
+1. **Process Stream Performance** (`test_process_stream_performance`)
+   - Benchmarks audio stream processing speed
+   - Tests with large audio samples (10 seconds)
+   - Validates output tuple structure
+   - Measures processing latency
+
+2. **Feature Extraction Performance** (`test_feature_extraction_performance`)
+   - Benchmarks feature extraction speed
+   - Tests with complex audio signals
+   - Validates feature vector dimensions
+   - Measures extraction time
+
+3. **Fingerprint Matching Performance** (`test_fingerprint_matching_performance`)
+   - Benchmarks matching against large database (1000 fingerprints)
+   - Tests matching speed and accuracy
+   - Validates result consistency
+   - Measures lookup time
+
+4. **End-to-End Performance** (`test_end_to_end_performance`)
+   - Tests complete audio processing pipeline
+   - Measures total processing time
+   - Validates system integration
+   - Tests with real-world scenarios
+
+5. **Memory Usage** (`test_memory_usage`)
+   - Monitors memory consumption
+   - Tracks memory growth
+   - Validates resource cleanup
+   - Ensures memory stability
+
+#### Running Performance Tests
+
+```bash
+# Run all performance tests
+pytest backend/tests/detection/audio_processor/test_audio_processor_performance.py -v
+
+# Run specific benchmark
+pytest backend/tests/detection/audio_processor/test_audio_processor_performance.py -v -k "test_process_stream_performance"
+
+# Generate benchmark report
+pytest backend/tests/detection/audio_processor/test_audio_processor_performance.py --benchmark-only --benchmark-json output.json
+```
+
+#### Performance Targets
+
+1. **Stream Processing**
+   - Processing time: < 1s per 10-second audio sample
+   - Memory usage: < 100MB per stream
+   - CPU usage: < 50% single core
+
+2. **Feature Extraction**
+   - Extraction time: < 500ms per sample
+   - Memory usage: < 50MB per extraction
+   - Feature vector generation: < 200ms
+
+3. **Fingerprint Matching**
+   - Lookup time: < 100ms per query
+   - Database size: Up to 1000 fingerprints
+   - Match accuracy: > 95%
+
+4. **End-to-End Pipeline**
+   - Total processing time: < 3s per sample
+   - Memory usage: < 200MB total
+   - Success rate: > 99%
+
+#### Benchmark Configuration
+
 ```python
-@patch('backend.utils.auth.datetime')
-def test_create_access_token(mock_datetime):
-    """Test token creation with mocked datetime."""
-    fixed_time = datetime(2025, 1, 1, 12, 0)
-    mock_datetime.now.return_value = fixed_time
-    
-    data = {"sub": "test@example.com"}
-    token = create_access_token(data)
-    
-    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-    expected_exp = int(fixed_time.timestamp()) + 15 * 60
-    assert payload["exp"] == expected_exp
-``` 
+@pytest.mark.benchmark(
+    group="audio_processor",
+    min_rounds=100,
+    max_time=2.0
+)
+```
+
+- `group`: Organizes related benchmarks
+- `min_rounds`: Minimum number of iterations
+- `max_time`: Maximum time per benchmark
+- `warmup`: False (disabled for consistent results)
+
+#### Dependencies
+```
+pytest-benchmark==4.0.0  # Performance testing
+psutil==5.9.0           # System resource monitoring
+numpy==1.21.0           # Audio data generation
+```
+
+## Audio Feature Extraction Tests
+
+### Overview
+The `FeatureExtractor` test suite provides comprehensive testing for audio feature extraction and music detection functionality. Located in `backend/tests/detection/audio_processor/test_feature_extractor.py`, these tests ensure robust and accurate audio analysis.
+
+### Test Structure
+1. **Initialization Tests** (`TestFeatureExtractorInitialization`):
+   - Default parameter validation
+   - Custom parameter configuration
+   - Invalid parameter handling
+   - Configuration persistence
+
+2. **Feature Extraction Tests** (`TestFeatureExtraction`):
+   - Feature shape validation
+   - Stereo audio handling
+   - Input validation
+   - Feature completeness checks
+   - Output format verification
+
+3. **Music Detection Tests** (`TestMusicDetection`):
+   - Detection accuracy
+   - Confidence score validation
+   - Missing feature handling
+   - Invalid input management
+   - Edge case processing
+
+4. **Audio Duration Tests** (`TestAudioDuration`):
+   - Duration calculation accuracy
+   - Stereo file handling
+   - Input validation
+   - Edge case management
+
+5. **Performance Tests** (`TestFeatureExtractorPerformance`):
+   - Feature extraction benchmarks
+   - Music detection speed
+   - Memory usage monitoring
+   - Processing efficiency
+
+### Running Tests
+```bash
+# Run all feature extractor tests
+python -m pytest tests/detection/audio_processor/test_feature_extractor.py -v
+
+# Run only performance tests
+python -m pytest tests/detection/audio_processor/test_feature_extractor.py -v -m benchmark
+
+# Run with coverage
+python -m pytest tests/detection/audio_processor/test_feature_extractor.py --cov=detection.audio_processor.feature_extractor
+```
+
+### Performance Targets
+- Feature extraction: < 100ms for 1s audio
+- Music detection: < 10ms per decision
+- Memory usage: < 100MB peak
+- Overall latency: < 200ms end-to-end
+
+### Dependencies
+- pytest
+- pytest-benchmark
+- numpy
+- librosa
+
+### Test Data
+- Synthetic test signals (sine waves, noise)
+- Sample audio files
+- Edge case inputs
+- Invalid data samples

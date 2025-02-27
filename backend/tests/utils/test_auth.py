@@ -2,22 +2,22 @@
 
 import pytest
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from fastapi import HTTPException
 from jose import jwt, JWTError
 
-from backend.utils.auth import (
+@pytest.fixture(autouse=True)
+def mock_settings_module(mock_settings):
+    """Automatically mock settings for all tests."""
+    with patch('backend.core.config.settings.get_settings', return_value=mock_settings):
+        yield
+
+from backend.utils.auth.auth import (
     verify_password,
     get_password_hash,
     create_access_token,
     get_current_user
 )
-from backend.core.config import settings
-
-@pytest.fixture
-def mock_db_session():
-    """Mock database session fixture."""
-    return Mock()
 
 @pytest.fixture
 def mock_user():

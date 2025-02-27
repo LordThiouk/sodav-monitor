@@ -6,8 +6,10 @@ globs: *
 - Tous les tests doivent être situés dans un dossier `backend/tests/`.
 - Chaque fichier de test doit suivre le format `test_<nom_de_la_fonction>.py`.
 - Utiliser `pytest` comme framework de test.
-- Concentre toi sur un test à la fois avant de passer au suivant.
-- Toujours update docs après, utiliser docs comme fichiers références pour les tests.
+- Update docs/tests toujours après avoir lancé tests
+- Géré l'amélioration des tests un par un, focus sur un test jusqua le résoudre avant de continuer
+- Focus sur one component at time
+- fais les tests en suivant instructions dans docs
 Le **meilleur choix dépend des objectifs des tests** :
 
 ### ✅ **Utiliser des Stations Réelles** (Recommandé pour les tests d'intégration)

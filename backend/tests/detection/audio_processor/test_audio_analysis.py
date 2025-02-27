@@ -319,4 +319,98 @@ def test_edge_cases(analyzer):
     # Test with pure noise
     np.random.seed(42)
     noise = np.random.normal(0, 32767/4, 44100).astype(np.int16)
-    assert analyzer.is_music(noise.tobytes()) is False 
+    assert analyzer.is_music(noise.tobytes()) is False
+
+@pytest.fixture
+def audio_analyzer():
+    """Fixture for AudioAnalyzer instance"""
+    return AudioAnalyzer()
+
+@pytest.fixture
+def sample_audio_data():
+    """Fixture for generating sample audio data"""
+    # Generate a simple sine wave
+    sample_rate = 44100
+    duration = 3  # seconds
+    t = np.linspace(0, duration, int(sample_rate * duration))
+    frequency = 440  # Hz (A4 note)
+    samples = np.sin(2 * np.pi * frequency * t)
+    
+    # Convert to 16-bit PCM
+    samples = (samples * 32767).astype(np.int16)
+    
+    # Convert to bytes
+    return samples.tobytes()
+
+def test_init(audio_analyzer):
+    """Test AudioAnalyzer initialization"""
+    assert audio_analyzer.sample_rate == 44100
+
+def test_process_audio(audio_analyzer, sample_audio_data):
+    """Test audio processing"""
+    samples, rate = audio_analyzer.process_audio(sample_audio_data)
+    assert isinstance(samples, np.ndarray)
+    assert rate == 44100
+    assert len(samples) > 0
+
+def test_extract_features(audio_analyzer, sample_audio_data):
+    """Test feature extraction"""
+    features = audio_analyzer.extract_features(sample_audio_data)
+    
+    # Check required features
+    assert 'mfcc' in features
+    assert 'spectral_centroid' in features
+    assert 'spectral_rolloff' in features
+    assert 'zero_crossing_rate' in features
+    
+    # Check feature shapes
+    assert isinstance(features['mfcc'], np.ndarray)
+    assert isinstance(features['spectral_centroid'], float)
+    assert isinstance(features['spectral_rolloff'], float)
+    assert isinstance(features['zero_crossing_rate'], float)
+
+def test_calculate_duration(audio_analyzer, sample_audio_data):
+    """Test duration calculation"""
+    duration = audio_analyzer.calculate_duration(sample_audio_data)
+    assert isinstance(duration, float)
+    assert duration == pytest.approx(3.0, rel=0.1)  # 3 seconds with 10% tolerance
+
+def test_is_music(audio_analyzer, sample_audio_data):
+    """Test music detection"""
+    is_music = audio_analyzer.is_music(sample_audio_data)
+    assert isinstance(is_music, bool)
+
+def test_invalid_audio_data(audio_analyzer):
+    """Test handling of invalid audio data"""
+    invalid_data = b'not audio data'
+    
+    with pytest.raises(Exception):
+        audio_analyzer.process_audio(invalid_data)
+
+def test_empty_audio_data(audio_analyzer):
+    """Test handling of empty audio data"""
+    empty_data = b''
+    
+    with pytest.raises(ValueError):
+        audio_analyzer.process_audio(empty_data)
+
+def test_feature_extraction_with_noise(audio_analyzer):
+    """Test feature extraction with noisy audio"""
+    # Generate noise
+    np.random.seed(42)
+    noise = np.random.normal(0, 0.1, 44100 * 3)
+    noise = (noise * 32767).astype(np.int16).tobytes()
+    
+    features = audio_analyzer.extract_features(noise)
+    assert 'mfcc' in features
+    assert features['zero_crossing_rate'] > 0.4  # Noise has high zero crossing rate
+
+def test_music_detection_threshold(audio_analyzer, sample_audio_data):
+    """Test music detection thresholds"""
+    # Pure tone should be detected as music
+    assert audio_analyzer.is_music(sample_audio_data)
+    
+    # Noise should not be detected as music
+    noise = np.random.normal(0, 0.1, 44100 * 3)
+    noise = (noise * 32767).astype(np.int16).tobytes()
+    assert not audio_analyzer.is_music(noise) 

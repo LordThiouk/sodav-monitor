@@ -1,8 +1,8 @@
 import asyncio
-from database import get_db
+from models.database import get_db
 from models import RadioStation, StationStatus
-from music_recognition import MusicRecognizer
-from audio_processor import AudioProcessor
+from detection.audio_processor.recognition_core import MusicRecognizer
+from detection.audio_processor.core import AudioProcessor
 from utils.logging_config import setup_logging
 import os
 from dotenv import load_dotenv

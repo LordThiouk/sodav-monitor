@@ -9,8 +9,8 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
-from ...models.models import Track, TrackDetection, Artist
-from ...utils.logging_config import setup_logging
+from models.models import Track, TrackDetection, Artist
+from utils.logging_config import setup_logging
 from .fingerprint import AudioFingerprinter
 
 logger = setup_logging(__name__)

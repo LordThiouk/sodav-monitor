@@ -1,4 +1,4 @@
-"""Module d'initialisation pour le package audio_processor."""
+"""Audio processor module for music detection."""
 
 from .core import AudioProcessor
 from .stream_handler import StreamHandler

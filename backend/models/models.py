@@ -327,6 +327,25 @@ class StationTrackStats(Base):
     station = relationship("RadioStation", back_populates="track_stats")
     track = relationship("Track")
 
+class StationHealth(Base):
+    __tablename__ = 'station_health'
+
+    id = Column(Integer, primary_key=True)
+    station_id = Column(Integer, ForeignKey('radio_stations.id'), index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    status = Column(String)  # 'healthy', 'unhealthy', 'error'
+    error_message = Column(Text, nullable=True)
+    response_time = Column(Float, nullable=True)  # in seconds
+    bitrate = Column(Integer, nullable=True)  # in kbps
+    content_type = Column(String, nullable=True)
+    failure_count = Column(Integer, default=0)
+    
+    # Relations
+    station = relationship("RadioStation")
+
+    def __repr__(self):
+        return f"<StationHealth(station_id={self.station_id}, status='{self.status}', timestamp={self.timestamp})>"
+
 # Add indexes for analytics queries
 Index('idx_track_detections_detected_at', TrackDetection.detected_at)
 Index('idx_track_detections_track_id', TrackDetection.track_id)

@@ -1,24 +1,94 @@
-"""Configuration des tests."""
+"""Test configuration for the SODAV Monitor project."""
 
-import os
 import pytest
-from datetime import datetime, timedelta
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-from fastapi.testclient import TestClient
+from unittest.mock import Mock, MagicMock
+import os
+from typing import Generator
+from sqlalchemy.orm import Session
 from fastapi import FastAPI
-from jose import jwt
+from fastapi.testclient import TestClient
+from datetime import datetime, timedelta
+import jwt
 
-from backend.models.models import Base, RadioStation, Track, TrackDetection, Report, ReportSubscription, User
-from backend.models.models import ReportType, ReportStatus, ReportFormat
-from backend.reports.report_generator import ReportGenerator
-from backend.analytics.stats_manager import StatsManager
-from backend.detection.audio_processor import AudioProcessor, FeatureExtractor, TrackManager, StationMonitor
-from backend.routers import auth, channels, analytics, detections, reports
-from backend.core.config import get_settings
+# Mock settings before any imports
+mock_settings = MagicMock()
+mock_settings.SECRET_KEY = "test_secret_key"
+mock_settings.ALGORITHM = "HS256"
+mock_settings.ACCESS_TOKEN_EXPIRE_MINUTES = 15
+mock_settings.DATABASE_URL = "sqlite:///./test.db"
+mock_settings.REDIS_HOST = "localhost"
+mock_settings.REDIS_PORT = 6379
+mock_settings.REDIS_DB = 0
+mock_settings.REDIS_PASSWORD = None
+mock_settings.MUSICBRAINZ_API_KEY = "test_key"
+mock_settings.ACOUSTID_API_KEY = "test_acoustid_key"
+mock_settings.AUDD_API_KEY = "test_audd_key"
+mock_settings.MUSICBRAINZ_APP_NAME = "SODAV Monitor Test"
+mock_settings.MUSICBRAINZ_VERSION = "1.0"
+mock_settings.MUSICBRAINZ_CONTACT = "test@sodav.sn"
+mock_settings.LOG_LEVEL = "INFO"
+mock_settings.LOG_FILE = "logs/test.log"
+mock_settings.DETECTION_INTERVAL = 10
+mock_settings.CONFIDENCE_THRESHOLD = 50.0
+mock_settings.MAX_FAILURES = 3
+mock_settings.RESPONSE_TIMEOUT = 10
+mock_settings.MIN_CONFIDENCE_THRESHOLD = 0.8
+mock_settings.ACOUSTID_CONFIDENCE_THRESHOLD = 0.7
+mock_settings.AUDD_CONFIDENCE_THRESHOLD = 0.6
+mock_settings.LOCAL_CONFIDENCE_THRESHOLD = 0.8
 
-settings = get_settings()
+import pytest
+from unittest.mock import patch
+
+# Apply the mock settings
+with patch('backend.core.config.settings.get_settings', return_value=mock_settings):
+    from backend.models.database import get_db, Base, engine
+    from backend.detection.audio_processor import AudioProcessor, FeatureExtractor, TrackManager, StationMonitor
+    from backend.models.models import User, RadioStation, Track, TrackDetection, ReportType, ReportFormat
+
+@pytest.fixture(scope="session")
+def db() -> Generator[Session, None, None]:
+    """Create a test database session."""
+    # Create test database
+    Base.metadata.create_all(bind=engine)
+    
+    # Get database session
+    db = next(get_db())
+    try:
+        yield db
+    finally:
+        db.close()
+        # Clean up test database
+        Base.metadata.drop_all(bind=engine)
+
+@pytest.fixture
+def mock_db_session():
+    """Mock database session."""
+    session = Mock()
+    session.commit = Mock()
+    session.rollback = Mock()
+    session.close = Mock()
+    return session
+
+@pytest.fixture
+def audio_processor(db):
+    """Create an AudioProcessor instance for testing."""
+    return AudioProcessor(db)
+
+@pytest.fixture
+def feature_extractor():
+    """Create a FeatureExtractor instance for testing."""
+    return FeatureExtractor()
+
+@pytest.fixture
+def track_manager(db):
+    """Create a TrackManager instance for testing."""
+    return TrackManager(db)
+
+@pytest.fixture
+def station_monitor(db):
+    """Create a StationMonitor instance for testing."""
+    return StationMonitor(db)
 
 @pytest.fixture(scope="session")
 def app():
@@ -38,7 +108,7 @@ def test_client(app):
 
 @pytest.fixture
 def test_user(db_session):
-    """Crée un utilisateur de test."""
+    """Create a test user."""
     user = User(
         username="test_user",
         email="test@example.com",
@@ -51,42 +121,22 @@ def test_user(db_session):
 
 @pytest.fixture
 def auth_token(test_user):
-    """Crée un token JWT de test."""
+    """Create a test JWT token."""
     token_data = {
         "sub": test_user.username,
         "role": test_user.role,
         "exp": datetime.utcnow() + timedelta(minutes=30)
     }
-    return jwt.encode(token_data, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return jwt.encode(token_data, mock_settings.SECRET_KEY, algorithm=mock_settings.ALGORITHM)
 
 @pytest.fixture
 def auth_headers(auth_token):
-    """Crée les en-têtes d'authentification pour les tests."""
+    """Create authentication headers for tests."""
     return {"Authorization": f"Bearer {auth_token}"}
-
-@pytest.fixture(scope="session")
-def engine():
-    """Crée une base de données SQLite en mémoire pour les tests."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    return engine
-
-@pytest.fixture(scope="function")
-def db_session(engine):
-    """Crée une nouvelle session de base de données pour chaque test."""
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    yield session
-    session.rollback()
-    session.close()
 
 @pytest.fixture
 def sample_station(db_session):
-    """Crée une station de radio de test."""
+    """Create a test radio station."""
     station = RadioStation(
         name="Radio Test",
         stream_url="http://test.stream/live",
@@ -98,7 +148,7 @@ def sample_station(db_session):
 
 @pytest.fixture
 def sample_track(db_session):
-    """Crée une piste de test."""
+    """Create a test track."""
     track = Track(
         title="Test Song",
         artist="Test Artist",
@@ -111,7 +161,7 @@ def sample_track(db_session):
 
 @pytest.fixture
 def sample_detection(db_session, sample_station, sample_track):
-    """Crée une détection de test."""
+    """Create a test detection."""
     detection = TrackDetection(
         station_id=sample_station.id,
         track_id=sample_track.id,
@@ -124,7 +174,7 @@ def sample_detection(db_session, sample_station, sample_track):
 
 @pytest.fixture
 def sample_report_data():
-    """Crée des données de rapport de test."""
+    """Create test report data."""
     return {
         "start_date": datetime.utcnow() - timedelta(days=7),
         "end_date": datetime.utcnow(),
@@ -138,27 +188,4 @@ def sample_report_data():
 def report_generator(db_session):
     """Crée un générateur de rapports de test."""
     stats_manager = StatsManager(db_session)
-    return ReportGenerator(db_session, stats_manager)
-
-@pytest.fixture
-def audio_processor():
-    """Crée un processeur audio de test."""
-    feature_extractor = FeatureExtractor()
-    track_manager = TrackManager()
-    station_monitor = StationMonitor()
-    return AudioProcessor(feature_extractor, track_manager, station_monitor)
-
-@pytest.fixture
-def feature_extractor():
-    """Crée un extracteur de caractéristiques de test."""
-    return FeatureExtractor()
-
-@pytest.fixture
-def track_manager():
-    """Crée un gestionnaire de pistes de test."""
-    return TrackManager()
-
-@pytest.fixture
-def station_monitor():
-    """Crée un moniteur de station de test."""
-    return StationMonitor() 
+    return ReportGenerator(db_session, stats_manager) 
