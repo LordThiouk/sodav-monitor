@@ -6,6 +6,9 @@ import os
 from dotenv import load_dotenv
 import logging
 from sqlalchemy.sql import text
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, LargeBinary
+from sqlalchemy.orm import relationship
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -61,6 +64,47 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Create base class for declarative models
 Base = declarative_base()
+
+class RadioStation(Base):
+    """Model for radio stations."""
+    __tablename__ = 'radio_stations'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    status = Column(String, default='active')
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Track(Base):
+    """Model for music tracks."""
+    __tablename__ = 'tracks'
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=False)
+    artist = Column(String)
+    duration = Column(Float)
+    fingerprint = Column(String)
+    fingerprint_raw = Column(LargeBinary)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class TrackDetection(Base):
+    """Model for track detections."""
+    __tablename__ = 'track_detections'
+
+    id = Column(Integer, primary_key=True)
+    track_id = Column(Integer, ForeignKey('tracks.id'))
+    station_id = Column(Integer, ForeignKey('radio_stations.id'))
+    detected_at = Column(DateTime, default=datetime.utcnow)
+    confidence = Column(Float)
+    play_duration = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    track = relationship("Track", backref="detections")
+    station = relationship("RadioStation", backref="detections")
 
 def get_db():
     """Get database session"""

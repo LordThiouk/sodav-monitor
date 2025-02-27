@@ -1,23 +1,21 @@
 """Tests pour le module d'analytics."""
 
 import pytest
+from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from typing import Dict, List
-from ..models import (
-    TrackDetection,
-    ArtistStats,
-    TrackStats,
-    StationStats,
-    DetectionHourly,
-    DetectionDaily
+from backend.models.models import (
+    Track, TrackDetection, TrackStats, ArtistStats,
+    StationTrackStats, RadioStation, StationStatus,
+    AnalyticsData, DetectionHourly, DetectionDaily
 )
-from ..analytics.stats_manager import StatsManager
+from backend.analytics.analytics_manager import AnalyticsManager
 
 @pytest.fixture
 def stats_manager(db_session: Session):
     """Fixture pour le gestionnaire de statistiques."""
-    return StatsManager(db_session)
+    return AnalyticsManager(db_session)
 
 @pytest.fixture
 def sample_detection_data(db_session: Session) -> TrackDetection:
@@ -96,7 +94,7 @@ async def test_station_stats_update(stats_manager, sample_detection_data, db_ses
     """Test de mise à jour des statistiques de station."""
     await stats_manager.update_detection_stats(sample_detection_data)
     
-    station_stats = db_session.query(StationStats).first()
+    station_stats = db_session.query(StationTrackStats).first()
     assert station_stats is not None
     assert station_stats.total_detections > 0
     assert station_stats.total_play_time > timedelta()

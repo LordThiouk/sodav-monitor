@@ -2,6 +2,10 @@
 description: Règles pour les Tests Unitaires sur Cursor AI (sodav-monitor)
 globs: *
 ---
+---
+description: Règles pour les Tests Unitaires sur Cursor AI (sodav-monitor)
+globs: *
+---
 ### 🔍 **1. Structure des Tests**
 - Tous les tests doivent être situés dans un dossier `backend/tests/`.
 - Chaque fichier de test doit suivre le format `test_<nom_de_la_fonction>.py`.

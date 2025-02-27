@@ -155,4 +155,111 @@ def mock_peak_pick(onset_env, pre_max=3, post_max=3, pre_avg=3, post_avg=3, delt
                     # Ensure minimum distance between peaks
                     if not peaks or (i - peaks[-1]) >= wait:
                         peaks.append(i)
-    return np.array(peaks) 
+    return np.array(peaks)
+
+@pytest.fixture
+def real_world_samples():
+    """Provide a set of real-world audio samples with known characteristics."""
+    import os
+    import json
+    
+    # Define sample data with expected characteristics
+    samples = {
+        "music_samples": [
+            {
+                "name": "classical_piano",
+                "features": {
+                    "tempo_range": (60, 120),
+                    "frequency_peaks": [440, 880, 1760],  # A4, A5, A6
+                    "expected_confidence": 0.95
+                }
+            },
+            {
+                "name": "rock_guitar",
+                "features": {
+                    "tempo_range": (120, 160),
+                    "frequency_peaks": [82, 147, 196],  # E2, D3, G3
+                    "expected_confidence": 0.90
+                }
+            }
+        ],
+        "speech_samples": [
+            {
+                "name": "male_speech",
+                "features": {
+                    "frequency_range": (85, 180),
+                    "expected_confidence": 0.3
+                }
+            },
+            {
+                "name": "female_speech",
+                "features": {
+                    "frequency_range": (165, 255),
+                    "expected_confidence": 0.3
+                }
+            }
+        ],
+        "mixed_samples": [
+            {
+                "name": "music_with_vocals",
+                "features": {
+                    "tempo_range": (90, 130),
+                    "frequency_peaks": [440, 880],
+                    "expected_confidence": 0.85
+                }
+            }
+        ]
+    }
+    
+    return samples
+
+@pytest.fixture
+def mock_real_world_audio(real_world_samples):
+    """Generate mock audio data that matches real-world characteristics."""
+    
+    def generate_audio(sample_type, name):
+        sample_rate = 22050
+        duration = 3.0  # 3 seconds
+        t = np.linspace(0, duration, int(sample_rate * duration))
+        
+        if sample_type == "music_samples":
+            sample = next(s for s in real_world_samples[sample_type] if s["name"] == name)
+            # Generate complex musical signal
+            signal = np.zeros_like(t)
+            for freq in sample["features"]["frequency_peaks"]:
+                signal += np.sin(2 * np.pi * freq * t)
+            # Add harmonics
+            for freq in sample["features"]["frequency_peaks"]:
+                signal += 0.5 * np.sin(2 * np.pi * freq * 2 * t)  # First harmonic
+            # Add amplitude modulation for tempo
+            tempo = np.mean(sample["features"]["tempo_range"])
+            signal *= (1 + 0.2 * np.sin(2 * np.pi * (tempo/60) * t))
+            
+        elif sample_type == "speech_samples":
+            sample = next(s for s in real_world_samples[sample_type] if s["name"] == name)
+            # Generate speech-like signal
+            freq_range = sample["features"]["frequency_range"]
+            fundamental = np.mean(freq_range)
+            signal = np.sin(2 * np.pi * fundamental * t)
+            # Add natural variations
+            signal *= (1 + 0.3 * np.random.normal(0, 1, len(t)))
+            # Add formants
+            for formant in [fundamental*2, fundamental*3, fundamental*4]:
+                signal += 0.3 * np.sin(2 * np.pi * formant * t)
+            
+        elif sample_type == "mixed_samples":
+            sample = next(s for s in real_world_samples[sample_type] if s["name"] == name)
+            # Combine music and speech characteristics
+            # Musical component
+            signal = np.zeros_like(t)
+            for freq in sample["features"]["frequency_peaks"]:
+                signal += np.sin(2 * np.pi * freq * t)
+            # Add vocal-like modulation
+            vocal_freq = 220  # Average vocal frequency
+            signal += 0.5 * np.sin(2 * np.pi * vocal_freq * t) * (1 + 0.3 * np.random.normal(0, 1, len(t)))
+            
+        # Normalize
+        signal = signal / np.max(np.abs(signal))
+        return signal
+    
+    return generate_audio 

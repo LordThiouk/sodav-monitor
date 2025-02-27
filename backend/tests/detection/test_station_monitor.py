@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend.detection.audio_processor.station_monitor import StationMonitor
-from backend.models.database import RadioStation, StationHealth
+from backend.models.models import RadioStation, StationHealth
+from backend.detection.station_monitor import StationMonitor
 
 @pytest.fixture
 def db_session():

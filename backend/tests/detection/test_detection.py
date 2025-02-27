@@ -5,13 +5,14 @@ import numpy as np
 from unittest.mock import Mock, patch, AsyncMock
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from backend.detection.audio_processor.core import AudioProcessor
 from backend.detection.audio_processor.feature_extractor import FeatureExtractor
 from backend.detection.audio_processor.track_manager import TrackManager
-from backend.models.database import RadioStation, Track, TrackDetection, StationStatus
+from backend.models.models import RadioStation, Track, TrackDetection, StationStatus
 from backend.utils.logging_config import setup_logging
+from backend.detection.audio_processor.detection import DetectionManager
 
 # Configure logging
 logger = setup_logging(__name__)

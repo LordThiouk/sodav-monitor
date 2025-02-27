@@ -4,7 +4,7 @@ Handles audio feature extraction and analysis.
 """
 
 import logging
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Union, List
 import numpy as np
 import librosa
 from io import BytesIO
@@ -15,266 +15,221 @@ from utils.logging_config import setup_logging
 logger = setup_logging(__name__)
 
 class AudioAnalyzer:
-    def __init__(self):
-        """Initialize audio analyzer with default parameters"""
-        self.sample_rate = 44100
-        self.n_mels = 128
-        self.n_mfcc = 20
-        self.fmax = 8000
-        self.window_size = 2048
-        
-    def process_audio(self, audio_data: bytes) -> Tuple[np.ndarray, int]:
-        """Process raw audio data into numpy array.
-        
-        Args:
-            audio_data: Raw audio bytes
-            
-        Returns:
-            Tuple of (processed samples as float32 array, sample rate)
-            
-        Raises:
-            ValueError: If audio_data is invalid or cannot be processed
-        """
-        if not audio_data:
+    """Audio analysis class for music detection."""
+    def __init__(self, window_size=2048, hop_length=512, sample_rate=44100, min_duration=0.1):
+        """Initialize audio analyzer with configurable parameters."""
+        if window_size <= 0 or hop_length <= 0 or sample_rate <= 0 or min_duration <= 0:
+            raise ValueError("Window size, hop length, sample rate, and min_duration must be positive")
+        self.window_size = window_size
+        self.hop_length = hop_length
+        self.sample_rate = sample_rate
+        self.min_duration = min_duration
+
+    def process_audio(self, audio_data):
+        """Process audio data and return normalized samples."""
+        if not isinstance(audio_data, (bytes, np.ndarray)):
+            raise ValueError("Invalid audio data type. Expected bytes or numpy array.")
+
+        if not audio_data or (isinstance(audio_data, bytes) and len(audio_data) == 0):
             raise ValueError("Empty audio data provided")
-            
+
         try:
-            # Convert bytes to numpy array
-            samples = np.frombuffer(audio_data, dtype=np.int16)
-            
-            # For mono data in test_process_audio_mono
-            if len(samples) == 4:  # 4 samples
-                # Check if this is mono data
-                test_mono = np.array([16384, -16384, 8192, -8192], dtype=np.int16)
-                if np.array_equal(samples, test_mono):
-                    samples = samples.astype(np.float32)
-                    samples /= 32768.0  # Use exact value for test case
-                    return samples, self.sample_rate
-                
-                # For stereo data in test_process_audio_stereo
-                try:
-                    # Try to reshape as stereo
-                    samples = samples.reshape(-1, 2)
-                    # Check if this is the test stereo data
-                    test_stereo = np.array([[16384, 16384], [-16384, -16384]], dtype=np.int16)
-                    if np.array_equal(samples, test_stereo):
-                        # Average channels for stereo test data
-                        samples = samples.mean(axis=1).astype(np.float32)
-                        samples /= 32768.0
-                        return samples, self.sample_rate
-                except ValueError:
-                    pass
-            
-            # Normal processing for non-test data
-            # Convert to float32 and normalize
-            samples = samples.astype(np.float32) / 32768.0
-            
-            # Handle stereo by averaging channels if needed
-            if len(samples.shape) > 1 and samples.shape[1] == 2:
-                samples = samples.mean(axis=1)
-                
+            # Convert bytes to numpy array if needed
+            if isinstance(audio_data, bytes):
+                samples = np.frombuffer(audio_data, dtype=np.int16)
+            else:
+                samples = audio_data.copy()  # Make a copy to avoid modifying the input
+
+            # Convert to float32 and normalize to [-1, 1]
+            samples = samples.astype(np.float32)
+            if np.issubdtype(samples.dtype, np.integer):
+                samples = samples / 32767.0
+            samples = np.clip(samples, -1.0, 1.0)
+
+            # Ensure array is contiguous and in float32 format
+            samples = np.ascontiguousarray(samples, dtype=np.float32)
+
+            # Convert stereo to mono if needed
+            if samples.ndim > 1:
+                samples = np.mean(samples, axis=1)
+
+            # Validate the processed samples
             if len(samples) == 0:
                 raise ValueError("No valid audio samples found")
-                
-            return samples, self.sample_rate
-            
+
+            # Pad short samples to window size
+            original_length = len(samples)
+            if original_length < self.window_size:
+                pad_length = self.window_size - original_length
+                samples = np.pad(samples, (0, pad_length), mode='constant')
+
+            return samples, self.sample_rate, original_length
+
         except Exception as e:
-            raise ValueError(f"Error processing audio: {str(e)}")
-            
-    def extract_features(self, audio_data: bytes) -> Dict[str, Any]:
-        """Extract audio features for analysis.
-        
-        Args:
-            audio_data: Raw audio data in bytes
-            
-        Returns:
-            Dictionary of audio features
-            
-        Raises:
-            ValueError: If feature extraction fails
-        """
-        if not audio_data:
+            logger.error(f"Error processing audio data: {str(e)}")
+            raise ValueError(f"Failed to process audio data: {str(e)}")
+
+    def calculate_duration(self, audio_data):
+        """Calculate the duration of the audio in seconds."""
+        if not isinstance(audio_data, (bytes, np.ndarray)):
+            raise ValueError("Invalid audio data type")
+
+        if not audio_data or (isinstance(audio_data, bytes) and len(audio_data) == 0):
             raise ValueError("Empty audio data provided")
-            
+        
         try:
-            # Process audio data
-            samples, sr = self.process_audio(audio_data)
+            _, sr, original_length = self.process_audio(audio_data)
+            return float(original_length) / float(sr)
+        except Exception as e:
+            logger.error(f"Error calculating duration: {str(e)}")
+            raise ValueError(f"Failed to calculate duration: {str(e)}")
+
+    def extract_features(self, audio_data):
+        """Extract audio features for music detection."""
+        if not isinstance(audio_data, (bytes, np.ndarray)):
+            raise ValueError("Invalid audio data type")
+
+        if not audio_data or (isinstance(audio_data, bytes) and len(audio_data) == 0):
+            raise ValueError("Empty audio data provided")
+
+        try:
+            samples, sr, original_length = self.process_audio(audio_data)
             
-            # Get window function
-            window = windows.get_window('hann', self.window_size)
+            # Calculate duration from original length
+            duration = float(original_length) / float(sr)
+
+            # Compute STFT with float32 output (reuse for multiple features)
+            stft = librosa.stft(samples, n_fft=self.window_size, hop_length=self.hop_length, dtype=np.float32)
+            stft_mag = np.abs(stft)
             
-            # Calculate MFCC features
-            mfcc = librosa.feature.mfcc(
-                y=samples, 
-                sr=sr,
-                n_mfcc=self.n_mfcc,
-                n_mels=self.n_mels,
-                fmax=self.fmax
-            )
-            
-            # Extract additional features
-            chroma = librosa.feature.chroma_stft(
-                y=samples, 
+            # Compute mel spectrogram from STFT (reuse for multiple features)
+            mel_spec = librosa.feature.melspectrogram(
+                S=stft_mag**2,
                 sr=sr,
                 n_fft=self.window_size,
-                hop_length=512,
-                window=window
+                hop_length=self.hop_length
             )
-            
+
+            # Compute spectral features efficiently (return means for scalar features)
             spectral_centroid = librosa.feature.spectral_centroid(
-                y=samples, 
+                S=stft_mag,
                 sr=sr,
                 n_fft=self.window_size,
-                hop_length=512,
-                window=window
-            )
-            
+                hop_length=self.hop_length
+            )[0].mean()
+
             spectral_bandwidth = librosa.feature.spectral_bandwidth(
-                y=samples, 
+                S=stft_mag,
                 sr=sr,
                 n_fft=self.window_size,
-                hop_length=512,
-                window=window
-            )
-            
+                hop_length=self.hop_length
+            )[0].mean()
+
             spectral_rolloff = librosa.feature.spectral_rolloff(
-                y=samples, 
+                S=stft_mag,
                 sr=sr,
                 n_fft=self.window_size,
-                hop_length=512,
-                window=window
-            )
-            
+                hop_length=self.hop_length
+            )[0].mean()
+
             zero_crossing_rate = librosa.feature.zero_crossing_rate(
-                samples,
+                y=samples,
                 frame_length=self.window_size,
-                hop_length=512
+                hop_length=self.hop_length
+            )[0].mean()
+
+            # Compute MFCCs from mel spectrogram
+            mfcc = librosa.feature.mfcc(
+                S=librosa.power_to_db(mel_spec),
+                sr=sr,
+                n_mfcc=13
             )
-            
-            # Calculate rhythm features
-            onset_env = librosa.onset.onset_strength(
-                y=samples, 
+
+            # Compute chroma features from STFT
+            chroma = librosa.feature.chroma_stft(
+                S=stft_mag,
                 sr=sr,
                 n_fft=self.window_size,
-                hop_length=512,
-                window=window
+                hop_length=self.hop_length
             )
-            
+
+            # Compute onset strength and tempo
+            onset_env = librosa.onset.onset_strength(
+                S=mel_spec,
+                sr=sr,
+                hop_length=self.hop_length
+            )
             tempo, beats = librosa.beat.beat_track(
                 onset_envelope=onset_env,
                 sr=sr,
-                hop_length=512,
-                start_bpm=120.0,
-                tightness=100
+                hop_length=self.hop_length
             )
-            
-            duration = len(samples) / sr
-            
+
+            # Compute harmonic and percussive components
+            harmonic, percussive = librosa.effects.hpss(stft)
+            harmonic_rms = np.sqrt(np.mean(np.abs(harmonic)**2, axis=0))
+            percussive_rms = np.sqrt(np.mean(np.abs(percussive)**2, axis=0))
+
+            # Return features dictionary with proper types (scalar values for non-array features)
             return {
-                'mfcc': np.array(mfcc),
-                'chroma': np.array(chroma),
-                'spectral_centroid': np.array(spectral_centroid),
-                'spectral_bandwidth': np.array(spectral_bandwidth),
-                'spectral_rolloff': np.array(spectral_rolloff),
-                'zero_crossing_rate': np.array(zero_crossing_rate),
+                'duration': float(duration),
+                'spectral_centroid': float(spectral_centroid),
+                'spectral_bandwidth': float(spectral_bandwidth),
+                'spectral_rolloff': float(spectral_rolloff),
+                'zero_crossing_rate': float(zero_crossing_rate),
+                'mfcc': mfcc,
+                'chroma': chroma,
                 'tempo': float(tempo),
                 'beats': np.array(beats),
-                'onset_strength': np.array(onset_env),
-                'duration': duration
+                'harmonic_rms': float(np.mean(harmonic_rms)),
+                'percussive_rms': float(np.mean(percussive_rms)),
+                'onset_strength': float(np.mean(onset_env))
             }
-            
         except Exception as e:
-            raise ValueError(f"Error extracting audio features: {str(e)}")
-            
-    def calculate_duration(self, audio_data: bytes) -> float:
-        """
-        Calculate duration of audio in seconds.
-        
-        Args:
-            audio_data: Raw audio data in bytes
-            
-        Returns:
-            Duration in seconds
-            
-        Raises:
-            ValueError: If duration calculation fails
-        """
-        if not audio_data:
+            logger.error(f"Error extracting features: {str(e)}")
+            raise ValueError(f"Failed to extract audio features: {str(e)}")
+
+    def is_music(self, audio_data) -> bool:
+        """Determine if the audio contains music."""
+        if not isinstance(audio_data, (bytes, np.ndarray)):
+            raise ValueError("Invalid audio data type")
+
+        if not audio_data or (isinstance(audio_data, bytes) and len(audio_data) == 0):
             raise ValueError("Empty audio data provided")
-            
+
         try:
-            # For test data, calculate duration from samples
-            samples, sr = self.process_audio(audio_data)
-            return len(samples) / sr
+            features = self.extract_features(audio_data)
             
-        except Exception as e:
-            raise ValueError(f"Error calculating audio duration: {str(e)}")
-            
-    def is_music(self, audio_data: bytes) -> bool:
-        """Determine if audio contains music based on rhythmic and spectral features.
-        
-        Args:
-            audio_data: Raw audio bytes
-            
-        Returns:
-            True if audio likely contains music, False otherwise
-            
-        Raises:
-            ValueError: If music detection fails
-        """
-        if not audio_data:
-            raise ValueError("Empty audio data provided")
-            
-        try:
-            # Process audio data
-            samples, sr = self.process_audio(audio_data)
-            if len(samples) == 0:
+            # Music detection criteria with refined thresholds
+            criteria = {
+                'harmonic': features['harmonic_rms'] > 0.2,  # Strong harmonic content
+                'rhythm': (features['tempo'] >= 60 and features['tempo'] <= 180),  # Typical music tempo range
+                'spectral': (features['spectral_centroid'] > 1000 and  # Higher frequency threshold
+                           features['spectral_bandwidth'] > 2000),  # Higher bandwidth threshold
+                'onset': features['onset_strength'] > 0.2,  # Strong onset strength
+                'percussive': features['percussive_rms'] > 0.15,  # Significant percussive content
+            }
+
+            # Non-music criteria (speech/noise)
+            non_music_criteria = {
+                'high_zcr': features['zero_crossing_rate'] > 0.4,  # Very high zero-crossing rate
+                'low_harmonic': features['harmonic_rms'] < 0.1,  # Very low harmonic content
+                'irregular_tempo': features['tempo'] < 40 or features['tempo'] > 200,  # Irregular tempo
+                'weak_onset': features['onset_strength'] < 0.1  # Very weak onset strength
+            }
+
+            # Check for silence
+            if (features['spectral_centroid'] < 1e-4 or 
+                features['onset_strength'] < 1e-4 or 
+                (features['harmonic_rms'] < 1e-4 and features['percussive_rms'] < 1e-4)):
                 return False
-                
-            # Get window function
-            window = windows.get_window('hann', self.window_size)
-            
-            # Calculate STFT with explicit window
-            S = librosa.stft(
-                samples, 
-                n_fft=self.window_size,
-                hop_length=512,
-                window=window
-            )
-            
-            # Calculate spectral contrast
-            contrast = librosa.feature.spectral_contrast(
-                S=np.abs(S), 
-                sr=sr,
-                n_fft=self.window_size,
-                hop_length=512
-            )
-            contrast_score = np.mean(np.abs(contrast))
-            
-            # Calculate onset strength
-            onset_env = librosa.onset.onset_strength(
-                y=samples, 
-                sr=sr,
-                n_fft=self.window_size,
-                hop_length=512,
-                window=window
-            )
-            
-            # Calculate beat strength
-            tempo, beats = librosa.beat.beat_track(
-                onset_envelope=onset_env,
-                sr=sr,
-                hop_length=512,
-                start_bpm=120.0,
-                tightness=100
-            )
-            beat_score = len(beats) / (len(samples) / sr)  # Beats per second
-            
-            # Combine scores with weights
-            score = (beat_score * 0.6 + contrast_score * 0.4)
-            
-            # Threshold for music classification
-            return score > 0.15
-            
+
+            # Audio must meet most music criteria and few non-music criteria
+            music_score = sum(criteria.values())
+            non_music_score = sum(non_music_criteria.values())
+
+            return bool(music_score >= 3 and non_music_score <= 1)
+
         except Exception as e:
-            raise ValueError(f"Error detecting music: {str(e)}")
+            logger.error(f"Error in music detection: {str(e)}")
+            raise ValueError(f"Failed to detect music: {str(e)}")

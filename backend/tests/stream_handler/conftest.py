@@ -60,14 +60,10 @@ def mock_stream_url():
 
 @pytest.fixture
 def mock_stream_response():
-    """Create a mock response for stream requests."""
+    """Create a mock successful response for stream requests."""
     response = AsyncMock()
     response.status = 200
-    response.headers = {
-        'content-type': 'audio/mpeg',
-        'icy-br': '128',
-        'icy-name': 'Test Radio'
-    }
+    response.headers = {'Content-Type': 'audio/mpeg'}
     return response
 
 @pytest.fixture
@@ -76,4 +72,50 @@ def mock_stream_error_response():
     response = AsyncMock()
     response.status = 404
     response.headers = {}
-    return response 
+    return response
+
+@pytest.fixture
+def benchmark_stream_handler():
+    """Create a StreamHandler instance optimized for benchmarking."""
+    from backend.detection.audio_processor.stream_handler import StreamHandler
+    return StreamHandler(buffer_size=8192, channels=2)  # Larger buffer for benchmarks
+
+@pytest.fixture
+def real_time_stream_handler():
+    """Create a StreamHandler instance configured for real-time processing."""
+    from backend.detection.audio_processor.stream_handler import StreamHandler
+    handler = StreamHandler(buffer_size=2048, channels=2)  # Smaller buffer for lower latency
+    handler.set_real_time_mode(True)  # Enable real-time processing optimizations
+    return handler
+
+@pytest.fixture
+def mock_audio_stream():
+    """Create a mock audio stream generator for continuous testing."""
+    async def generate_chunks(num_chunks=10, chunk_size=1024):
+        for _ in range(num_chunks):
+            yield np.random.random((chunk_size, 2))
+            await asyncio.sleep(0.01)  # Simulate realistic timing
+    return generate_chunks
+
+@pytest.fixture
+def mock_unstable_stream():
+    """Create a mock stream that occasionally produces errors."""
+    async def generate_unstable_chunks(num_chunks=10, error_rate=0.2):
+        for i in range(num_chunks):
+            if np.random.random() < error_rate:
+                raise ConnectionError("Simulated stream error")
+            yield np.random.random((1024, 2))
+            await asyncio.sleep(0.01)
+    return generate_unstable_chunks
+
+@pytest.fixture
+def mock_variable_rate_stream():
+    """Create a mock stream with variable data rates."""
+    async def generate_variable_rate_chunks(num_chunks=10):
+        for i in range(num_chunks):
+            # Vary chunk size to simulate network jitter
+            chunk_size = int(1024 * (1 + 0.5 * np.sin(i / 2)))
+            yield np.random.random((chunk_size, 2))
+            # Variable delay to simulate network conditions
+            await asyncio.sleep(0.01 * (1 + 0.5 * np.cos(i / 2)))
+    return generate_variable_rate_chunks 

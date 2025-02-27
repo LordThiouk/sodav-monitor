@@ -8,6 +8,8 @@ import os
 from io import BytesIO
 from pydub import AudioSegment
 import scipy.signal
+import concurrent.futures
+import psutil
 from backend.detection.audio_processor.audio_analysis import AudioAnalyzer
 
 # Patch scipy.signal.hann for librosa's internal use
@@ -413,4 +415,162 @@ def test_music_detection_threshold(audio_analyzer, sample_audio_data):
     # Noise should not be detected as music
     noise = np.random.normal(0, 0.1, 44100 * 3)
     noise = (noise * 32767).astype(np.int16).tobytes()
-    assert not audio_analyzer.is_music(noise) 
+    assert not audio_analyzer.is_music(noise)
+
+@pytest.mark.benchmark
+class TestAudioAnalyzerPerformance:
+    """Performance benchmarks for AudioAnalyzer."""
+    
+    def test_processing_latency(self, analyzer, mock_audio_data, benchmark):
+        """Test audio processing latency."""
+        def process_audio():
+            return analyzer.process_audio(mock_audio_data)
+            
+        result = benchmark(process_audio)
+        assert benchmark.stats['mean'] < 0.01  # Mean processing time < 10ms
+        
+    def test_feature_extraction_latency(self, analyzer, mock_audio_data, benchmark):
+        """Test feature extraction latency."""
+        def extract_features():
+            return analyzer.extract_features(mock_audio_data)
+            
+        result = benchmark(extract_features)
+        assert benchmark.stats['mean'] < 0.1  # Mean processing time < 100ms
+        
+    def test_memory_usage(self, analyzer, mock_audio_data, benchmark):
+        """Test memory usage during processing."""
+        def measure_memory():
+            process = psutil.Process(os.getpid())
+            initial_memory = process.memory_info().rss
+            
+            # Process audio and extract features
+            analyzer.process_audio(mock_audio_data)
+            analyzer.extract_features(mock_audio_data)
+            
+            final_memory = process.memory_info().rss
+            return (final_memory - initial_memory) / 1024 / 1024  # MB
+            
+        memory_increase = benchmark(measure_memory)
+        assert memory_increase < 50  # Should use less than 50MB additional memory
+
+class TestConcurrentProcessing:
+    """Test concurrent audio processing capabilities."""
+    
+    def test_concurrent_feature_extraction(self, analyzer):
+        """Test concurrent feature extraction from multiple audio streams."""
+        # Create multiple audio samples with different frequencies
+        sample_rate = 44100
+        duration = 1.0
+        audio_samples = []
+        
+        for freq in [440, 880, 1320, 1760, 2200]:  # Different frequencies
+            t = np.linspace(0, duration, int(sample_rate * duration))
+            signal = np.sin(2 * np.pi * freq * t)
+            signal = (signal * 32767).astype(np.int16)
+            audio_samples.append(signal.tobytes())
+            
+        # Process samples concurrently
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [
+                executor.submit(analyzer.extract_features, sample)
+                for sample in audio_samples
+            ]
+            results = [future.result() for future in futures]
+            
+        assert len(results) == 5
+        assert all(isinstance(result, dict) for result in results)
+        assert all('mfcc' in result for result in results)
+        
+    def test_concurrent_music_detection(self, analyzer):
+        """Test concurrent music detection on multiple streams."""
+        # Create music and non-music samples
+        sample_rate = 44100
+        duration = 1.0
+        t = np.linspace(0, duration, int(sample_rate * duration))
+        
+        # Music samples (pure tones)
+        music_samples = []
+        for freq in [440, 880]:
+            signal = np.sin(2 * np.pi * freq * t)
+            signal = (signal * 32767).astype(np.int16)
+            music_samples.append(signal.tobytes())
+            
+        # Non-music samples (noise)
+        noise_samples = []
+        for _ in range(2):
+            signal = np.random.normal(0, 0.5, len(t))
+            signal = (signal * 32767).astype(np.int16)
+            noise_samples.append(signal.tobytes())
+            
+        all_samples = music_samples + noise_samples
+        
+        # Process samples concurrently
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [
+                executor.submit(analyzer.is_music, sample)
+                for sample in all_samples
+            ]
+            results = [future.result() for future in futures]
+            
+        # First two should be music, last two should not
+        assert results[:2] == [True, True]
+        assert results[2:] == [False, False]
+
+class TestEdgeCases:
+    """Test edge cases and boundary conditions."""
+    
+    def test_very_short_audio(self, analyzer):
+        """Test processing very short audio samples."""
+        # Create a very short sample (10ms)
+        sample_rate = 44100
+        duration = 0.01
+        t = np.linspace(0, duration, int(sample_rate * duration))
+        signal = np.sin(2 * np.pi * 440 * t)
+        signal = (signal * 32767).astype(np.int16)
+        
+        # Test all methods
+        samples, sr = analyzer.process_audio(signal.tobytes())
+        assert len(samples) > 0
+        
+        features = analyzer.extract_features(signal.tobytes())
+        assert isinstance(features, dict)
+        assert features['duration'] == pytest.approx(duration, rel=0.1)
+        
+        # Very short samples should not be classified as music
+        assert analyzer.is_music(signal.tobytes()) is False
+        
+    def test_silence_detection(self, analyzer):
+        """Test processing silent audio."""
+        # Create silent audio
+        sample_rate = 44100
+        duration = 1.0
+        signal = np.zeros(int(sample_rate * duration), dtype=np.int16)
+        
+        # Process silent audio
+        samples, sr = analyzer.process_audio(signal.tobytes())
+        assert np.allclose(samples, 0)
+        
+        features = analyzer.extract_features(signal.tobytes())
+        assert features['zero_crossing_rate'].mean() == 0
+        assert features['spectral_centroid'].mean() == 0
+        
+        # Silence should not be classified as music
+        assert analyzer.is_music(signal.tobytes()) is False
+        
+    def test_extreme_values(self, analyzer):
+        """Test processing audio with extreme values."""
+        # Create audio with maximum amplitude
+        sample_rate = 44100
+        duration = 1.0
+        t = np.linspace(0, duration, int(sample_rate * duration))
+        signal = np.sin(2 * np.pi * 440 * t)
+        signal = np.clip(signal * 32767, -32768, 32767).astype(np.int16)
+        
+        # Process extreme audio
+        samples, sr = analyzer.process_audio(signal.tobytes())
+        assert np.max(np.abs(samples)) <= 1.0
+        
+        features = analyzer.extract_features(signal.tobytes())
+        assert isinstance(features, dict)
+        assert not np.any(np.isnan(features['mfcc']))
+        assert not np.any(np.isinf(features['mfcc'])) 

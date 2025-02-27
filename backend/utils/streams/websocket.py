@@ -7,6 +7,8 @@ from fastapi import WebSocket
 import json
 from .redis_config import get_redis
 import asyncio
+import websockets
+from websockets.client import WebSocketClientProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -167,3 +169,59 @@ async def process_websocket_message(data: str, websocket: WebSocket):
         await send_error(websocket, "Message JSON invalide")
     except Exception as e:
         await send_error(websocket, f"Erreur lors du traitement du message: {str(e)}")
+
+class WebSocketManager:
+    """Manages WebSocket connections for stream monitoring."""
+    
+    def __init__(self):
+        """Initialize the WebSocket manager."""
+        self.connections: Dict[str, WebSocketClientProtocol] = {}
+        self.lock = asyncio.Lock()
+    
+    async def connect(self, url: str) -> Optional[WebSocketClientProtocol]:
+        """Establish a WebSocket connection to the given URL.
+        
+        Args:
+            url: The WebSocket URL to connect to
+            
+        Returns:
+            WebSocketClientProtocol if connection successful, None otherwise
+        """
+        try:
+            connection = await websockets.connect(url)
+            async with self.lock:
+                self.connections[url] = connection
+            return connection
+        except Exception as e:
+            print(f"Failed to connect to {url}: {str(e)}")
+            return None
+    
+    async def disconnect(self, url: str) -> None:
+        """Close a WebSocket connection.
+        
+        Args:
+            url: The URL of the connection to close
+        """
+        async with self.lock:
+            if url in self.connections:
+                await self.connections[url].close()
+                del self.connections[url]
+    
+    async def disconnect_all(self) -> None:
+        """Close all active WebSocket connections."""
+        async with self.lock:
+            for url, connection in self.connections.items():
+                await connection.close()
+            self.connections.clear()
+    
+    async def is_connected(self, url: str) -> bool:
+        """Check if a WebSocket connection is active.
+        
+        Args:
+            url: The URL to check
+            
+        Returns:
+            bool: True if connected, False otherwise
+        """
+        async with self.lock:
+            return url in self.connections and not self.connections[url].closed

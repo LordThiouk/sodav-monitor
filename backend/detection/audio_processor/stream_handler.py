@@ -31,6 +31,7 @@ class StreamHandler:
         self.buffer = np.zeros((buffer_size, channels))
         self.buffer_position = 0
         self.last_process_time = datetime.now()
+        self.processing = False
         
         logger.info(f"StreamHandler initialized: buffer_size={buffer_size}, channels={channels}")
         
@@ -46,6 +47,7 @@ class StreamHandler:
         Raises:
             ValueError: If chunk shape doesn't match configuration
             TypeError: If chunk is not a numpy array
+            Exception: If a critical error occurs during processing
         """
         if not isinstance(chunk, np.ndarray):
             raise TypeError("Audio chunk must be a numpy array")
@@ -53,6 +55,10 @@ class StreamHandler:
         expected_shape = (None, self.channels)
         if len(chunk.shape) != 2 or chunk.shape[1] != self.channels:
             raise ValueError(f"Chunk shape {chunk.shape} doesn't match expected shape {expected_shape}")
+            
+        # Check for backpressure
+        if self.processing:
+            return {"buffer_full": True, "backpressure": True}
             
         # Add chunk to buffer
         space_left = self.buffer_size - self.buffer_position
@@ -62,13 +68,24 @@ class StreamHandler:
         
         # Check if buffer is full
         if self.buffer_position >= self.buffer_size:
-            result = self._process_buffer()
-            self._reset_buffer()
-            return result
-            
+            self.processing = True
+            try:
+                result = await self._process_buffer()
+                self._reset_buffer()
+                return result
+            except Exception as e:
+                logger.error(f"Error processing chunk: {str(e)}")
+                if "Critical error" in str(e):
+                    self._reset_buffer()
+                    raise
+                # For non-critical errors, preserve buffer position
+                return {"error": str(e), "buffer_full": True}
+            finally:
+                self.processing = False
+                
         return None
         
-    def _process_buffer(self) -> Dict[str, Any]:
+    async def _process_buffer(self) -> Dict[str, Any]:
         """Process the complete buffer.
         
         Returns:

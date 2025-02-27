@@ -259,4 +259,214 @@ class TestFeatureExtractorPerformance:
                 return (final - initial) / 1024 / 1024  # MB
             
             memory_increase = benchmark(measure_memory)
-            assert memory_increase < 100  # Should use less than 100MB additional memory 
+            assert memory_increase < 100  # Should use less than 100MB additional memory
+    
+    def test_large_file_processing(self, benchmark, mock_librosa):
+        """Test processing of large audio files."""
+        with patch('backend.detection.audio_processor.feature_extractor.librosa', mock_librosa):
+            extractor = FeatureExtractor()
+            # Generate 30 seconds of audio data
+            duration = 30.0
+            sample_rate = 22050
+            t = np.linspace(0, duration, int(sample_rate * duration))
+            large_audio = np.sin(2 * np.pi * 440 * t)
+            
+            def process_large_file():
+                return extractor.extract_features(large_audio)
+            
+            result = benchmark(process_large_file)
+            assert isinstance(result, dict)
+            assert all(key in result for key in ["mel_spectrogram", "mfcc", "spectral_contrast", "chroma"])
+    
+    def test_concurrent_processing(self, benchmark, mock_librosa):
+        """Test concurrent processing of multiple audio streams."""
+        import concurrent.futures
+        
+        with patch('backend.detection.audio_processor.feature_extractor.librosa', mock_librosa):
+            extractor = FeatureExtractor()
+            # Generate 5 different audio samples
+            sample_rate = 22050
+            duration = 1.0
+            audio_samples = []
+            for freq in [440, 880, 1320, 1760, 2200]:  # Different frequencies
+                t = np.linspace(0, duration, int(sample_rate * duration))
+                audio_samples.append(np.sin(2 * np.pi * freq * t))
+            
+            def process_concurrent():
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                    futures = [executor.submit(extractor.extract_features, sample) 
+                             for sample in audio_samples]
+                    results = [future.result() for future in concurrent.futures.as_completed(futures)]
+                return results
+            
+            results = benchmark(process_concurrent)
+            assert len(results) == 5
+            assert all(isinstance(result, dict) for result in results)
+    
+    def test_memory_leak(self, benchmark, mock_librosa):
+        """Test for memory leaks during repeated processing."""
+        import psutil
+        import gc
+        
+        with patch('backend.detection.audio_processor.feature_extractor.librosa', mock_librosa):
+            extractor = FeatureExtractor()
+            # Generate sample audio
+            duration = 1.0
+            sample_rate = 22050
+            t = np.linspace(0, duration, int(sample_rate * duration))
+            audio = np.sin(2 * np.pi * 440 * t)
+            
+            def check_memory_usage():
+                process = psutil.Process()
+                initial_memory = process.memory_info().rss
+                
+                # Process multiple times
+                for _ in range(100):
+                    features = extractor.extract_features(audio)
+                    _ = extractor.is_music(features)
+                
+                # Force garbage collection
+                gc.collect()
+                
+                final_memory = process.memory_info().rss
+                memory_diff = final_memory - initial_memory
+                
+                # Memory increase should be minimal after GC
+                assert memory_diff < 10 * 1024 * 1024  # Less than 10MB increase
+                return memory_diff
+            
+            memory_diff = benchmark(check_memory_usage)
+            assert memory_diff >= 0  # Memory usage should not decrease
+    
+    def test_corrupted_audio_handling(self, benchmark, mock_librosa):
+        """Test handling of corrupted audio data."""
+        with patch('backend.detection.audio_processor.feature_extractor.librosa', mock_librosa):
+            extractor = FeatureExtractor()
+            
+            # Generate corrupted audio samples
+            corrupted_samples = [
+                np.array([np.nan] * 22050),  # NaN values
+                np.array([np.inf] * 22050),  # Infinity values
+                np.array([], dtype=np.float32),  # Empty array
+                np.array([0] * 22050),  # All zeros
+                np.random.rand(22050) * 1e10,  # Extremely large values
+            ]
+            
+            def process_corrupted():
+                results = []
+                for sample in corrupted_samples:
+                    try:
+                        features = extractor.extract_features(sample)
+                        is_music, confidence = extractor.is_music(features)
+                        results.append((features is not None, is_music, confidence))
+                    except (ValueError, TypeError):
+                        results.append((False, False, 0.0))
+                return results
+            
+            results = benchmark(process_corrupted)
+            assert len(results) == len(corrupted_samples)
+            # At least some of the corrupted samples should be handled gracefully
+            assert any(success for success, _, _ in results)
+
+class TestRealWorldSamples:
+    """Test feature extraction with realistic audio samples."""
+    
+    def test_music_detection_classical(self, mock_real_world_audio, real_world_samples, mock_librosa):
+        """Test music detection with classical piano sample."""
+        with patch('backend.detection.audio_processor.feature_extractor.librosa', mock_librosa):
+            extractor = FeatureExtractor()
+            audio = mock_real_world_audio("music_samples", "classical_piano")
+            sample_info = next(s for s in real_world_samples["music_samples"] 
+                             if s["name"] == "classical_piano")
+            
+            features = extractor.extract_features(audio)
+            is_music, confidence = extractor.is_music(features)
+            
+            assert is_music is True
+            assert confidence >= 0.8  # High confidence for clear musical signal
+            assert isinstance(features["mel_spectrogram"], np.ndarray)
+            assert features["mel_spectrogram"].shape[0] == extractor.n_mels
+    
+    def test_music_detection_rock(self, mock_real_world_audio, real_world_samples, mock_librosa):
+        """Test music detection with rock guitar sample."""
+        with patch('backend.detection.audio_processor.feature_extractor.librosa', mock_librosa):
+            extractor = FeatureExtractor()
+            audio = mock_real_world_audio("music_samples", "rock_guitar")
+            sample_info = next(s for s in real_world_samples["music_samples"] 
+                             if s["name"] == "rock_guitar")
+            
+            features = extractor.extract_features(audio)
+            is_music, confidence = extractor.is_music(features)
+            
+            assert is_music is True
+            assert confidence >= 0.8  # High confidence for clear musical signal
+            # Check for expected frequency content
+            assert isinstance(features["mel_spectrogram"], np.ndarray)
+            assert features["mel_spectrogram"].shape[0] == extractor.n_mels
+    
+    def test_speech_detection(self, mock_real_world_audio, real_world_samples, mock_librosa):
+        """Test speech detection with male and female speech samples."""
+        with patch('backend.detection.audio_processor.feature_extractor.librosa', mock_librosa):
+            extractor = FeatureExtractor()
+            
+            for speech_type in ["male_speech", "female_speech"]:
+                audio = mock_real_world_audio("speech_samples", speech_type)
+                sample_info = next(s for s in real_world_samples["speech_samples"] 
+                                 if s["name"] == speech_type)
+                
+                features = extractor.extract_features(audio)
+                is_music, confidence = extractor.is_music(features)
+                
+                assert is_music is False  # Should not detect as music
+                assert confidence < 0.6  # Lower confidence for speech
+                assert isinstance(features["mel_spectrogram"], np.ndarray)
+                assert features["mel_spectrogram"].shape[0] == extractor.n_mels
+    
+    def test_mixed_content(self, mock_real_world_audio, real_world_samples, mock_librosa):
+        """Test detection with mixed music and speech content."""
+        with patch('backend.detection.audio_processor.feature_extractor.librosa', mock_librosa):
+            extractor = FeatureExtractor()
+            audio = mock_real_world_audio("mixed_samples", "music_with_vocals")
+            sample_info = next(s for s in real_world_samples["mixed_samples"] 
+                             if s["name"] == "music_with_vocals")
+            
+            features = extractor.extract_features(audio)
+            is_music, confidence = extractor.is_music(features)
+            
+            assert is_music is True  # Should detect as music
+            assert 0.7 <= confidence <= 0.9  # Moderate to high confidence
+            assert isinstance(features["mel_spectrogram"], np.ndarray)
+            assert features["mel_spectrogram"].shape[0] == extractor.n_mels
+    
+    @pytest.mark.parametrize("sample_type,name", [
+        ("music_samples", "classical_piano"),
+        ("music_samples", "rock_guitar"),
+        ("speech_samples", "male_speech"),
+        ("speech_samples", "female_speech"),
+        ("mixed_samples", "music_with_vocals")
+    ])
+    def test_feature_consistency(self, mock_real_world_audio, mock_librosa, sample_type, name):
+        """Test consistency of feature extraction across multiple runs."""
+        with patch('backend.detection.audio_processor.feature_extractor.librosa', mock_librosa):
+            extractor = FeatureExtractor()
+            audio = mock_real_world_audio(sample_type, name)
+            
+            # Extract features multiple times
+            features_list = [extractor.extract_features(audio) for _ in range(5)]
+            
+            # Check consistency of feature shapes
+            for features in features_list:
+                assert features["mel_spectrogram"].shape == features_list[0]["mel_spectrogram"].shape
+                assert features["mfcc"].shape == features_list[0]["mfcc"].shape
+                assert features["spectral_contrast"].shape == features_list[0]["spectral_contrast"].shape
+                assert features["chroma"].shape == features_list[0]["chroma"].shape
+            
+            # Check consistency of music detection
+            results = [extractor.is_music(features) for features in features_list]
+            is_music_results = [result[0] for result in results]
+            confidence_values = [result[1] for result in results]
+            
+            # All runs should give the same music/non-music classification
+            assert len(set(is_music_results)) == 1
+            # Confidence values should be consistent (within small variation)
+            assert max(confidence_values) - min(confidence_values) < 0.1 

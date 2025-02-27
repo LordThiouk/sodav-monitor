@@ -270,4 +270,185 @@ class TestAnalyticsErrorHandling:
         with pytest.raises(SQLAlchemyError):
             await analytics_manager.update_all_analytics(sample_detection_data)
         
-        mock_db_session.rollback.assert_called_once() 
+        mock_db_session.rollback.assert_called_once()
+
+@pytest.mark.asyncio
+class TestDataAggregation:
+    """Test data aggregation functionality."""
+    
+    async def test_hourly_aggregation(self, analytics_manager, mock_db_session):
+        """Test hourly data aggregation."""
+        current_time = datetime.now()
+        hour_start = current_time.replace(minute=0, second=0, microsecond=0)
+        
+        # Create test data
+        detections = [
+            {
+                'station_id': 1,
+                'track_id': 1,
+                'confidence': 0.95,
+                'play_duration': timedelta(seconds=180),
+                'detected_at': hour_start + timedelta(minutes=i*10)
+            }
+            for i in range(6)  # Create detections over 1 hour
+        ]
+        
+        # Process detections
+        for detection in detections:
+            await analytics_manager.update_all_analytics(detection)
+        
+        # Verify hourly aggregation
+        mock_db_session.execute.assert_called()
+        sql_calls = [str(call[0][0]).lower() for call in mock_db_session.execute.call_args_list]
+        assert any('detection_hourly' in call for call in sql_calls)
+        assert any('sum(play_duration)' in call for call in sql_calls)
+    
+    async def test_daily_aggregation(self, analytics_manager, mock_db_session):
+        """Test daily data aggregation."""
+        current_time = datetime.now()
+        day_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Create test data across different hours
+        detections = [
+            {
+                'station_id': 1,
+                'track_id': 1,
+                'confidence': 0.95,
+                'play_duration': timedelta(seconds=180),
+                'detected_at': day_start + timedelta(hours=i*2)
+            }
+            for i in range(12)  # Create detections over 24 hours
+        ]
+        
+        # Process detections
+        for detection in detections:
+            await analytics_manager.update_all_analytics(detection)
+        
+        # Verify daily aggregation
+        mock_db_session.execute.assert_called()
+        sql_calls = [str(call[0][0]).lower() for call in mock_db_session.execute.call_args_list]
+        assert any('track_daily' in call for call in sql_calls)
+        assert any('artist_daily' in call for call in sql_calls)
+
+@pytest.mark.asyncio
+class TestReportGeneration:
+    """Test report generation functionality."""
+    
+    async def test_generate_station_report(self, analytics_manager, mock_db_session):
+        """Test generation of station-specific report."""
+        # Configure mock to return sample data
+        mock_result = AsyncMock()
+        mock_result.fetchall.return_value = [
+            {
+                'track_id': 1,
+                'title': 'Test Track',
+                'artist': 'Test Artist',
+                'play_count': 10,
+                'total_duration': 3600,
+                'average_confidence': 0.95
+            }
+        ]
+        mock_db_session.execute.return_value = mock_result
+        
+        report = await analytics_manager.generate_station_report(
+            station_id=1,
+            start_date=datetime.now() - timedelta(days=1),
+            end_date=datetime.now()
+        )
+        
+        assert report is not None
+        assert len(report) > 0
+        assert 'track_id' in report[0]
+        assert 'play_count' in report[0]
+    
+    async def test_generate_artist_report(self, analytics_manager, mock_db_session):
+        """Test generation of artist-specific report."""
+        # Configure mock to return sample data
+        mock_result = AsyncMock()
+        mock_result.fetchall.return_value = [
+            {
+                'artist_id': 1,
+                'artist': 'Test Artist',
+                'total_tracks': 5,
+                'total_plays': 50,
+                'total_duration': 18000,
+                'average_confidence': 0.92
+            }
+        ]
+        mock_db_session.execute.return_value = mock_result
+        
+        report = await analytics_manager.generate_artist_report(
+            artist_id=1,
+            start_date=datetime.now() - timedelta(days=7),
+            end_date=datetime.now()
+        )
+        
+        assert report is not None
+        assert len(report) > 0
+        assert 'artist_id' in report[0]
+        assert 'total_plays' in report[0]
+
+@pytest.mark.asyncio
+class TestConcurrentProcessing:
+    """Test concurrent analytics processing."""
+    
+    async def test_concurrent_updates(self, analytics_manager, mock_db_session):
+        """Test handling of concurrent analytics updates."""
+        # Create multiple concurrent detection updates
+        detections = [
+            {
+                'station_id': i % 3 + 1,
+                'track_id': i % 5 + 1,
+                'confidence': 0.9 + (i % 10) / 100,
+                'play_duration': timedelta(seconds=180),
+                'detected_at': datetime.now()
+            }
+            for i in range(10)
+        ]
+        
+        # Process detections concurrently
+        tasks = [
+            analytics_manager.update_all_analytics(detection)
+            for detection in detections
+        ]
+        await asyncio.gather(*tasks)
+        
+        # Verify transaction handling
+        assert mock_db_session.begin.call_count >= len(detections)
+        assert mock_db_session.commit.call_count >= len(detections)
+    
+    async def test_concurrent_report_generation(self, analytics_manager, mock_db_session):
+        """Test concurrent report generation."""
+        # Configure mock to return different data for different queries
+        async def mock_execute(*args, **kwargs):
+            sql = str(args[0]).lower()
+            mock_result = AsyncMock()
+            
+            if 'station_track_stats' in sql:
+                mock_result.fetchall.return_value = [
+                    {'station_id': 1, 'track_count': 100, 'total_duration': 36000}
+                ]
+            elif 'artist_stats' in sql:
+                mock_result.fetchall.return_value = [
+                    {'artist_id': 1, 'track_count': 50, 'total_duration': 18000}
+                ]
+            else:
+                mock_result.fetchall.return_value = []
+            
+            return mock_result
+        
+        mock_db_session.execute = AsyncMock(side_effect=mock_execute)
+        
+        # Generate multiple reports concurrently
+        tasks = [
+            analytics_manager.generate_station_report(
+                station_id=i,
+                start_date=datetime.now() - timedelta(days=1),
+                end_date=datetime.now()
+            )
+            for i in range(1, 4)
+        ]
+        results = await asyncio.gather(*tasks)
+        
+        assert all(result is not None for result in results)
+        assert mock_db_session.execute.call_count >= len(tasks) 
