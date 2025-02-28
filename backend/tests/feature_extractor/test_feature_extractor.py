@@ -2,40 +2,108 @@
 
 import pytest
 import numpy as np
-from unittest.mock import patch
+import io
+from unittest.mock import Mock, patch
+import librosa
+import soundfile as sf
 from backend.detection.audio_processor.feature_extractor import FeatureExtractor
 
-class TestFeatureExtractorInitialization:
-    """Test FeatureExtractor initialization."""
+@pytest.fixture
+def feature_extractor():
+    """Create a FeatureExtractor instance with default parameters."""
+    return FeatureExtractor()
+
+@pytest.fixture
+def mock_audio_data():
+    """Generate mock audio data for testing."""
+    # Generate a simple sine wave
+    duration = 3  # seconds
+    sample_rate = 22050
+    t = np.linspace(0, duration, int(sample_rate * duration))
+    frequency = 440  # Hz (A4 note)
+    audio = np.sin(2 * np.pi * frequency * t)
+    return audio.astype(np.float32)
+
+@pytest.fixture
+def mock_features():
+    """Create mock features dictionary."""
+    return {
+        "mel_spectrogram": np.random.rand(128, 100),
+        "mfcc": np.random.rand(20, 100),
+        "spectral_contrast": np.random.rand(7, 100),
+        "chroma": np.random.rand(12, 100),
+        "rhythm_strength": 0.8,
+        "confidence": 0.85
+    }
+
+@pytest.fixture
+def mock_librosa():
+    """Create a mock librosa instance."""
+    mock = Mock()
+    mock.feature.melspectrogram.return_value = np.random.rand(128, 100)
+    mock.feature.mfcc.return_value = np.random.rand(20, 100)
+    mock.feature.spectral_contrast.return_value = np.random.rand(7, 100)
+    mock.feature.chroma_stft.return_value = np.random.rand(12, 100)
+    mock.power_to_db.return_value = np.random.rand(128, 100)
+    mock.util.normalize.return_value = np.random.rand(22050)
     
-    def test_default_initialization(self):
-        """Test initialization with default parameters."""
-        extractor = FeatureExtractor()
-        assert extractor.sample_rate == 22050
-        assert extractor.n_mels == 128
-        assert extractor.n_fft == 2048
-        assert extractor.hop_length == 512
+    # Mock onset_strength to return a numpy array
+    onset_env = np.random.rand(100)
+    mock.onset.onset_strength.return_value = onset_env
     
-    def test_custom_initialization(self):
-        """Test initialization with custom parameters."""
+    # Mock beat_track to return tempo and beat frames
+    mock.beat.beat_track.return_value = (120.0, np.array([10, 20, 30, 40]))
+    
+    # Mock signal.windows.hann
+    mock.signal = Mock()
+    mock.signal.windows = Mock()
+    mock.signal.windows.hann = lambda x: np.ones(x)
+    
+    return mock
+
+@pytest.fixture
+def sample_audio_data():
+    """Generate sample audio data."""
+    return np.random.rand(22050)
+
+@pytest.fixture
+def sample_stereo_audio():
+    """Generate sample stereo audio data."""
+    return np.random.rand(22050, 2)
+
+@pytest.fixture
+def sample_music_data():
+    """Generate sample music-like audio data."""
+    return np.random.rand(22050)
+
+@pytest.fixture
+def sample_speech_data():
+    """Generate sample speech-like audio data."""
+    return np.random.rand(22050)
+
+class TestFeatureExtractor:
+    """Test cases for FeatureExtractor class."""
+
+    def test_initialization_with_valid_parameters(self):
+        """Test initialization with valid parameters."""
         extractor = FeatureExtractor(
             sample_rate=44100,
-            n_mels=64,
-            n_fft=1024,
-            hop_length=256
+            n_mels=256,
+            n_fft=4096,
+            hop_length=1024
         )
         assert extractor.sample_rate == 44100
-        assert extractor.n_mels == 64
-        assert extractor.n_fft == 1024
-        assert extractor.hop_length == 256
-    
+        assert extractor.n_mels == 256
+        assert extractor.n_fft == 4096
+        assert extractor.hop_length == 1024
+
     @pytest.mark.parametrize("param,value", [
         ("sample_rate", 0),
         ("n_mels", -1),
         ("n_fft", 0),
         ("hop_length", -10)
     ])
-    def test_invalid_parameters(self, param, value):
+    def test_initialization_with_invalid_parameters(self, param, value):
         """Test initialization with invalid parameters."""
         params = {
             "sample_rate": 22050,
@@ -44,9 +112,115 @@ class TestFeatureExtractorInitialization:
             "hop_length": 512
         }
         params[param] = value
-        
         with pytest.raises(ValueError):
             FeatureExtractor(**params)
+
+    def test_extract_features_with_valid_data(self, feature_extractor, mock_audio_data):
+        """Test feature extraction with valid audio data."""
+        features = feature_extractor.extract_features(mock_audio_data)
+        
+        assert isinstance(features, dict)
+        assert "mel_spectrogram" in features
+        assert "mfcc" in features
+        assert "spectral_contrast" in features
+        assert "chroma" in features
+        
+        # Check shapes
+        expected_frames = 1 + (len(mock_audio_data) - feature_extractor.n_fft) // feature_extractor.hop_length
+        assert features["mel_spectrogram"].shape[0] == feature_extractor.n_mels
+        assert features["mel_spectrogram"].shape[1] <= expected_frames
+        assert features["mfcc"].shape[1] == features["mel_spectrogram"].shape[1]
+
+    def test_extract_features_with_invalid_data(self, feature_extractor):
+        """Test feature extraction with invalid data."""
+        with pytest.raises(TypeError):
+            feature_extractor.extract_features([1, 2, 3])  # Not a numpy array
+            
+        with pytest.raises(ValueError):
+            feature_extractor.extract_features(np.array([]))  # Empty array
+
+    @pytest.mark.asyncio
+    async def test_analyze_audio_with_valid_data(self, feature_extractor, mock_audio_data):
+        """Test audio analysis with valid data."""
+        # Convert numpy array to bytes (simulating real audio data)
+        audio_bytes = io.BytesIO()
+        sf.write(audio_bytes, mock_audio_data, feature_extractor.sample_rate, format='WAV')
+        audio_bytes = audio_bytes.getvalue()
+        
+        features = await feature_extractor.analyze_audio(audio_bytes)
+        
+        assert features is not None
+        assert "mel_spectrogram" in features
+        assert "confidence" in features
+        assert 0 <= features["confidence"] <= 1
+        assert "rhythm_strength" in features
+        assert 0 <= features["rhythm_strength"] <= 1
+
+    @pytest.mark.asyncio
+    async def test_analyze_audio_with_invalid_data(self, feature_extractor):
+        """Test audio analysis with invalid data."""
+        result = await feature_extractor.analyze_audio(b"invalid audio data")
+        assert result is None
+
+    def test_is_music_detection(self, feature_extractor, mock_features):
+        """Test music detection functionality."""
+        is_music, confidence = feature_extractor.is_music(mock_features)
+        
+        assert isinstance(is_music, bool)
+        assert isinstance(confidence, float)
+        assert 0 <= confidence <= 1
+
+    def test_get_audio_duration(self, feature_extractor, mock_audio_data):
+        """Test audio duration calculation."""
+        duration = feature_extractor.get_audio_duration(mock_audio_data)
+        
+        assert isinstance(duration, float)
+        assert duration > 0
+        expected_duration = len(mock_audio_data) / feature_extractor.sample_rate
+        assert abs(duration - expected_duration) < 0.1  # Allow small difference due to floating point
+
+    def test_calculate_confidence(self, feature_extractor, mock_features):
+        """Test confidence calculation."""
+        confidence = feature_extractor._calculate_confidence(mock_features)
+        
+        assert isinstance(confidence, float)
+        assert 0 <= confidence <= 1
+
+    def test_calculate_rhythm_strength(self, feature_extractor):
+        """Test rhythm strength calculation."""
+        # Create test data
+        onset_env = np.array([0.1, 0.8, 0.2, 0.9, 0.1, 0.7, 0.3, 0.8, 0.2, 0.6])
+        peaks = np.array([1, 3, 5, 7, 9])  # Indices of peaks in onset_env
+        
+        rhythm_strength = feature_extractor._calculate_rhythm_strength(onset_env, peaks)
+        
+        assert isinstance(rhythm_strength, float)
+        assert 0 <= rhythm_strength <= 1
+        
+        # Test with empty data
+        assert feature_extractor._calculate_rhythm_strength(np.array([]), np.array([])) == 0.0
+        
+        # Test with single peak
+        single_onset = np.array([0.1, 0.9, 0.1])
+        single_peak = np.array([1])
+        single_strength = feature_extractor._calculate_rhythm_strength(single_onset, single_peak)
+        assert 0 <= single_strength <= 1
+
+    def test_calculate_harmonic_ratio(self, feature_extractor):
+        """Test harmonic ratio calculation."""
+        contrast = np.random.rand(7, 100)
+        harmonic_ratio = feature_extractor._calculate_harmonic_ratio(contrast)
+        
+        assert isinstance(harmonic_ratio, float)
+        assert 0 <= harmonic_ratio <= 1
+
+    def test_calculate_spectral_flux(self, feature_extractor):
+        """Test spectral flux calculation."""
+        mel_spec = np.random.rand(128, 100)
+        spectral_flux = feature_extractor._calculate_spectral_flux(mel_spec)
+        
+        assert isinstance(spectral_flux, float)
+        assert spectral_flux >= 0  # Spectral flux should be non-negative
 
 class TestFeatureExtraction:
     """Test feature extraction functionality."""
