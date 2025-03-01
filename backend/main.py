@@ -58,7 +58,7 @@ async def shutdown_event():
     """Événement d'arrêt de l'application."""
     await event_manager.shutdown()
 
-@app.get("/api/health")
+@app.get("/health")
 async def health_check():
     """Point de terminaison pour vérifier l'état du système."""
     return await event_manager.health_check()

@@ -8,11 +8,11 @@ import io
 from pydub import AudioSegment
 import pytest
 from sqlalchemy.orm import Session
-from ..audio_processor import AudioProcessor
-from ..models.models import RadioStation, Track, TrackDetection
-from ..models.database import SessionLocal
-from ..utils.radio_manager import RadioManager
-from ..utils.fingerprint import generate_fingerprint
+from backend.detection.audio_processor import AudioProcessor
+from backend.models.models import RadioStation, Track, TrackDetection
+from backend.models.database import SessionLocal
+from backend.utils.radio.manager import RadioManager
+from backend.detection.audio_processor.fingerprint import generate_fingerprint
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

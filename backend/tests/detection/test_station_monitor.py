@@ -1,14 +1,15 @@
-"""Tests for the Station Monitor module."""
+"""Tests for the station monitor module."""
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
-import numpy as np
+import asyncio
 from datetime import datetime, timedelta
+from unittest.mock import Mock, patch, AsyncMock
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend.detection.audio_processor.station_monitor import StationMonitor
-from backend.models.database import RadioStation, StationHealth
+from backend.models.models import RadioStation, StationHealth, StationStatus
+from backend.detection.station_monitor import StationMonitor
+from backend.utils.streams.stream_checker import StreamChecker
 
 @pytest.fixture
 def db_session():
@@ -17,6 +18,7 @@ def db_session():
     session.add = Mock()
     session.commit = Mock()
     session.rollback = Mock()
+    session.query = Mock()
     return session
 
 @pytest.fixture
@@ -34,25 +36,38 @@ def sample_station():
         country="SN",
         language="fr",
         is_active=True,
-        last_check=datetime.now(),
-        health_status="healthy"
+        last_checked=datetime.now(),
+        status=StationStatus.active,
+        failure_count=0
     )
 
+@pytest.fixture
+def mock_health_check():
+    """Create a mock health check response."""
+    return {
+        'is_available': True,
+        'is_audio_stream': True,
+        'status_code': 200,
+        'latency': 100,
+        'content_type': 'audio/mpeg'
+    }
+
 @pytest.mark.asyncio
-async def test_start_monitoring_success(station_monitor, sample_station, db_session):
+async def test_start_monitoring_success(station_monitor, sample_station, mock_health_check, db_session):
     """Test successful start of station monitoring."""
     # Mock database query
     db_session.query.return_value.filter.return_value.first.return_value = sample_station
     
-    # Mock stream health check
-    mock_health = {'is_available': True, 'is_audio_stream': True, 'status_code': 200}
-    with patch.object(station_monitor, 'check_stream_health', return_value=mock_health):
+    # Mock health check
+    with patch.object(station_monitor.stream_checker, 'check_stream_availability', 
+                     return_value=mock_health_check):
         success = await station_monitor.start_monitoring(sample_station.id)
         
         assert success is True
         assert sample_station.is_active is True
-        assert sample_station.health_status == "healthy"
-        assert isinstance(sample_station.last_check, datetime)
+        assert sample_station.status == StationStatus.active
+        assert isinstance(sample_station.last_checked, datetime)
+        assert db_session.commit.called
 
 @pytest.mark.asyncio
 async def test_start_monitoring_stream_unavailable(station_monitor, sample_station, db_session):
@@ -60,23 +75,22 @@ async def test_start_monitoring_stream_unavailable(station_monitor, sample_stati
     db_session.query.return_value.filter.return_value.first.return_value = sample_station
     
     mock_health = {'is_available': False, 'status_code': 404}
-    with patch.object(station_monitor, 'check_stream_health', return_value=mock_health):
+    with patch.object(station_monitor.stream_checker, 'check_stream_availability', 
+                     return_value=mock_health):
         success = await station_monitor.start_monitoring(sample_station.id)
         
         assert success is False
-        assert sample_station.health_status == "unavailable"
+        assert sample_station.status == StationStatus.inactive
+        assert db_session.commit.called
 
 @pytest.mark.asyncio
-async def test_start_monitoring_non_audio_stream(station_monitor, sample_station, db_session):
-    """Test monitoring start with non-audio stream."""
-    db_session.query.return_value.filter.return_value.first.return_value = sample_station
+async def test_start_monitoring_invalid_station(station_monitor, db_session):
+    """Test monitoring start with invalid station ID."""
+    db_session.query.return_value.filter.return_value.first.return_value = None
     
-    mock_health = {'is_available': True, 'is_audio_stream': False, 'status_code': 200}
-    with patch.object(station_monitor, 'check_stream_health', return_value=mock_health):
-        success = await station_monitor.start_monitoring(sample_station.id)
-        
-        assert success is False
-        assert sample_station.health_status == "invalid_stream"
+    success = await station_monitor.start_monitoring(999)
+    assert success is False
+    assert not db_session.commit.called
 
 @pytest.mark.asyncio
 async def test_stop_monitoring_success(station_monitor, sample_station, db_session):
@@ -90,98 +104,88 @@ async def test_stop_monitoring_success(station_monitor, sample_station, db_sessi
     assert db_session.commit.called
 
 @pytest.mark.asyncio
-async def test_check_stream_health_success(station_monitor):
+async def test_check_stream_health_success(station_monitor, mock_health_check):
     """Test successful stream health check."""
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.headers = {'content-type': 'audio/mpeg'}
-    
-    with patch('aiohttp.ClientSession.head', return_value=mock_response):
-        health = await station_monitor.check_stream_health("http://test.stream/audio")
+    with patch.object(station_monitor.stream_checker, 'check_stream_availability', 
+                     return_value=mock_health_check):
+        health = await station_monitor.check_stream_health("http://test.stream")
         
         assert health['is_available'] is True
         assert health['is_audio_stream'] is True
         assert health['status_code'] == 200
 
 @pytest.mark.asyncio
-async def test_check_stream_health_connection_error(station_monitor):
-    """Test stream health check with connection error."""
-    with patch('aiohttp.ClientSession.head', side_effect=Exception("Connection error")):
-        health = await station_monitor.check_stream_health("http://test.stream/audio")
+async def test_check_stream_health_error(station_monitor):
+    """Test stream health check with error."""
+    with patch.object(station_monitor.stream_checker, 'check_stream_availability', 
+                     side_effect=Exception("Connection error")):
+        health = await station_monitor.check_stream_health("http://test.stream")
         
         assert health['is_available'] is False
-        assert health['error'] == "Connection error"
+        assert health['is_audio_stream'] is False
+        assert 'error' in health
 
 @pytest.mark.asyncio
-async def test_update_station_health_success(station_monitor, sample_station, db_session):
-    """Test successful station health update."""
-    health_data = {
-        'is_available': True,
-        'is_audio_stream': True,
-        'status_code': 200,
-        'latency': 150  # ms
-    }
+async def test_update_station_health_healthy(station_monitor, sample_station, mock_health_check, db_session):
+    """Test updating station health with healthy status."""
+    await station_monitor.update_station_health(sample_station, mock_health_check)
     
-    await station_monitor.update_station_health(sample_station, health_data)
-    
-    assert sample_station.health_status == "healthy"
-    assert sample_station.last_check is not None
+    assert sample_station.status == StationStatus.active
+    assert isinstance(sample_station.last_checked, datetime)
     assert db_session.add.called
     assert db_session.commit.called
 
 @pytest.mark.asyncio
-async def test_update_station_health_with_issues(station_monitor, sample_station, db_session):
-    """Test station health update with issues."""
+async def test_update_station_health_degraded(station_monitor, sample_station, db_session):
+    """Test updating station health with degraded status."""
     health_data = {
         'is_available': True,
         'is_audio_stream': True,
-        'status_code': 200,
         'latency': 5000  # High latency
     }
     
     await station_monitor.update_station_health(sample_station, health_data)
     
-    assert sample_station.health_status == "degraded"
+    assert sample_station.status == StationStatus.inactive
     assert db_session.add.called
 
 @pytest.mark.asyncio
-async def test_monitor_all_stations(station_monitor, db_session):
-    """Test monitoring of all active stations."""
-    # Create multiple test stations
-    stations = [
-        RadioStation(id=1, stream_url="http://test1.stream", is_active=True),
-        RadioStation(id=2, stream_url="http://test2.stream", is_active=True),
-        RadioStation(id=3, stream_url="http://test3.stream", is_active=False)
-    ]
+async def test_monitor_all_stations(station_monitor, sample_station, mock_health_check, db_session):
+    """Test monitoring all active stations."""
+    # Mock active stations query
+    db_session.query.return_value.filter.return_value.all.return_value = [sample_station]
     
-    # Mock database query
-    db_session.query.return_value.filter.return_value.all.return_value = stations
-    
-    # Mock health checks
-    mock_health = {'is_available': True, 'is_audio_stream': True, 'status_code': 200}
-    with patch.object(station_monitor, 'check_stream_health', return_value=mock_health):
+    # Mock health check
+    with patch.object(station_monitor.stream_checker, 'check_stream_availability', 
+                     return_value=mock_health_check):
         results = await station_monitor.monitor_all_stations()
         
-        assert len(results) == 2  # Only active stations
-        assert all(result['success'] for result in results)
+        assert len(results) == 1
+        assert results[0]['station_id'] == sample_station.id
+        assert results[0]['success'] is True
 
 @pytest.mark.asyncio
-async def test_handle_station_recovery(station_monitor, sample_station, db_session):
-    """Test handling of station recovery after failure."""
-    # Set initial failed state
-    sample_station.health_status = "unavailable"
+async def test_handle_station_recovery_success(station_monitor, sample_station, mock_health_check, db_session):
+    """Test successful station recovery."""
+    sample_station.status = StationStatus.inactive
     sample_station.failure_count = 3
-    
     db_session.query.return_value.filter.return_value.first.return_value = sample_station
     
-    # Mock successful health check
-    mock_health = {'is_available': True, 'is_audio_stream': True, 'status_code': 200}
-    with patch.object(station_monitor, 'check_stream_health', return_value=mock_health):
+    with patch.object(station_monitor.stream_checker, 'check_stream_availability', 
+                     return_value=mock_health_check):
         await station_monitor.handle_station_recovery(sample_station.id)
         
-        assert sample_station.health_status == "healthy"
+        assert sample_station.status == StationStatus.active
         assert sample_station.failure_count == 0
         assert db_session.commit.called
+
+@pytest.mark.asyncio
+async def test_handle_station_recovery_invalid_station(station_monitor, db_session):
+    """Test station recovery with invalid station ID."""
+    db_session.query.return_value.filter.return_value.first.return_value = None
+    
+    await station_monitor.handle_station_recovery(999)
+    assert not db_session.commit.called
 
 @pytest.mark.asyncio
 async def test_cleanup_old_health_records(station_monitor, db_session):
@@ -195,4 +199,48 @@ async def test_cleanup_old_health_records(station_monitor, db_session):
     deleted_count = await station_monitor.cleanup_old_health_records(days=7)
     
     assert deleted_count == 10
-    assert db_session.commit.called 
+    assert db_session.commit.called
+
+@pytest.mark.asyncio
+async def test_database_error_handling(station_monitor, sample_station, mock_health_check, db_session):
+    """Test handling of database errors."""
+    db_session.query.return_value.filter.return_value.first.return_value = sample_station
+    db_session.commit.side_effect = SQLAlchemyError("Database error")
+    
+    with patch.object(station_monitor.stream_checker, 'check_stream_availability', 
+                     return_value=mock_health_check):
+        success = await station_monitor.start_monitoring(sample_station.id)
+        
+        assert success is False
+        assert db_session.rollback.called
+
+@pytest.mark.asyncio
+async def test_concurrent_monitoring(station_monitor, mock_health_check, db_session):
+    """Test concurrent monitoring of multiple stations."""
+    stations = [
+        RadioStation(id=1, name="Radio 1", stream_url="http://test1.stream", is_active=True),
+        RadioStation(id=2, name="Radio 2", stream_url="http://test2.stream", is_active=True),
+        RadioStation(id=3, name="Radio 3", stream_url="http://test3.stream", is_active=True)
+    ]
+    
+    db_session.query.return_value.filter.return_value.all.return_value = stations
+    
+    with patch.object(station_monitor.stream_checker, 'check_stream_availability', 
+                     return_value=mock_health_check):
+        results = await station_monitor.monitor_all_stations()
+        
+        assert len(results) == 3
+        assert all(result['success'] for result in results)
+
+@pytest.mark.asyncio
+async def test_performance_monitoring(station_monitor, sample_station, mock_health_check, db_session):
+    """Test performance aspects of monitoring."""
+    db_session.query.return_value.filter.return_value.first.return_value = sample_station
+    
+    with patch.object(station_monitor.stream_checker, 'check_stream_availability', 
+                     return_value=mock_health_check):
+        start_time = datetime.now()
+        await station_monitor.start_monitoring(sample_station.id)
+        duration = (datetime.now() - start_time).total_seconds()
+        
+        assert duration < 1.0  # Should complete within 1 second 

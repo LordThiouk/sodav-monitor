@@ -6,7 +6,6 @@ import numpy as np
 import librosa
 import os
 from io import BytesIO
-from pydub import AudioSegment
 import scipy.signal
 from backend.detection.audio_processor.audio_analysis import AudioAnalyzer
 
@@ -70,38 +69,21 @@ def test_process_audio_stereo(analyzer):
     assert len(samples.shape) == 1  # Should be converted to mono
     assert np.abs(samples).max() <= 1.0
 
-def test_extract_features(analyzer, mock_audio_data):
-    """Test audio feature extraction."""
-    features = analyzer.extract_features(mock_audio_data)
+def test_extract_features(audio_analyzer, sample_audio_data):
+    """Test feature extraction"""
+    features = audio_analyzer.extract_features(sample_audio_data)
     
     # Check required features
-    assert isinstance(features, dict)
-    required_features = [
-        'mfcc', 'chroma', 'spectral_centroid',
-        'spectral_bandwidth', 'spectral_rolloff',
-        'zero_crossing_rate', 'duration', 'tempo',
-        'beats', 'onset_strength'
-    ]
+    assert 'mfcc' in features
+    assert 'spectral_centroid' in features
+    assert 'spectral_rolloff' in features
+    assert 'zero_crossing_rate' in features
     
-    for feature in required_features:
-        assert feature in features
-        
-    # Validate feature types and shapes
+    # Check feature types
     assert isinstance(features['mfcc'], np.ndarray)
-    assert isinstance(features['chroma'], np.ndarray)
-    assert isinstance(features['spectral_centroid'], np.ndarray)
-    assert isinstance(features['spectral_bandwidth'], np.ndarray)
-    assert isinstance(features['spectral_rolloff'], np.ndarray)
-    assert isinstance(features['zero_crossing_rate'], np.ndarray)
-    assert isinstance(features['duration'], float)
-    assert isinstance(features['tempo'], float)
-    assert isinstance(features['beats'], np.ndarray)
-    assert isinstance(features['onset_strength'], np.ndarray)
-    
-    # Validate feature values
-    assert features['duration'] > 0
-    assert features['tempo'] > 0
-    assert len(features['beats']) > 0
+    assert isinstance(features['spectral_centroid'], float)
+    assert isinstance(features['spectral_rolloff'], float)
+    assert isinstance(features['zero_crossing_rate'], float)
 
 def test_calculate_duration(analyzer, mock_audio_data):
     """Test audio duration calculation."""
@@ -223,14 +205,14 @@ def test_extract_features_complex_audio(analyzer, complex_mock_audio):
     features = analyzer.extract_features(complex_mock_audio)
     
     # Verify spectral features reflect complexity
-    assert features['spectral_bandwidth'].mean() > 0  # Should have wide bandwidth
-    assert features['spectral_rolloff'].mean() > 0  # Should have high-frequency content
-    assert features['zero_crossing_rate'].mean() > 0  # Should have many zero crossings
+    assert features['spectral_bandwidth'] > 0  # Should have wide bandwidth
+    assert features['spectral_rolloff'] > 0  # Should have high-frequency content
+    assert features['zero_crossing_rate'] > 0  # Should have many zero crossings
     
     # Verify rhythmic features
     assert features['tempo'] > 0  # Should detect tempo
     assert len(features['beats']) > 0  # Should detect beats
-    assert features['onset_strength'].mean() > 0  # Should have strong onsets
+    assert np.mean(features['onset_strength']) > 0  # Should have strong onsets
 
 def test_is_music_with_complex_audio(analyzer, complex_mock_audio):
     """Test music detection with complex audio."""
@@ -297,29 +279,38 @@ def test_librosa_integration(mock_spectral_centroid, mock_chroma_stft, mock_mfcc
     assert mock_spectral_centroid.called
     assert isinstance(features['mfcc'], np.ndarray)
     assert isinstance(features['chroma'], np.ndarray)
-    assert isinstance(features['spectral_centroid'], np.ndarray)
+    assert isinstance(features['spectral_centroid'], float)
 
 def test_edge_cases(analyzer):
     """Test edge cases in audio processing."""
     # Test with very short audio (< 1024 samples)
     short_signal = np.sin(np.linspace(0, 2*np.pi, 512))
     short_audio = (short_signal * 32767).astype(np.int16).tobytes()
-    
+
     with pytest.raises(ValueError, match="No valid audio samples found"):
         analyzer.process_audio(short_audio)
-    
+
     # Test with silence
     silence = np.zeros(44100, dtype=np.int16).tobytes()
     assert analyzer.is_music(silence) is False
-    
+
     # Test with DC offset
     dc_signal = np.ones(44100, dtype=np.int16) * 16384  # Half of max value
-    assert analyzer.is_music(dc_signal.tobytes()) is False
-    
+    with pytest.raises(ValueError, match="Audio data has excessive DC offset"):
+        analyzer.process_audio(dc_signal.tobytes())
+
     # Test with pure noise
     np.random.seed(42)
     noise = np.random.normal(0, 32767/4, 44100).astype(np.int16)
     assert analyzer.is_music(noise.tobytes()) is False
+
+    # Test with invalid values that will cause NaN
+    signal = np.ones(4096, dtype=np.int16)
+    signal[::2] = -32768  # Set every other value to minimum int16
+    signal[1::2] = 32767  # Set remaining values to maximum int16
+    invalid_audio = signal.tobytes()
+    with pytest.raises(ValueError, match="Error processing audio: Audio data contains NaN values"):
+        analyzer.process_audio(invalid_audio)
 
 @pytest.fixture
 def audio_analyzer():
@@ -353,28 +344,6 @@ def test_process_audio(audio_analyzer, sample_audio_data):
     assert rate == 44100
     assert len(samples) > 0
 
-def test_extract_features(audio_analyzer, sample_audio_data):
-    """Test feature extraction"""
-    features = audio_analyzer.extract_features(sample_audio_data)
-    
-    # Check required features
-    assert 'mfcc' in features
-    assert 'spectral_centroid' in features
-    assert 'spectral_rolloff' in features
-    assert 'zero_crossing_rate' in features
-    
-    # Check feature shapes
-    assert isinstance(features['mfcc'], np.ndarray)
-    assert isinstance(features['spectral_centroid'], float)
-    assert isinstance(features['spectral_rolloff'], float)
-    assert isinstance(features['zero_crossing_rate'], float)
-
-def test_calculate_duration(audio_analyzer, sample_audio_data):
-    """Test duration calculation"""
-    duration = audio_analyzer.calculate_duration(sample_audio_data)
-    assert isinstance(duration, float)
-    assert duration == pytest.approx(3.0, rel=0.1)  # 3 seconds with 10% tolerance
-
 def test_is_music(audio_analyzer, sample_audio_data):
     """Test music detection"""
     is_music = audio_analyzer.is_music(sample_audio_data)
@@ -384,7 +353,7 @@ def test_invalid_audio_data(audio_analyzer):
     """Test handling of invalid audio data"""
     invalid_data = b'not audio data'
     
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         audio_analyzer.process_audio(invalid_data)
 
 def test_empty_audio_data(audio_analyzer):
@@ -413,4 +382,136 @@ def test_music_detection_threshold(audio_analyzer, sample_audio_data):
     # Noise should not be detected as music
     noise = np.random.normal(0, 0.1, 44100 * 3)
     noise = (noise * 32767).astype(np.int16).tobytes()
-    assert not audio_analyzer.is_music(noise) 
+    assert not audio_analyzer.is_music(noise)
+
+def test_spectral_feature_validation(audio_analyzer):
+    """Test validation of spectral features."""
+    # Generate test signal with known spectral content
+    sample_rate = 44100
+    duration = 2.0
+    t = np.linspace(0, duration, int(sample_rate * duration))
+    
+    # Create signal with specific frequency components
+    signal = (
+        np.sin(2 * np.pi * 100 * t) +    # Bass frequency
+        np.sin(2 * np.pi * 1000 * t) +   # Mid frequency
+        np.sin(2 * np.pi * 5000 * t)     # High frequency
+    )
+    
+    # Convert to audio data
+    signal = (signal * 32767).astype(np.int16).tobytes()
+    
+    # Extract features
+    features = audio_analyzer.extract_features(signal)
+    
+    # Validate spectral centroid (should be in mid-range due to frequency distribution)
+    assert 500 < features['spectral_centroid'] < 3000
+
+def test_rhythm_analysis(audio_analyzer):
+    """Test rhythm detection and analysis."""
+    # Generate rhythmic signal
+    sample_rate = 44100
+    duration = 4.0
+    t = np.linspace(0, duration, int(sample_rate * duration))
+    
+    # Create base signal
+    signal = np.sin(2 * np.pi * 440 * t)
+    
+    # Add rhythm through amplitude modulation
+    rhythm_freq = 4  # 4 Hz = 240 BPM
+    envelope = 0.5 * (1 + np.sin(2 * np.pi * rhythm_freq * t))
+    signal = signal * envelope
+    
+    # Convert to audio data
+    signal = (signal * 32767).astype(np.int16).tobytes()
+    
+    # Extract features
+    features = audio_analyzer.extract_features(signal)
+    
+    # Validate tempo detection (should be close to 240 BPM)
+    assert 220 < features['tempo'] < 260
+
+@pytest.mark.asyncio
+async def test_concurrent_processing(audio_analyzer):
+    """Test concurrent audio processing."""
+    import asyncio
+    
+    # Generate multiple audio segments
+    sample_rate = 44100
+    duration = 1.0
+    segments = []
+    for freq in [440, 880, 1320]:  # Different frequencies
+        t = np.linspace(0, duration, int(sample_rate * duration))
+        signal = np.sin(2 * np.pi * freq * t)
+        signal = (signal * 32767).astype(np.int16).tobytes()
+        segments.append(signal)
+    
+    # Process segments concurrently
+    async def process_segment(segment):
+        features = audio_analyzer.extract_features(segment)
+        return features
+    
+    tasks = [process_segment(segment) for segment in segments]
+    results = await asyncio.gather(*tasks)
+    
+    # Validate results
+    assert len(results) == len(segments)
+    for features in results:
+        assert isinstance(features, dict)
+        assert 'mfcc' in features
+        assert 'spectral_centroid' in features
+        assert features['duration'] == pytest.approx(1.0, rel=0.1)
+
+def test_memory_optimization(audio_analyzer):
+    """Test memory usage during processing."""
+    import psutil
+    import os
+    
+    process = psutil.Process(os.getpid())
+    
+    # Generate large audio segment
+    sample_rate = 44100
+    duration = 10.0
+    t = np.linspace(0, duration, int(sample_rate * duration))
+    signal = np.sin(2 * np.pi * 440 * t)
+    signal = (signal * 32767).astype(np.int16).tobytes()
+    
+    # Measure memory before processing
+    mem_before = process.memory_info().rss
+    
+    # Process audio
+    features = audio_analyzer.extract_features(signal)
+    
+    # Measure memory after processing
+    mem_after = process.memory_info().rss
+    
+    # Calculate memory usage
+    mem_used = mem_after - mem_before
+    
+    # Memory usage should be reasonable (< 100MB for 10s audio)
+    assert mem_used < 100 * 1024 * 1024
+    assert isinstance(features, dict)
+    assert features['duration'] == pytest.approx(10.0, rel=0.1)
+
+def test_error_recovery(audio_analyzer):
+    """Test error recovery in audio processing."""
+    # Test recovery from invalid audio format
+    with pytest.raises(ValueError, match="Error processing audio"):
+        audio_analyzer.process_audio(b"invalid data")
+    
+    # Test recovery from corrupted audio
+    corrupted_audio = np.random.bytes(1000)
+    with pytest.raises(ValueError):
+        audio_analyzer.process_audio(corrupted_audio)
+    
+    # Test recovery from zero-length audio
+    with pytest.raises(ValueError, match="Error processing audio: Empty audio data provided"):
+        audio_analyzer.process_audio(b"")
+    
+    # Test with invalid values that will cause NaN
+    signal = np.ones(4096, dtype=np.int16)
+    signal[::2] = -32768  # Set every other value to minimum int16
+    signal[1::2] = 32767  # Set remaining values to maximum int16
+    invalid_audio = signal.tobytes()
+    with pytest.raises(ValueError, match="Error processing audio: Audio data contains NaN values"):
+        audio_analyzer.process_audio(invalid_audio) 

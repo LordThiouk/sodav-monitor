@@ -1,73 +1,127 @@
 """Module de gestion des WebSockets."""
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Any
 from datetime import datetime, timedelta
 import logging
 from fastapi import WebSocket
 import json
-from .redis_config import get_redis
+from backend.core.config.redis import get_redis
 import asyncio
 
 logger = logging.getLogger(__name__)
 
-class ConnectionManager:
-    """Gestionnaire de connexions WebSocket."""
+class WebSocketManager:
+    """Manage WebSocket connections and broadcasting."""
     
-    def __init__(self, max_connections: int = 100):
-        self.active_connections: List[WebSocket] = []
-        self.redis = get_redis()
-        self.max_connections = max_connections
-    
+    def __init__(self):
+        """Initialize the WebSocket manager."""
+        self.active_connections: Set[WebSocket] = set()
+        self.redis = None
+        
     async def connect(self, websocket: WebSocket):
-        """Établir une connexion WebSocket."""
-        if len(self.active_connections) >= self.max_connections:
-            raise Exception("Maximum connections reached")
+        """Connect a new WebSocket client."""
         await websocket.accept()
-        self.active_connections.append(websocket)
-    
-    def disconnect(self, websocket: WebSocket):
-        """Fermer une connexion WebSocket."""
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-    
-    async def broadcast(self, message: Dict):
-        """Diffuser un message à tous les clients connectés."""
-        disconnected = []
+        self.active_connections.add(websocket)
+        logger.info(f"New WebSocket connection. Total connections: {len(self.active_connections)}")
+        
+    async def disconnect(self, websocket: WebSocket):
+        """Disconnect a WebSocket client."""
+        self.active_connections.remove(websocket)
+        logger.info(f"WebSocket disconnected. Total connections: {len(self.active_connections)}")
+        
+    async def broadcast(self, message: Dict[str, Any]):
+        """Broadcast a message to all connected clients."""
+        if not self.active_connections:
+            return
+            
+        # Convert message to JSON
+        message_str = json.dumps(message)
+        
+        # Broadcast to all connections
+        disconnected = set()
         for connection in self.active_connections:
             try:
-                await connection.send_json(message)
-            except:
-                disconnected.append(connection)
-        
-        # Nettoyer les connexions fermées
+                await connection.send_text(message_str)
+            except Exception as e:
+                logger.error(f"Error broadcasting to connection: {str(e)}")
+                disconnected.add(connection)
+                
+        # Clean up disconnected clients
         for connection in disconnected:
-            self.disconnect(connection)
-
-manager = ConnectionManager()
-
-async def broadcast_track_detection(track_data: Dict):
-    """Diffuser une détection de piste à tous les clients."""
-    try:
-        # Valider les données
-        if not isinstance(track_data.get("station_id"), int) or \
-           not track_data.get("track_id") or \
-           not track_data.get("title") or \
-           not track_data.get("artist"):
-            await send_error(None, "Données de piste invalides")
-            return
-
-        # Publier sur Redis pour la synchronisation entre les workers
-        redis = get_redis()
-        redis.publish("track_detections", json.dumps(track_data))
+            await self.disconnect(connection)
+            
+    async def initialize_redis(self):
+        """Initialize Redis connection."""
+        if not self.redis:
+            self.redis = await get_redis()
+            
+    async def publish_to_redis(self, channel: str, message: Dict[str, Any]):
+        """Publish a message to Redis channel."""
+        try:
+            await self.initialize_redis()
+            message_str = json.dumps(message)
+            await self.redis.publish(channel, message_str)
+        except Exception as e:
+            logger.error(f"Error publishing to Redis: {str(e)}")
+            
+    async def subscribe_to_redis(self, channel: str):
+        """Subscribe to Redis channel and broadcast messages."""
+        try:
+            await self.initialize_redis()
+            pubsub = self.redis.pubsub()
+            await pubsub.subscribe(channel)
+            
+            while True:
+                try:
+                    message = await pubsub.get_message(ignore_subscribe_messages=True)
+                    if message:
+                        data = json.loads(message['data'])
+                        await self.broadcast(data)
+                except Exception as e:
+                    logger.error(f"Error processing Redis message: {str(e)}")
+                await asyncio.sleep(0.1)
+                
+        except Exception as e:
+            logger.error(f"Error subscribing to Redis: {str(e)}")
+            
+    async def send_personal_message(self, websocket: WebSocket, message: Dict[str, Any]):
+        """Send a message to a specific client."""
+        try:
+            message_str = json.dumps(message)
+            await websocket.send_text(message_str)
+        except Exception as e:
+            logger.error(f"Error sending personal message: {str(e)}")
+            await self.disconnect(websocket)
+            
+    def get_connection_count(self) -> int:
+        """Get the number of active connections."""
+        return len(self.active_connections)
         
-        # Diffuser via WebSocket
-        await manager.broadcast({
-            "type": "track_detection",
-            "data": track_data
-        })
-    except Exception as e:
-        # Logger l'erreur mais ne pas la propager
-        print(f"Erreur lors de la diffusion de la détection: {str(e)}")
+    async def cleanup(self):
+        """Clean up resources."""
+        # Close all connections
+        for connection in self.active_connections:
+            try:
+                await connection.close()
+            except Exception as e:
+                logger.error(f"Error closing connection: {str(e)}")
+                
+        self.active_connections.clear()
+        
+        # Close Redis connection
+        if self.redis:
+            await self.redis.close()
+            self.redis = None
+
+manager = WebSocketManager()
+
+async def broadcast_track_detection(track_data: Dict[str, Any]):
+    """Broadcast track detection to all connected clients."""
+    await manager.broadcast({
+        'type': 'track_detection',
+        'data': track_data,
+        'timestamp': datetime.now().isoformat()
+    })
 
 async def broadcast_station_update(station_data: Dict):
     """Diffuser une mise à jour de station à tous les clients."""

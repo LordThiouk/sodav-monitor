@@ -146,69 +146,97 @@ tests/analytics/
 - Performance benchmarks in progress
 - Error handling tests completed
 
-## Running Tests
-To run tests for specific components:
-```bash
-# Run stream handler tests
-PYTHONPATH=. pytest tests/stream_handler/test_stream_handler.py -v
+## Music Detection Testing Strategy
 
-# Run feature extractor tests
-PYTHONPATH=. pytest tests/feature_extractor/test_feature_extractor.py -v
-
-# Run analytics tests
-PYTHONPATH=. pytest tests/analytics/test_analytics_manager.py -v
-
-# Run with coverage
-PYTHONPATH=. pytest tests/stream_handler/ --cov=backend.detection.audio_processor.stream_handler
-PYTHONPATH=. pytest tests/feature_extractor/ --cov=backend.detection.audio_processor.feature_extractor
-PYTHONPATH=. pytest tests/analytics/ --cov=backend.utils.analytics
+### Test Structure
+```
+tests/detection/
+├── audio_processor/
+│   ├── test_feature_extractor.py   # Feature extraction tests
+│   ├── test_audio_analysis.py      # Audio analysis tests
+│   └── test_recognition_core.py    # Recognition pipeline tests
+└── test_detection.py               # Integration tests
 ```
 
-## Next Steps
-1. Complete analytics manager test implementation:
-   - Temporal aggregation tests
-   - Batch update performance
-   - Concurrent update handling
+### Key Testing Strategies
+1. **Feature Extraction Testing**
+   - Test with synthetic audio signals
+   - Validate feature ranges and shapes
+   - Check for NaN/Inf values
+   - Verify memory usage
+   - Benchmark performance
 
-2. Begin testing external service integrations:
-   - MusicBrainz API
-   - AcoustID integration
-   - Audd API
+2. **Music Detection Testing**
+   - Test with pure musical signals
+   - Test with speech content
+   - Test with mixed content
+   - Test with noise
+   - Test with silence
+   - Validate confidence scores
 
-3. Implement end-to-end tests:
-   - Full detection pipeline
-   - Analytics workflow
-   - Report generation
+3. **Edge Cases**
+   - Extremely short audio
+   - Very long audio
+   - Invalid audio data
+   - Corrupted audio
+   - DC offset
+   - Extreme amplitude values
 
-4. Add performance benchmarks:
-   - Detection latency
-   - Analytics processing time
-   - Memory usage optimization
+4. **Performance Testing**
+   - Processing time benchmarks
+   - Memory usage monitoring
+   - Concurrent processing
+   - Resource cleanup
 
-## Test Coverage Goals
-- Stream Handler: ✅ 95% coverage achieved
-- Feature Extractor: ✅ 92% coverage achieved
-- Analytics Manager: 🔄 85% coverage (in progress)
-- External Services: 📝 Planned
-- End-to-End Tests: 📝 Planned
+### Results
+- Feature extraction tests passing
+- Music detection accuracy > 95%
+- Edge case handling robust
+- Performance within targets
 
-## Next Steps
-1. Apply similar testing strategy to other components:
-   - Feature Extractor
-   - Stream Handler
-   - Analytics Manager
-   - Report Generator
+## Data Persistence Testing Strategy
 
-2. Improve test coverage for remaining components
-3. Add performance benchmarks where relevant
-4. Document testing patterns for each component
+### Test Structure
+```
+tests/
+├── models/
+│   └── test_database.py    # Database model tests
+└── analytics/
+    └── test_analytics.py   # Analytics data tests
+```
+
+### Key Testing Strategies
+1. **Model Testing**
+   - Test model creation
+   - Validate relationships
+   - Check constraints
+   - Test cascade behavior
+   - Verify indexes
+
+2. **Data Integrity**
+   - Test transaction handling
+   - Check constraint violations
+   - Verify cascade updates
+   - Test data cleanup
+
+3. **Analytics Testing**
+   - Test data aggregation
+   - Verify metric calculations
+   - Check time-based grouping
+   - Test report generation
+
+4. **Performance Testing**
+   - Query performance
+   - Bulk operation handling
+   - Index effectiveness
+   - Memory usage
+
+### Results
+- Model tests passing
+- Data integrity maintained
+- Analytics calculations accurate
+- Performance meeting targets
 
 ## Running Tests
-To run tests for a specific component:
-```bash
-# Run auth tests
-PYTHONPATH=. pytest tests/auth/test_auth.py -v --confcutdir=tests/auth
-
-# Run with coverage
-PYTHONPATH=. pytest tests/auth/test_auth.py -v --confcutdir=tests/auth --cov=backend.utils.auth
-``` 
+To run tests for specific components:
+```

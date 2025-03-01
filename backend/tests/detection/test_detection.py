@@ -1,16 +1,19 @@
-"""Tests for the main detection functionality."""
+"""Tests for the detection module."""
 
 import pytest
 import numpy as np
 from unittest.mock import Mock, patch, AsyncMock
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
-from backend.detection.audio_processor.core import AudioProcessor
+from backend.detection.audio_processor import AudioProcessor
 from backend.detection.audio_processor.feature_extractor import FeatureExtractor
 from backend.detection.audio_processor.track_manager import TrackManager
-from backend.models.database import RadioStation, Track, TrackDetection, StationStatus
+from backend.models.models import RadioStation, Track, TrackDetection, StationStatus
+from backend.models.database import SessionLocal
 from backend.utils.logging_config import setup_logging
 
 # Configure logging

@@ -1,18 +1,21 @@
-"""Shared fixtures for detection tests."""
+"""Fixtures for detection tests."""
 
 import pytest
 import numpy as np
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
-from backend.detection.audio_processor.core import AudioProcessor
+from backend.detection.audio_processor import AudioProcessor
 from backend.detection.audio_processor.feature_extractor import FeatureExtractor
 from backend.detection.audio_processor.track_manager import TrackManager
 from backend.detection.audio_processor.stream_handler import StreamHandler
-from backend.models.database import RadioStation, Track, TrackDetection
-from backend.core.config.logging import setup_logging
+from backend.models.models import RadioStation, Track, TrackDetection
+from backend.models.database import SessionLocal
+from backend.utils.logging_config import setup_logging
 
 # Configure logging
 logger = setup_logging(__name__)

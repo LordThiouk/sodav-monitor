@@ -165,7 +165,7 @@ class AnalyticsManager:
                 # Update artist stats
                 await self.db.execute(text("""
                     INSERT INTO artist_stats (
-                        artist_id, detection_count,
+                        artist_id, total_plays,
                         last_detected, total_play_time,
                         average_confidence
                     ) VALUES (
@@ -174,12 +174,12 @@ class AnalyticsManager:
                         :confidence
                     )
                     ON CONFLICT (artist_id) DO UPDATE SET
-                        detection_count = artist_stats.detection_count + 1,
+                        total_plays = artist_stats.total_plays + 1,
                         last_detected = :current_time,
                         total_play_time = COALESCE(artist_stats.total_play_time, '0 seconds'::interval) + :play_duration,
                         average_confidence = (
-                            artist_stats.average_confidence * artist_stats.detection_count + :confidence
-                        ) / (artist_stats.detection_count + 1)
+                            artist_stats.average_confidence * artist_stats.total_plays + :confidence
+                        ) / (artist_stats.total_plays + 1)
                 """), {
                     'artist_id': base_data['artist_id'],
                     'current_time': current_time,

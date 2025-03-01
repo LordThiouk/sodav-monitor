@@ -2,149 +2,182 @@
 
 import pytest
 import numpy as np
+import asyncio
 from datetime import datetime, timedelta
-from backend.detection.audio_processor import StreamHandler
+from backend.detection.audio_processor.stream_handler import StreamHandler
 
 @pytest.fixture
-def stream_handler():
-    """Fixture providing a configured StreamHandler instance."""
-    return StreamHandler(buffer_size=1000, channels=2)
+async def stream_handler():
+    """Create a StreamHandler instance for testing."""
+    handler = StreamHandler(buffer_size=1024, channels=2)  # Smaller buffer for faster tests
+    await handler.start_stream()
+    yield handler
+    await handler.cleanup()
 
-@pytest.fixture
-def sample_chunk():
-    """Fixture providing a sample audio chunk."""
-    return np.random.random((100, 2))  # 100 stereo samples
+@pytest.mark.asyncio
+async def test_initialization():
+    """Test StreamHandler initialization."""
+    handler = StreamHandler(buffer_size=1024, channels=2)
+    assert handler.buffer_size == 1024
+    assert handler.channels == 2
+    assert handler.buffer.shape == (1024, 2)
+    assert handler.buffer_position == 0
 
-class TestStreamHandlerInitialization:
-    """Test cases for StreamHandler initialization."""
+@pytest.mark.asyncio
+async def test_invalid_initialization():
+    """Test StreamHandler initialization with invalid parameters."""
+    with pytest.raises(ValueError):
+        StreamHandler(buffer_size=0)
+    with pytest.raises(ValueError):
+        StreamHandler(channels=3)
+
+@pytest.mark.asyncio
+async def test_process_valid_chunk(stream_handler):
+    """Test processing a valid audio chunk."""
+    # Fill buffer completely
+    chunk = np.random.rand(1024, 2)  # Full buffer size
+    result = await stream_handler.process_chunk(chunk)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (1024, 2)
+
+@pytest.mark.asyncio
+async def test_process_silence(stream_handler):
+    """Test processing silent audio."""
+    chunk = np.zeros((1024, 2))
+    result = await stream_handler.process_chunk(chunk)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (1024, 2)
+    assert np.all(result == 0)
+
+@pytest.mark.asyncio
+async def test_process_invalid_chunk(stream_handler):
+    """Test processing invalid audio chunks."""
+    with pytest.raises(TypeError):
+        await stream_handler.process_chunk([1, 2, 3])  # Not numpy array
+        
+    with pytest.raises(ValueError):
+        await stream_handler.process_chunk(np.random.rand(1024, 3))  # Wrong channels
+
+@pytest.mark.asyncio
+async def test_process_nan_chunk(stream_handler):
+    """Test processing chunk with NaN values."""
+    chunk = np.array([[np.nan, np.nan]] * 1024)
+    with pytest.raises(ValueError):
+        await stream_handler.process_chunk(chunk)
+
+@pytest.mark.asyncio
+async def test_buffer_overflow(stream_handler):
+    """Test handling buffer overflow."""
+    # Try to add more samples than buffer size
+    chunk = np.random.rand(2000, 2)
+    result = await stream_handler.process_chunk(chunk)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (1024, 2)
+    assert stream_handler.buffer_position == 976  # 2000 - 1024 samples remaining
+
+@pytest.mark.asyncio
+async def test_stream_lifecycle(stream_handler):
+    """Test stream start/stop lifecycle."""
+    assert await stream_handler.stop_stream()
+    assert stream_handler.buffer_position == 0
+    assert await stream_handler.start_stream()
+    assert stream_handler.buffer_position == 0
+
+@pytest.mark.asyncio
+async def test_buffer_status(stream_handler):
+    """Test getting buffer status."""
+    chunk = np.random.rand(512, 2)  # Half buffer
+    await stream_handler.process_chunk(chunk)
     
-    def test_default_initialization(self):
-        """Test initialization with default parameters."""
-        handler = StreamHandler()
-        assert handler.buffer_size == 4096
-        assert handler.channels == 2
-        assert handler.buffer.shape == (4096, 2)
-        
-    def test_custom_initialization(self):
-        """Test initialization with custom parameters."""
-        handler = StreamHandler(buffer_size=1000, channels=1)
-        assert handler.buffer_size == 1000
-        assert handler.channels == 1
-        assert handler.buffer.shape == (1000, 1)
-        
-    def test_invalid_buffer_size(self):
-        """Test initialization with invalid buffer size."""
-        with pytest.raises(ValueError):
-            StreamHandler(buffer_size=0)
+    status = stream_handler.get_buffer_status()
+    assert status["buffer_size"] == 1024
+    assert status["current_position"] == 512
+    assert status["fill_percentage"] == 50.0
+    assert status["channels"] == 2
+    assert "last_process_time" in status
+    assert "processing_delay_ms" in status
+
+@pytest.mark.asyncio
+async def test_concurrent_processing():
+    """Test concurrent chunk processing."""
+    handler = StreamHandler(buffer_size=1024, channels=2)
+    await handler.start_stream()
+    
+    chunks = [np.random.rand(256, 2) for _ in range(4)]  # 4 chunks of 256 samples
+    tasks = [handler.process_chunk(chunk) for chunk in chunks]
+    results = await asyncio.gather(*tasks)
+    
+    # Last task should return data
+    assert results[-1] is not None
+    assert isinstance(results[-1], np.ndarray)
+    assert results[-1].shape == (1024, 2)
+    
+    await handler.cleanup()
+
+@pytest.mark.asyncio
+async def test_long_running_stream():
+    """Test long-running stream processing."""
+    handler = StreamHandler(buffer_size=1024, channels=2)
+    await handler.start_stream()
+    
+    start_time = datetime.now()
+    chunk_count = 0
+    chunk_size = 256  # Quarter buffer size
+    
+    while (datetime.now() - start_time) < timedelta(seconds=1):
+        chunk = np.random.rand(chunk_size, 2)
+        result = await handler.process_chunk(chunk)
+        if result is not None:
+            chunk_count += 1
             
-    def test_invalid_channels(self):
-        """Test initialization with invalid number of channels."""
-        with pytest.raises(ValueError):
-            StreamHandler(channels=3)
+    assert chunk_count > 0
+    await handler.cleanup()
 
-class TestStreamHandlerProcessing:
-    """Test cases for audio chunk processing."""
-    
-    def test_process_valid_chunk(self, stream_handler, sample_chunk):
-        """Test processing a valid audio chunk."""
-        result = pytest.mark.asyncio(stream_handler.process_chunk(sample_chunk))
-        assert result is None  # Buffer not full yet
-        assert stream_handler.buffer_position == 100
-        
-    def test_process_invalid_chunk_type(self, stream_handler):
-        """Test processing an invalid chunk type."""
-        with pytest.raises(TypeError):
-            pytest.mark.asyncio(stream_handler.process_chunk([1, 2, 3]))
-            
-    def test_process_invalid_chunk_shape(self, stream_handler):
-        """Test processing a chunk with wrong shape."""
-        invalid_chunk = np.random.random((100, 3))  # 3 channels instead of 2
-        with pytest.raises(ValueError):
-            pytest.mark.asyncio(stream_handler.process_chunk(invalid_chunk))
-            
-    def test_buffer_full_processing(self, stream_handler):
-        """Test processing when buffer becomes full."""
-        # Fill the buffer completely
-        chunk = np.random.random((stream_handler.buffer_size, 2))
-        result = pytest.mark.asyncio(stream_handler.process_chunk(chunk))
-        
-        assert result is not None
-        assert "timestamp" in result
-        assert "buffer_full" in result
-        assert "processing_delay_ms" in result
-        assert "data" in result
-        assert result["buffer_full"] is True
-        assert isinstance(result["data"], np.ndarray)
-        assert result["data"].shape == (stream_handler.buffer_size, 2)
+@pytest.mark.asyncio
+async def test_cleanup(stream_handler):
+    """Test cleanup functionality."""
+    chunk = np.random.rand(512, 2)
+    await stream_handler.process_chunk(chunk)
+    await stream_handler.cleanup()
+    assert stream_handler.buffer_position == 0
+    assert np.all(stream_handler.buffer == 0)
 
-class TestStreamHandlerBufferManagement:
-    """Test cases for buffer management."""
-    
-    def test_reset_buffer(self, stream_handler, sample_chunk):
-        """Test buffer reset functionality."""
-        # Process some data
-        pytest.mark.asyncio(stream_handler.process_chunk(sample_chunk))
-        initial_position = stream_handler.buffer_position
-        
-        # Reset buffer
-        stream_handler._reset_buffer()
-        
-        assert stream_handler.buffer_position == 0
-        assert np.all(stream_handler.buffer == 0)
-        assert initial_position > 0  # Verify we had data before reset
-        
-    def test_buffer_overflow_handling(self, stream_handler):
-        """Test handling of buffer overflow."""
-        # Create chunk larger than buffer
-        large_chunk = np.random.random((stream_handler.buffer_size + 100, 2))
-        result = pytest.mark.asyncio(stream_handler.process_chunk(large_chunk))
-        
-        assert result is not None
-        assert stream_handler.buffer_position == 0  # Buffer should be reset
-        
-    def test_partial_buffer_fill(self, stream_handler):
-        """Test partial buffer filling."""
-        chunk1 = np.random.random((400, 2))
-        chunk2 = np.random.random((300, 2))
-        
-        # Process first chunk
-        result1 = pytest.mark.asyncio(stream_handler.process_chunk(chunk1))
-        assert result1 is None
-        assert stream_handler.buffer_position == 400
-        
-        # Process second chunk
-        result2 = pytest.mark.asyncio(stream_handler.process_chunk(chunk2))
-        assert result2 is None
-        assert stream_handler.buffer_position == 700
+@pytest.mark.asyncio
+async def test_mono_to_stereo_conversion(stream_handler):
+    """Test mono to stereo conversion."""
+    mono_chunk = np.random.rand(1024)  # Mono audio
+    result = await stream_handler.process_chunk(mono_chunk)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (1024, 2)
+    # Check if both channels are identical
+    assert np.allclose(result[:, 0], result[:, 1])
 
-class TestStreamHandlerStatus:
-    """Test cases for stream status reporting."""
+@pytest.mark.asyncio
+async def test_bit_depth_conversion(stream_handler):
+    """Test bit depth conversion."""
+    # Create 16-bit audio data
+    chunk = (np.random.rand(1024, 2) * 65535 - 32768).astype(np.int16)
+    chunk_float = chunk.astype(np.float32) / 32768.0
     
-    def test_buffer_status(self, stream_handler, sample_chunk):
-        """Test buffer status reporting."""
-        # Process some data
-        pytest.mark.asyncio(stream_handler.process_chunk(sample_chunk))
-        
-        status = stream_handler.get_buffer_status()
-        assert "buffer_size" in status
-        assert "current_position" in status
-        assert "fill_percentage" in status
-        assert "channels" in status
-        assert "last_process_time" in status
-        
-        assert status["buffer_size"] == stream_handler.buffer_size
-        assert status["current_position"] == stream_handler.buffer_position
-        assert status["channels"] == stream_handler.channels
-        assert isinstance(datetime.fromisoformat(status["last_process_time"]), datetime)
-        
-    def test_processing_delay(self, stream_handler):
-        """Test processing delay calculation."""
-        # Set initial process time
-        stream_handler.last_process_time = datetime.now() - timedelta(seconds=1)
-        
-        # Process full buffer
-        chunk = np.random.random((stream_handler.buffer_size, 2))
-        result = pytest.mark.asyncio(stream_handler.process_chunk(chunk))
-        
-        assert result is not None
-        assert result["processing_delay_ms"] >= 1000  # Should be at least 1 second 
+    result = await stream_handler.process_chunk(chunk_float)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (1024, 2)
+    assert result.dtype == np.float64  # Default numpy float type
+
+@pytest.mark.asyncio
+async def test_buffer_efficiency(stream_handler):
+    """Test buffer usage efficiency."""
+    chunk = np.random.rand(256, 2)  # Quarter buffer size
+    
+    # Fill buffer multiple times
+    buffer_usage = []
+    for i in range(4):
+        await stream_handler.process_chunk(chunk)
+        # Calculate expected buffer position
+        expected_position = min((i + 1) * 256, 1024)
+        assert stream_handler.buffer_position == expected_position % 1024
+        buffer_usage.append(stream_handler.buffer_position / stream_handler.buffer_size)
+    
+    # Buffer should be filled efficiently
+    assert all(usage > 0 for usage in buffer_usage[:-1])  # All but last should be non-zero
+    assert buffer_usage[-1] == 0  # Last position should be 0 after full buffer processed 

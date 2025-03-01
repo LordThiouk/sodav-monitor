@@ -211,46 +211,57 @@ class ExternalServiceHandler:
         self.initialized = True
         logger.info("ExternalServiceHandler initialized successfully")
         
-    async def recognize_with_musicbrainz(self, audio_data: bytes) -> Optional[Dict[str, Any]]:
+    async def recognize_with_musicbrainz(self, audio_data: bytes, max_retries: int = 3) -> Optional[Dict[str, Any]]:
         """Recognize music using MusicBrainz.
         
         Args:
             audio_data: Raw audio bytes
+            max_retries: Maximum number of retries for rate limit errors
             
         Returns:
             Dictionary with recognition results or None if error/no match
         """
-        try:
-            # Extract audio features
-            features = self.audio_analyzer.extract_features(audio_data)
-            
-            # Search MusicBrainz
-            result = musicbrainzngs.search_recordings(
-                query=f"duration:{int(features['duration'])}",
-                limit=5
-            )
-            
-            if not result['recordings']:
-                return None
+        retries = 0
+        while retries <= max_retries:
+            try:
+                # Extract audio features
+                features = self.audio_analyzer.extract_features(audio_data)
                 
-            recording = result['recordings'][0]
-            return {
-                'title': recording['title'],
-                'artist': recording['artist-credit'][0]['name'],
-                'duration': recording['duration'] / 1000.0,
-                'confidence': 0.7,
-                'source': 'musicbrainz'
-            }
+                # Search MusicBrainz
+                result = musicbrainzngs.search_recordings(
+                    query=f"duration:{int(features['duration'])}",
+                    limit=5
+                )
+                
+                if not result['recordings']:
+                    return None
+                    
+                recording = result['recordings'][0]
+                return {
+                    'title': recording['title'],
+                    'artist': recording['artist-credit'][0]['name'],
+                    'duration': recording['duration'] / 1000.0,
+                    'confidence': 0.7,
+                    'source': 'musicbrainz'
+                }
+                
+            except musicbrainzngs.WebServiceError as e:
+                if 'Rate limit exceeded' in str(e) and retries < max_retries:
+                    retries += 1
+                    await asyncio.sleep(1)  # Wait before retrying
+                    continue
+                logger.error(f"Error recognizing with MusicBrainz: {str(e)}, caused by: {e.__cause__}")
+                return None
+            except Exception as e:
+                logger.error(f"Error recognizing with MusicBrainz: {str(e)}")
+                return None
             
-        except Exception as e:
-            logger.error(f"Error recognizing with MusicBrainz: {str(e)}")
-            return None
-            
-    async def recognize_with_audd(self, audio_data: bytes) -> Optional[Dict[str, Any]]:
+    async def recognize_with_audd(self, audio_data: bytes, max_retries: int = 3) -> Optional[Dict[str, Any]]:
         """Recognize music using Audd API.
         
         Args:
             audio_data: Raw audio bytes
+            max_retries: Maximum number of retries for network errors
             
         Returns:
             Dictionary with recognition results or None if error/no match
@@ -259,37 +270,46 @@ class ExternalServiceHandler:
             logger.error("No Audd API key provided")
             return None
             
-        try:
-            data = {
-                'api_token': self.audd_api_key,
-                'return': 'apple_music,spotify'
-            }
-            files = {'file': ('audio.wav', audio_data)}
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post('https://api.audd.io/', data=data, files=files) as response:
-                    if response.status != 200:
-                        logger.error(f"Audd API error: {response.status}")
-                        return None
+        retries = 0
+        while retries <= max_retries:
+            try:
+                data = {
+                    'api_token': self.audd_api_key,
+                    'return': 'apple_music,spotify'
+                }
+                files = {'file': ('audio.wav', audio_data)}
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post('https://api.audd.io/', data=data, files=files) as response:
+                        if response.status != 200:
+                            if retries < max_retries:
+                                retries += 1
+                                await asyncio.sleep(1)  # Wait before retrying
+                                continue
+                            logger.error(f"Audd API error: {response.status}")
+                            return None
+                            
+                        result = await response.json()
                         
-                    result = await response.json()
-                    
-                    if not result.get('result'):
-                        return None
-                        
-                    return {
-                        'title': result['result']['title'],
-                        'artist': result['result']['artist'],
-                        'album': result['result'].get('album'),
-                        'release_date': result['result'].get('release_date'),
-                        'confidence': 0.9,
-                        'source': 'audd',
-                        'external_ids': {
-                            'apple_music': result['result'].get('apple_music', {}).get('id'),
-                            'spotify': result['result'].get('spotify', {}).get('id')
+                        if not result.get('result'):
+                            return None
+                            
+                        return {
+                            'title': result['result']['title'],
+                            'artist': result['result']['artist'],
+                            'album': result['result'].get('album'),
+                            'release_date': result['result'].get('release_date'),
+                            'confidence': 0.9,
+                            'source': 'audd'
                         }
-                    }
-                    
-        except Exception as e:
-            logger.error(f"Error recognizing with Audd: {str(e)}")
-            return None 
+                        
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if retries < max_retries:
+                    retries += 1
+                    await asyncio.sleep(1)  # Wait before retrying
+                    continue
+                logger.error(f"Error recognizing with Audd: {str(e)}")
+                return None
+            except Exception as e:
+                logger.error(f"Error recognizing with Audd: {str(e)}")
+                return None 

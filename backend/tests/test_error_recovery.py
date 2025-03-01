@@ -1,18 +1,21 @@
+"""Tests for error recovery functionality."""
+
 import pytest
 import asyncio
 from unittest.mock import patch, MagicMock
 from aioresponses import aioresponses
 from datetime import datetime, timedelta
 
-from backend.detection.audio_processor.core import AudioProcessor
+from backend.detection.audio_processor import AudioProcessor
 from backend.detection.audio_processor.external_services import (
     MusicBrainzService,
     AuddService,
     ExternalServiceError
 )
-from backend.utils.stream_checker import StreamChecker
+from backend.utils.streams.stream_checker import StreamChecker
 from backend.models.models import RadioStation as Station
 from backend.models.models import Track, TrackDetection as Detection
+from backend.models.database import SessionLocal
 
 @pytest.fixture
 def mock_audio_processor():

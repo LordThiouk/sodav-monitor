@@ -117,25 +117,25 @@ class StatsUpdater:
                 -- Update track stats
                 WITH track_update AS (
                     INSERT INTO track_stats (
-                        track_id, detection_count, average_confidence,
+                        track_id, total_plays, average_confidence,
                         last_detected, total_play_time
                     ) VALUES (
                         :track_id, 1, :confidence,
                         :current_time, :play_duration
                     )
                     ON CONFLICT (track_id) DO UPDATE SET
-                        detection_count = track_stats.detection_count + 1,
+                        total_plays = track_stats.total_plays + 1,
                         average_confidence = (
-                            track_stats.average_confidence * track_stats.detection_count + :confidence
-                        ) / (track_stats.detection_count + 1),
+                            track_stats.average_confidence * track_stats.total_plays + :confidence
+                        ) / (track_stats.total_plays + 1),
                         last_detected = :current_time,
                         total_play_time = COALESCE(track_stats.total_play_time, '0 seconds'::interval) + :play_duration
-                    RETURNING detection_count, average_confidence
+                    RETURNING total_plays, average_confidence
                 ),
                 -- Update artist stats
                 artist_update AS (
                     INSERT INTO artist_stats (
-                        artist_id, detection_count,
+                        artist_id, total_plays,
                         last_detected, total_play_time,
                         average_confidence
                     ) VALUES (
@@ -144,13 +144,13 @@ class StatsUpdater:
                         :confidence
                     )
                     ON CONFLICT (artist_id) DO UPDATE SET
-                        detection_count = artist_stats.detection_count + 1,
+                        total_plays = artist_stats.total_plays + 1,
                         last_detected = :current_time,
                         total_play_time = COALESCE(artist_stats.total_play_time, '0 seconds'::interval) + :play_duration,
                         average_confidence = (
-                            artist_stats.average_confidence * artist_stats.detection_count + :confidence
-                        ) / (artist_stats.detection_count + 1)
-                    RETURNING detection_count, average_confidence
+                            artist_stats.average_confidence * artist_stats.total_plays + :confidence
+                        ) / (artist_stats.total_plays + 1)
+                    RETURNING total_plays, average_confidence
                 ),
                 -- Update station-track stats
                 station_update AS (
@@ -171,9 +171,8 @@ class StatsUpdater:
                     RETURNING play_count, average_confidence
                 )
                 SELECT 
-                    (SELECT detection_count FROM track_update) as track_count,
-                    (SELECT detection_count FROM artist_update) as artist_count,
-                    (SELECT play_count FROM station_update) as station_play_count;
+                    (SELECT total_plays FROM track_update) as track_count,
+                    (SELECT total_plays FROM artist_update) as artist_play_count;
             """), {
                 'station_id': station_id,
                 'track_id': track_id,
@@ -186,8 +185,7 @@ class StatsUpdater:
             stats = result.fetchone()
             self.logger.info("Stats update completed", extra={
                 'track_detections': stats.track_count,
-                'artist_detections': stats.artist_count,
-                'station_plays': stats.station_play_count,
+                'artist_detections': stats.artist_play_count,
                 'update_time': current_time.isoformat()
             })
             
@@ -274,41 +272,42 @@ class StatsUpdater:
                     count = detection_hourly.count;
                     
                 -- Créer ou mettre à jour les statistiques artiste
-                INSERT INTO artist_stats (artist_id, detection_count, last_detected, total_play_time, average_confidence)
+                INSERT INTO artist_stats (
+                    artist_id, total_plays, average_confidence,
+                    last_detected, total_play_time
+                )
                 SELECT 
                     a.id,
                     COALESCE(COUNT(td.id), 0),
+                    COALESCE(AVG(td.confidence), 0),
                     MAX(td.detected_at),
-                    COALESCE(SUM(td.play_duration), interval '0'),
-                    COALESCE(AVG(td.confidence), 0)
+                    COALESCE(SUM(td.play_duration), interval '0')
                 FROM artists a
                 LEFT JOIN tracks t ON t.artist_id = a.id
                 LEFT JOIN track_detections td ON td.track_id = t.id
                 WHERE td.detected_at >= :hour_ago OR td.detected_at IS NULL
                 GROUP BY a.id
                 ON CONFLICT (artist_id) DO UPDATE SET
-                    detection_count = EXCLUDED.detection_count,
+                    total_plays = EXCLUDED.total_plays,
                     last_detected = EXCLUDED.last_detected,
                     total_play_time = EXCLUDED.total_play_time,
                     average_confidence = EXCLUDED.average_confidence;
                     
                 -- Créer ou mettre à jour les statistiques de pistes
-                INSERT INTO track_stats (track_id, detection_count, average_confidence, last_detected, total_play_time)
+                INSERT INTO track_stats (
+                    track_id, total_plays, average_confidence,
+                    last_detected, total_play_time
+                )
                 SELECT 
                     t.id,
-                    COALESCE(COUNT(td.id), 0),
-                    COALESCE(AVG(td.confidence), 0),
-                    MAX(td.detected_at),
-                    COALESCE(SUM(td.play_duration), interval '0')
+                    0 as total_plays,
+                    0.0 as average_confidence,
+                    NULL as last_detected,
+                    interval '0' as total_play_time
                 FROM tracks t
-                LEFT JOIN track_detections td ON td.track_id = t.id
-                WHERE td.detected_at >= :hour_ago OR td.detected_at IS NULL
-                GROUP BY t.id
-                ON CONFLICT (track_id) DO UPDATE SET
-                    detection_count = EXCLUDED.detection_count,
-                    average_confidence = EXCLUDED.average_confidence,
-                    last_detected = EXCLUDED.last_detected,
-                    total_play_time = EXCLUDED.total_play_time;
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM track_stats ts WHERE ts.track_id = t.id
+                );
                     
                 -- Mettre à jour les données analytics globales
                 INSERT INTO analytics_data (
@@ -403,35 +402,37 @@ class StatsUpdater:
             # Initialiser les stats artistes manquantes
             self.db_session.execute(text("""
                 INSERT INTO artist_stats (
-                    artist_id, detection_count, average_confidence,
+                    artist_id, total_plays, average_confidence,
                     last_detected, total_play_time
                 )
                 SELECT 
-                    a.id,
-                    0,
-                    0.0,
-                    NULL,
-                    interval '0'
+                    id as artist_id,
+                    0 as total_plays,
+                    0.0 as average_confidence,
+                    NULL as last_detected,
+                    interval '0' as total_play_time
                 FROM artists a
-                LEFT JOIN artist_stats ast ON ast.artist_id = a.id
-                WHERE ast.artist_id IS NULL;
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM artist_stats ast WHERE ast.artist_id = a.id
+                );
             """))
 
             # Initialiser les stats pistes manquantes
             self.db_session.execute(text("""
                 INSERT INTO track_stats (
-                    track_id, detection_count, average_confidence,
+                    track_id, total_plays, average_confidence,
                     last_detected, total_play_time
                 )
                 SELECT 
                     t.id,
-                    0,
-                    0.0,
-                    NULL,
-                    interval '0'
+                    0 as total_plays,
+                    0.0 as average_confidence,
+                    NULL as last_detected,
+                    interval '0' as total_play_time
                 FROM tracks t
-                LEFT JOIN track_stats ts ON ts.track_id = t.id
-                WHERE ts.track_id IS NULL;
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM track_stats ts WHERE ts.track_id = t.id
+                );
             """))
 
             # Mettre à jour les compteurs globaux
@@ -515,12 +516,12 @@ class StatsUpdater:
             # Initialize artist stats for all artists
             self.db_session.execute(text("""
                 INSERT INTO artist_stats (
-                    artist_id, detection_count, average_confidence,
+                    artist_id, total_plays, average_confidence,
                     last_detected, total_play_time
                 )
                 SELECT 
                     id as artist_id,
-                    0 as detection_count,
+                    0 as total_plays,
                     0.0 as average_confidence,
                     NULL as last_detected,
                     interval '0' as total_play_time
@@ -533,12 +534,12 @@ class StatsUpdater:
             # Initialize track stats for all tracks
             self.db_session.execute(text("""
                 INSERT INTO track_stats (
-                    track_id, detection_count, average_confidence,
+                    track_id, total_plays, average_confidence,
                     last_detected, total_play_time
                 )
                 SELECT 
                     id as track_id,
-                    0 as detection_count,
+                    0 as total_plays,
                     0.0 as average_confidence,
                     NULL as last_detected,
                     interval '0' as total_play_time

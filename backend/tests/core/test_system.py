@@ -2,7 +2,8 @@
 
 import pytest
 from sqlalchemy.orm import Session
-from backend.models.database import RadioStation, Track, TrackDetection, SessionLocal
+from backend.models.models import RadioStation, Track, TrackDetection
+from backend.models.database import SessionLocal
 from backend.utils.radio.manager import RadioManager
 from backend.detection.audio_processor import AudioProcessor
 

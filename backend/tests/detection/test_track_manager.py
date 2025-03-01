@@ -1,4 +1,4 @@
-"""Tests for the Track Manager module."""
+"""Tests for the track manager module."""
 
 import pytest
 from unittest.mock import Mock, patch, AsyncMock
@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.detection.audio_processor.track_manager import TrackManager
-from backend.models.database import Track, TrackDetection, RadioStation
+from backend.models.models import Track, TrackDetection, RadioStation
+from backend.models.database import SessionLocal
 
 @pytest.fixture
 def db_session():

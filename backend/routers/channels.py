@@ -1,15 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc, and_
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import BackgroundTasks
 import asyncio
 
 from backend.models.database import get_db
 from ..models import RadioStation, StationStatus, Track, TrackDetection, Artist
-from ..utils.radio_manager import RadioManager
+from ..utils.radio.manager import RadioManager
 from ..utils.streams.websocket import broadcast_station_update
 from ..utils.streams.stream_checker import StreamChecker
 import logging
@@ -19,23 +19,45 @@ from ..core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/channels", tags=["channels"])
+router = APIRouter(
+    prefix="/api/channels",
+    tags=["channels"],
+    responses={
+        404: {"description": "Station not found"},
+        500: {"description": "Internal server error"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized"}
+    }
+)
 
 # Initialize StreamChecker
 stream_checker = StreamChecker()
 
 class StationResponse(BaseModel):
-    id: int
-    name: str
-    stream_url: str
-    country: Optional[str]
-    language: Optional[str]
-    is_active: bool
-    last_checked: datetime
-    status: str
+    """Response model for radio station data."""
+    id: int = Field(..., description="Unique identifier for the station")
+    name: str = Field(..., description="Name of the radio station")
+    stream_url: str = Field(..., description="URL of the radio stream")
+    country: Optional[str] = Field(None, description="Country code of the station")
+    language: Optional[str] = Field(None, description="Language code(s) of the station")
+    is_active: bool = Field(..., description="Whether the station is currently active")
+    last_checked: datetime = Field(..., description="Last time the station was checked")
+    status: str = Field(..., description="Current status of the station")
 
     class Config:
         from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": 1,
+                "name": "Radio Senegal",
+                "stream_url": "http://stream.example.com/radio",
+                "country": "SN",
+                "language": "fr",
+                "is_active": True,
+                "last_checked": "2024-03-01T12:00:00",
+                "status": "active"
+            }
+        }
 
 class StationStats(BaseModel):
     total_stations: int
@@ -91,15 +113,63 @@ class DetectionsResponse(BaseModel):
     class Config:
         from_attributes = True
 
-@router.get("/", response_model=List[StationResponse])
-async def get_all_stations(
-    skip: int = 0,
-    limit: int = 100,
+@router.get(
+    "/",
+    response_model=List[StationResponse],
+    summary="Get All Radio Stations",
+    description="Retrieve a list of all radio stations with optional filtering.",
+    responses={
+        200: {
+            "description": "List of radio stations",
+            "content": {
+                "application/json": {
+                    "example": [{
+                        "id": 1,
+                        "name": "Radio Senegal",
+                        "stream_url": "http://stream.example.com/radio",
+                        "country": "SN",
+                        "language": "fr",
+                        "is_active": True,
+                        "last_checked": "2024-03-01T12:00:00",
+                        "status": "active"
+                    }]
+                }
+            }
+        }
+    }
+)
+async def get_stations(
+    country: Optional[str] = Query(None, description="Filter by country code"),
+    language: Optional[str] = Query(None, description="Filter by language code"),
+    status: Optional[str] = Query(None, description="Filter by station status"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
-    """Récupère la liste des stations radio."""
-    stations = db.query(RadioStation).offset(skip).limit(limit).all()
+) -> List[StationResponse]:
+    """
+    Retrieve a list of radio stations with optional filtering.
+    
+    - **country**: Optional country code filter
+    - **language**: Optional language code filter
+    - **status**: Optional status filter
+    - **is_active**: Optional active status filter
+    - **skip**: Number of records to skip (pagination)
+    - **limit**: Maximum number of records to return (pagination)
+    """
+    query = db.query(RadioStation)
+    
+    if country:
+        query = query.filter(RadioStation.country == country)
+    if language:
+        query = query.filter(RadioStation.language == language)
+    if status:
+        query = query.filter(RadioStation.status == status)
+    if is_active is not None:
+        query = query.filter(RadioStation.is_active == is_active)
+        
+    stations = query.offset(skip).limit(limit).all()
     return stations
 
 @router.post("/", response_model=StationResponse)

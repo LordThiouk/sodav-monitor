@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, status, Path
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc
 from typing import List, Optional
 from datetime import datetime, timedelta
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from backend.models.database import get_db
 from ..models.models import TrackDetection, Track, RadioStation, StationStatus, Artist
 from ..schemas.base import DetectionCreate, DetectionResponse, TrackResponse
@@ -13,49 +13,184 @@ from ..detection.audio_processor.core import AudioProcessor
 from ..core.config import get_settings
 import logging
 
-router = APIRouter(prefix="/api/detections", tags=["detections"])
+router = APIRouter(
+    prefix="/api/detections",
+    tags=["detections"],
+    responses={
+        404: {"description": "Detection not found"},
+        500: {"description": "Internal server error"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized"}
+    }
+)
 
 class TrackInfo(BaseModel):
-    title: str
-    artist: str
-    isrc: Optional[str]
-    label: Optional[str]
-    fingerprint: Optional[str]
+    """Model for track information."""
+    title: str = Field(..., description="Title of the track")
+    artist: str = Field(..., description="Artist name")
+    isrc: Optional[str] = Field(None, description="International Standard Recording Code")
+    label: Optional[str] = Field(None, description="Record label")
+    fingerprint: Optional[str] = Field(None, description="Audio fingerprint")
 
-class DetectionResponse(BaseModel):
-    id: int
-    station_id: int
-    track_id: int
-    confidence: float
-    detected_at: datetime
-    play_duration: str
-    track: TrackInfo
+    @validator('title', 'artist')
+    def validate_non_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Field cannot be empty or whitespace")
+        return v.strip()
 
-    class Config:
-        orm_mode = True
+class DetectionFilter(BaseModel):
+    """Model for detection filtering parameters."""
+    station_id: Optional[int] = Field(None, description="Filter by station ID")
+    start_date: Optional[datetime] = Field(None, description="Filter by start date")
+    end_date: Optional[datetime] = Field(None, description="Filter by end date")
+    confidence_threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Minimum confidence threshold")
 
-@router.get("/", response_model=List[DetectionResponse])
+    @validator('end_date')
+    def validate_dates(cls, v, values):
+        if v and 'start_date' in values and values['start_date']:
+            if v < values['start_date']:
+                raise ValueError("end_date must be after start_date")
+        return v
+
+@router.get(
+    "/",
+    response_model=List[DetectionResponse],
+    summary="Get All Detections",
+    description="Retrieve a list of all music detections with optional filtering.",
+    responses={
+        200: {
+            "description": "List of detections",
+            "content": {
+                "application/json": {
+                    "example": [{
+                        "id": 1,
+                        "track_id": 1,
+                        "station_id": 1,
+                        "detected_at": "2024-03-01T12:00:00",
+                        "confidence": 0.95,
+                        "play_duration": 180
+                    }]
+                }
+            }
+        }
+    }
+)
 async def get_detections(
-    skip: int = 0,
-    limit: int = 100,
-    station_id: Optional[int] = None,
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    filters: DetectionFilter = Depends(),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
-    """Récupère la liste des détections."""
-    query = db.query(TrackDetection)
+) -> List[DetectionResponse]:
+    """
+    Retrieve a list of music detections with optional filtering.
     
-    if station_id:
-        query = query.filter(TrackDetection.station_id == station_id)
-    if start_date:
-        query = query.filter(TrackDetection.detection_time >= start_date)
-    if end_date:
-        query = query.filter(TrackDetection.detection_time <= end_date)
+    - **skip**: Number of records to skip (pagination)
+    - **limit**: Maximum number of records to return (pagination)
+    - **filters**: Optional filtering parameters
+    """
+    try:
+        query = db.query(TrackDetection).options(
+            joinedload(TrackDetection.track),
+            joinedload(TrackDetection.station)
+        )
+        
+        if filters.station_id:
+            query = query.filter(TrackDetection.station_id == filters.station_id)
+        if filters.start_date:
+            query = query.filter(TrackDetection.detected_at >= filters.start_date)
+        if filters.end_date:
+            query = query.filter(TrackDetection.detected_at <= filters.end_date)
+        if filters.confidence_threshold:
+            query = query.filter(TrackDetection.confidence >= filters.confidence_threshold)
+        
+        detections = query.order_by(TrackDetection.detected_at.desc()).offset(skip).limit(limit).all()
+        
+        if not detections:
+            return []
+            
+        return [
+            DetectionResponse(
+                id=detection.id,
+                track=TrackResponse.from_orm(detection.track),
+                station=detection.station,
+                detected_at=detection.detected_at,
+                confidence=detection.confidence,
+                play_duration=detection.play_duration
+            )
+            for detection in detections
+        ]
+        
+    except Exception as e:
+        logger.error(f"Error retrieving detections: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving detections"
+        )
+
+@router.get(
+    "/{detection_id}",
+    response_model=DetectionResponse,
+    summary="Get Detection by ID",
+    description="Retrieve details of a specific music detection.",
+    responses={
+        404: {"description": "Detection not found"},
+        200: {
+            "description": "Detection details",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": 1,
+                        "track_id": 1,
+                        "station_id": 1,
+                        "detected_at": "2024-03-01T12:00:00",
+                        "confidence": 0.95,
+                        "play_duration": 180
+                    }
+                }
+            }
+        }
+    }
+)
+async def get_detection(
+    detection_id: int = Path(..., description="The ID of the detection to retrieve"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+) -> DetectionResponse:
+    """
+    Retrieve details of a specific music detection by its ID.
     
-    detections = query.order_by(TrackDetection.detection_time.desc()).offset(skip).limit(limit).all()
-    return detections
+    - **detection_id**: The unique identifier of the detection
+    """
+    try:
+        detection = db.query(TrackDetection).options(
+            joinedload(TrackDetection.track),
+            joinedload(TrackDetection.station)
+        ).filter(TrackDetection.id == detection_id).first()
+        
+        if not detection:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Detection with ID {detection_id} not found"
+            )
+            
+        return DetectionResponse(
+            id=detection.id,
+            track=TrackResponse.from_orm(detection.track),
+            station=detection.station,
+            detected_at=detection.detected_at,
+            confidence=detection.confidence,
+            play_duration=detection.play_duration
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving detection {detection_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving detection"
+        )
 
 @router.post("/", response_model=DetectionResponse)
 async def create_detection(
@@ -105,18 +240,6 @@ async def create_detection(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-
-@router.get("/{detection_id}", response_model=DetectionResponse)
-async def get_detection(
-    detection_id: int,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """Récupère les détails d'une détection."""
-    detection = db.query(TrackDetection).filter(TrackDetection.id == detection_id).first()
-    if not detection:
-        raise HTTPException(status_code=404, detail="Detection not found")
-    return detection
 
 @router.delete("/{detection_id}")
 async def delete_detection(

@@ -1,10 +1,11 @@
 """Module de configuration principale de l'application."""
 
 from functools import lru_cache
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 from dotenv import load_dotenv
+from datetime import timedelta
 
 # Load environment variables from .env file
 env_path = Path(__file__).parent.parent.parent / '.env'
@@ -38,9 +39,11 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_PASSWORD: Optional[str] = None
+    REDIS_POOL_SIZE: int = 10
+    REDIS_POOL_TIMEOUT: int = 30
     
     # API
-    API_V1_STR: str = "/api/v1"
+    API_V1_STR: str = "/api"
     SECRET_KEY: str = "your-secret-key"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_SECRET_KEY: str = "sodav_jwt_secret_2024"
@@ -58,17 +61,18 @@ class Settings(BaseSettings):
     MIN_PLAY_DURATION: int = 30
     FINGERPRINT_WINDOW: int = 4096
     FINGERPRINT_OVERLAP: float = 0.5
-    MIN_CONFIDENCE: int = 50
+    MIN_CONFIDENCE: float = 0.5
     MIN_RHYTHM_STRENGTH: int = 30
     MIN_BASS_ENERGY: int = 20
     MIN_MID_ENERGY: int = 15
     
     # Audio
-    CHUNK_SIZE: int = 8192
+    CHUNK_SIZE: int = 4096
     SAMPLE_RATE: int = 44100
     CHANNELS: int = 2
     MIN_AUDIO_LENGTH: int = 10
     MAX_AUDIO_LENGTH: int = 30
+    BUFFER_SIZE: int = 16384
     
     # Monitoring
     STREAM_CHECK_INTERVAL: int = 60
@@ -86,7 +90,7 @@ class Settings(BaseSettings):
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     UVICORN_LOG_LEVEL: str = "info"
     NGINX_LOG_LEVEL: str = "warn"
-    LOG_FILE: str = "logs/sodav.log"
+    LOG_FILE: Optional[str] = None
     
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
@@ -100,6 +104,36 @@ class Settings(BaseSettings):
     ACOUSTID_CONFIDENCE_THRESHOLD: float = 0.7
     AUDD_CONFIDENCE_THRESHOLD: float = 0.6
     LOCAL_CONFIDENCE_THRESHOLD: float = 0.8
+    
+    # Rate Limiting
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_REQUESTS: int = 100  # Number of requests
+    RATE_LIMIT_PERIOD: int = 60  # Period in seconds
+    
+    # Caching
+    CACHE_ENABLED: bool = True
+    CACHE_TTL: int = 300  # Cache TTL in seconds
+    CACHE_PREFIX: str = "sodav:"
+    
+    # Report Generation Settings
+    REPORT_FORMATS: list = ["pdf", "xlsx", "csv"]
+    REPORT_RETENTION_DAYS: int = 30
+    MAX_REPORT_SIZE: int = 100 * 1024 * 1024  # 100MB
+    
+    # WebSocket Settings
+    WS_HEARTBEAT_INTERVAL: int = 30  # seconds
+    WS_CLOSE_TIMEOUT: int = 10  # seconds
+    
+    # Feature Flags
+    ENABLE_WEBSOCKETS: bool = True
+    ENABLE_ANALYTICS: bool = True
+    ENABLE_REPORTS: bool = True
+    
+    # Database Settings
+    SQLALCHEMY_DATABASE_URL: str = "postgresql://user:pass@localhost/sodav"
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT: int = 30
     
     model_config = SettingsConfigDict(
         env_file=".env",

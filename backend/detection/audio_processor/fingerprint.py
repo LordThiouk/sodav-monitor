@@ -3,58 +3,118 @@
 import numpy as np
 import soundfile as sf
 import librosa
-from typing import Optional, Tuple, List, Dict
+import hashlib
+import json
+from typing import Optional, Tuple, List, Dict, Any
 import logging
-from ..core.config import get_settings
+from backend.core.config import get_settings
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-def generate_fingerprint(audio_data: bytes) -> Optional[bytes]:
-    """Générer une empreinte digitale à partir des données audio."""
-    try:
-        # Convertir les données audio en tableau numpy
-        audio_array = np.frombuffer(audio_data, dtype=np.float32)
+class AudioFingerprinter:
+    """Audio fingerprinting class."""
+    
+    def __init__(self, sample_rate: int = 22050, n_mels: int = 128):
+        """Initialize the fingerprinter."""
+        self.sample_rate = sample_rate
+        self.n_mels = n_mels
+        self.hop_length = 512
+        self.n_fft = 2048
         
-        # Normaliser l'audio
-        audio_array = audio_array / np.max(np.abs(audio_array))
-        
-        # Extraire les caractéristiques MFCC
-        mfcc = librosa.feature.mfcc(
-            y=audio_array,
-            sr=settings.SAMPLE_RATE,
-            n_mfcc=13,
-            hop_length=512
-        )
-        
-        # Extraire les caractéristiques spectrales
-        spectral_centroids = librosa.feature.spectral_centroid(
-            y=audio_array,
-            sr=settings.SAMPLE_RATE,
-            hop_length=512
-        )
-        
-        # Extraire le rythme
-        tempo, _ = librosa.beat.beat_track(
-            y=audio_array,
-            sr=settings.SAMPLE_RATE
-        )
-        
-        # Combiner les caractéristiques
-        features = np.concatenate([
-            mfcc.flatten(),
-            spectral_centroids.flatten(),
-            np.array([tempo])
-        ])
-        
-        # Normaliser les caractéristiques
-        features = (features - np.mean(features)) / np.std(features)
-        
-        return features.tobytes()
-        
-    except Exception as e:
-        logger.error(f"Erreur lors de la génération de l'empreinte: {str(e)}")
-        return None
+    def generate_fingerprint(self, audio_data: np.ndarray) -> bytes:
+        """Generate a fingerprint from audio data."""
+        try:
+            # Extract features
+            features = self.extract_features(audio_data)
+            
+            # Convert features to bytes
+            feature_bytes = json.dumps(features).encode()
+            
+            # Generate hash
+            return hashlib.sha256(feature_bytes).digest()
+            
+        except Exception as e:
+            logger.error(f"Error generating fingerprint: {str(e)}")
+            return None
+            
+    def extract_features(self, audio_data: np.ndarray) -> Dict[str, Any]:
+        """Extract audio features."""
+        try:
+            # Convert to mono if stereo
+            if len(audio_data.shape) > 1:
+                audio_data = np.mean(audio_data, axis=1)
+                
+            # Compute mel spectrogram
+            mel_spec = librosa.feature.melspectrogram(
+                y=audio_data,
+                sr=self.sample_rate,
+                n_mels=self.n_mels,
+                n_fft=self.n_fft,
+                hop_length=self.hop_length
+            )
+            
+            # Compute MFCC
+            mfcc = librosa.feature.mfcc(
+                S=librosa.power_to_db(mel_spec),
+                n_mfcc=20
+            )
+            
+            # Compute spectral contrast
+            contrast = librosa.feature.spectral_contrast(
+                y=audio_data,
+                sr=self.sample_rate,
+                n_fft=self.n_fft,
+                hop_length=self.hop_length
+            )
+            
+            # Compute chroma features
+            chroma = librosa.feature.chroma_stft(
+                y=audio_data,
+                sr=self.sample_rate,
+                n_fft=self.n_fft,
+                hop_length=self.hop_length
+            )
+            
+            return {
+                'mel_spectrogram': mel_spec.tolist(),
+                'mfcc': mfcc.tolist(),
+                'spectral_contrast': contrast.tolist(),
+                'chroma': chroma.tolist()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error extracting features: {str(e)}")
+            return None
+            
+    def compare_fingerprints(self, fp1: bytes, fp2: bytes) -> float:
+        """Compare two fingerprints and return similarity score."""
+        try:
+            if not fp1 or not fp2:
+                return 0.0
+                
+            # Compare byte sequences
+            matches = sum(a == b for a, b in zip(fp1, fp2))
+            return matches / len(fp1)
+            
+        except Exception as e:
+            logger.error(f"Error comparing fingerprints: {str(e)}")
+            return 0.0
+            
+    def get_audio_duration(self, audio_data: np.ndarray) -> float:
+        """Get duration of audio in seconds."""
+        try:
+            if len(audio_data.shape) > 1:
+                return len(audio_data) / self.sample_rate
+            return len(audio_data) / self.sample_rate
+        except Exception as e:
+            logger.error(f"Error getting audio duration: {str(e)}")
+            return 0.0
+
+def generate_fingerprint(audio_data: np.ndarray) -> bytes:
+    """Generate fingerprint from audio data."""
+    fingerprinter = AudioFingerprinter()
+    return fingerprinter.generate_fingerprint(audio_data)
 
 def compare_fingerprints(fp1: bytes, fp2: bytes) -> float:
     """Comparer deux empreintes digitales et retourner un score de similarité."""

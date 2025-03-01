@@ -358,7 +358,7 @@ async def get_artist_analytics(db: Session = Depends(get_db)):
         return [
             {
                 "artist": artist.name,
-                "detection_count": stats.detection_count,
+                "detection_count": stats.total_plays,
                 "total_play_time": f"{int(total_play_time.total_seconds() // 3600):01d}:{int((total_play_time.total_seconds() % 3600) // 60):02d}:{int(total_play_time.total_seconds() % 60):02d}" if total_play_time else "0:00:00",
                 "unique_tracks": unique_tracks,
                 "unique_albums": unique_albums,
@@ -468,7 +468,7 @@ def update_artist_stats(db: Session):
         try:
             artist_detections = db.query(
                 Track.artist_id,
-                func.count(TrackDetection.id).label('detection_count'),
+                func.count(TrackDetection.id).label('total_plays'),
                 func.max(TrackDetection.detected_at).label('last_detected')
             ).join(TrackDetection).filter(
                 TrackDetection.detected_at >= yesterday
@@ -485,12 +485,12 @@ def update_artist_stats(db: Session):
                 ).first()
                 
                 if artist_stat:
-                    artist_stat.detection_count = count
+                    artist_stat.total_plays = count
                     artist_stat.last_detected = last_detected
                 else:
                     artist_stat = ArtistStats(
                         artist_id=artist_id,
-                        detection_count=count,
+                        total_plays=count,
                         last_detected=last_detected
                     )
                     db.add(artist_stat)

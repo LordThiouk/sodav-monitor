@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from typing import Dict, List
-from ..models import (
+from backend.models.models import (
     TrackDetection,
     ArtistStats,
     TrackStats,
@@ -12,7 +12,7 @@ from ..models import (
     DetectionHourly,
     DetectionDaily
 )
-from ..analytics.stats_manager import StatsManager
+from backend.analytics.stats_manager import StatsManager
 
 @pytest.fixture
 def stats_manager(db_session: Session):

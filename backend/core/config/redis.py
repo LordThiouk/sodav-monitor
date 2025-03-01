@@ -7,9 +7,26 @@ from .settings import get_settings
 
 settings = get_settings()
 
+# Global Redis client
+_redis_client: Optional[redis.Redis] = None
+
+async def init_redis() -> redis.Redis:
+    """Initialize Redis connection."""
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = get_redis()
+    return _redis_client
+
+async def close_redis() -> None:
+    """Close Redis connection."""
+    global _redis_client
+    if _redis_client is not None:
+        _redis_client.close()
+        _redis_client = None
+
 @lru_cache()
 def get_redis() -> redis.Redis:
-    """Obtenir une connexion Redis."""
+    """Get Redis connection."""
     return redis.Redis(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,

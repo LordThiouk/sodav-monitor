@@ -2,7 +2,10 @@
 
 import pytest
 import numpy as np
-from detection.audio_processor.feature_extractor import FeatureExtractor
+from unittest.mock import patch, Mock
+import librosa
+from backend.detection.audio_processor.feature_extractor import FeatureExtractor
+import psutil
 
 @pytest.fixture
 def feature_extractor():
@@ -18,6 +21,66 @@ def sample_audio():
     t = np.linspace(0, duration, int(sample_rate * duration))
     signal = np.sin(2 * np.pi * 440 * t)
     return signal
+
+@pytest.fixture
+def complex_audio():
+    """Generate complex audio signal with rhythm and harmonics."""
+    duration = 1.0  # 1 second
+    sr = 22050  # Match FeatureExtractor sample rate
+    n_samples = int(duration * sr)
+    t = np.linspace(0, duration, n_samples)
+    
+    # Generate three harmonic frequencies
+    f0 = 440.0  # Base frequency (A4)
+    signal = (
+        np.sin(2 * np.pi * f0 * t) +
+        0.5 * np.sin(2 * np.pi * 2 * f0 * t) +
+        0.25 * np.sin(2 * np.pi * 4 * f0 * t)
+    )
+    
+    # Add rhythmic envelope (120 BPM)
+    bpm = 120
+    beats_per_sec = bpm / 60
+    envelope = np.sin(2 * np.pi * beats_per_sec * t) * 0.5 + 0.5
+    envelope = envelope ** 2  # Sharpen the envelope
+    signal = signal * envelope
+    
+    # Add some noise
+    noise = np.random.normal(0, 0.1, n_samples)
+    signal = signal + noise
+    
+    # Normalize
+    signal = librosa.util.normalize(signal)
+    return signal
+
+@pytest.fixture
+def noise_audio():
+    """Generate white noise audio signal."""
+    duration = 1.0  # 1 second
+    sr = 22050  # Match FeatureExtractor sample rate
+    n_samples = int(duration * sr)
+    
+    # Generate colored noise with temporal variation
+    noise = np.random.normal(0, 1, n_samples)
+    
+    # Add some temporal variation
+    envelope = np.sin(2 * np.pi * 2 * np.linspace(0, duration, n_samples)) * 0.5 + 0.5
+    noise = noise * envelope
+    
+    # Add sudden amplitude changes
+    change_points = np.random.choice(n_samples, 5)
+    for point in change_points:
+        if point < n_samples - 100:
+            noise[point:point+100] *= 2.0
+    
+    # Normalize
+    noise = librosa.util.normalize(noise)
+    return noise
+
+@pytest.fixture
+def mock_audio_data():
+    """Create mock audio data in bytes format."""
+    return b"mock_audio_data"
 
 class TestFeatureExtractorInitialization:
     """Test FeatureExtractor initialization and parameter validation."""
@@ -97,6 +160,39 @@ class TestFeatureExtraction:
         with pytest.raises(ValueError):
             feature_extractor.extract_features(np.array([]))  # empty array
 
+    def test_extract_features_noise(self, feature_extractor, noise_audio):
+        """Test feature extraction with noisy audio."""
+        features = feature_extractor.extract_features(noise_audio)
+        assert all(isinstance(feat, np.ndarray) for feat in features.values())
+        
+    def test_extract_features_silence(self, feature_extractor):
+        """Test feature extraction with silent audio."""
+        silent_audio = np.zeros(22050)  # 1 second of silence
+        features = feature_extractor.extract_features(silent_audio)
+        assert all(isinstance(feat, np.ndarray) for feat in features.values())
+        
+    def test_extract_features_short_input(self, feature_extractor):
+        """Test feature extraction with very short audio."""
+        short_audio = np.sin(2 * np.pi * 440 * np.linspace(0, 0.1, 2205))  # 0.1 seconds
+        features = feature_extractor.extract_features(short_audio)
+        assert all(isinstance(feat, np.ndarray) for feat in features.values())
+
+    @pytest.mark.asyncio
+    async def test_analyze_audio(self, feature_extractor, mock_audio_data):
+        """Test async audio analysis."""
+        with patch('soundfile.read') as mock_read:
+            mock_read.return_value = (np.random.rand(22050), 22050)  # 1 second of random audio
+            result = await feature_extractor.analyze_audio(mock_audio_data)
+            assert result is not None
+            assert "rhythm_strength" in result
+            assert "confidence" in result
+
+    @pytest.mark.asyncio
+    async def test_analyze_audio_invalid(self, feature_extractor):
+        """Test async audio analysis with invalid data."""
+        result = await feature_extractor.analyze_audio(b"")
+        assert result is None
+
 class TestMusicDetection:
     """Test music detection functionality."""
     
@@ -131,6 +227,44 @@ class TestMusicDetection:
         
         with pytest.raises(TypeError):
             feature_extractor.is_music(invalid_features)
+
+    def test_is_music_complex_audio(self, feature_extractor, complex_audio):
+        """Test music detection with complex musical audio."""
+        features = feature_extractor.extract_features(complex_audio)
+        is_music, confidence = feature_extractor.is_music(features)
+        assert is_music is True
+        assert confidence > 0.3  # Should have moderate confidence for musical audio
+        
+    def test_is_music_noise(self, feature_extractor, noise_audio):
+        """Test music detection with noise."""
+        features = feature_extractor.extract_features(noise_audio)
+        is_music, confidence = feature_extractor.is_music(features)
+        assert is_music is False
+        assert confidence < 0.3  # Should have low confidence for noise
+        
+    def test_is_music_silence(self, feature_extractor):
+        """Test music detection with silence."""
+        silent_audio = np.zeros(22050)
+        features = feature_extractor.extract_features(silent_audio)
+        is_music, confidence = feature_extractor.is_music(features)
+        assert is_music is False
+        assert confidence < 0.2  # Should have very low confidence for silence
+        
+    def test_is_music_threshold(self, feature_extractor, complex_audio):
+        """Test music detection with different confidence thresholds."""
+        features = feature_extractor.extract_features(complex_audio)
+        
+        # Test with different thresholds
+        thresholds = [0.3, 0.5, 0.7, 0.9]
+        results = []
+        confidences = []
+        for threshold in thresholds:
+            is_music, confidence = feature_extractor.is_music(features)
+            results.append(is_music)
+            confidences.append(confidence)
+            
+        assert any(results), "Should detect as music with some threshold"
+        assert all(0 <= conf <= 1 for conf in confidences), "Confidence should be between 0 and 1"
 
 class TestAudioDuration:
     """Test audio duration calculation."""
@@ -172,6 +306,7 @@ class TestFeatureExtractorPerformance:
             
         result = benchmark(extract_features)
         assert isinstance(result, dict)
+        assert all(isinstance(feat, np.ndarray) for feat in result.values())
         
     def test_music_detection_performance(self, feature_extractor, benchmark):
         """Benchmark music detection performance."""
@@ -184,4 +319,291 @@ class TestFeatureExtractorPerformance:
             
         result = benchmark(detect_music)
         assert isinstance(result[0], bool)
-        assert isinstance(result[1], float) 
+        assert isinstance(result[1], float)
+        assert 0 <= result[1] <= 1
+        
+    def test_memory_usage(self, feature_extractor, complex_audio, benchmark):
+        """Test memory usage during feature extraction."""
+        process = psutil.Process(psutil.Process().pid)
+        
+        def measure_memory():
+            initial_memory = process.memory_info().rss
+            features = feature_extractor.extract_features(complex_audio)
+            final_memory = process.memory_info().rss
+            memory_used = final_memory - initial_memory
+            assert memory_used < 50 * 1024 * 1024  # Should use less than 50MB
+            return features
+            
+        result = benchmark(measure_memory)
+        assert isinstance(result, dict)
+        assert all(isinstance(feat, np.ndarray) for feat in result.values())
+        
+    def test_batch_processing_performance(self, feature_extractor, benchmark):
+        """Test performance with batch processing."""
+        # Generate batch of audio signals
+        batch_size = 10
+        duration = 1.0
+        sample_rate = 22050
+        batch = [
+            np.sin(2 * np.pi * (440 * (i + 1)) * np.linspace(0, duration, int(sample_rate * duration)))
+            for i in range(batch_size)
+        ]
+        
+        def process_batch():
+            features = [feature_extractor.extract_features(audio) for audio in batch]
+            assert len(features) == batch_size
+            assert all(isinstance(feat, dict) for feat in features)
+            return features
+            
+        result = benchmark(process_batch)
+        assert len(result) == batch_size
+        assert all(isinstance(feat, dict) for feat in result)
+
+    def test_concurrent_processing(self, feature_extractor, benchmark):
+        """Test concurrent processing performance."""
+        import asyncio
+        
+        async def process_audio(audio):
+            return feature_extractor.extract_features(audio)
+        
+        def run_concurrent():
+            # Generate multiple audio signals
+            signals = [np.random.rand(22050) for _ in range(5)]
+            
+            # Process concurrently
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            tasks = [process_audio(signal) for signal in signals]
+            results = loop.run_until_complete(asyncio.gather(*tasks))
+            loop.close()
+            
+            assert len(results) == 5
+            assert all(isinstance(result, dict) for result in results)
+            return results
+            
+        result = benchmark(run_concurrent)
+        assert len(result) == 5
+        assert all(isinstance(feat, dict) for feat in result)
+
+class TestFeatureExtractorEdgeCases:
+    @pytest.fixture
+    def extractor(self):
+        return FeatureExtractor()
+
+    def test_extremely_short_audio(self, extractor):
+        # Test with audio shorter than hop_length
+        audio = np.random.rand(100)  # Very short audio
+        features = extractor.extract_features(audio)
+        assert features is not None
+        assert isinstance(features, dict)
+        assert features['mel_spectrogram'].shape[1] > 0
+
+    def test_extremely_long_audio(self, extractor):
+        # Test with very long audio (1 minute)
+        audio = np.random.rand(22050 * 60)  # 1 minute at 22050Hz
+        features = extractor.extract_features(audio)
+        assert features is not None
+        assert isinstance(features, dict)
+        assert features['mel_spectrogram'].shape[1] > 0
+
+    def test_varying_amplitudes(self, extractor):
+        # Test with varying amplitude levels
+        audio = np.sin(np.linspace(0, 100, 22050)) * np.linspace(0, 1, 22050)
+        features = extractor.extract_features(audio)
+        assert features is not None
+        assert isinstance(features, dict)
+        assert np.any(features['mel_spectrogram'] != 0)  # Should detect amplitude variations
+
+class TestFeatureExtractorRealWorld:
+    @pytest.fixture
+    def extractor(self):
+        return FeatureExtractor()
+
+    def test_mixed_content_audio(self, extractor):
+        # Simulate mixed speech and music
+        t = np.linspace(0, 10, 22050 * 10)
+        speech = np.sin(2 * np.pi * 200 * t) * 0.3  # Speech-like frequency
+        music = np.sin(2 * np.pi * 440 * t) * 0.7   # Music-like frequency
+        mixed = speech + music
+        features = extractor.extract_features(mixed)
+        is_music = extractor.is_music(features)
+        assert is_music  # Should detect music in mixed content
+
+    def test_background_noise(self, extractor):
+        # Test with signal + background noise
+        t = np.linspace(0, 5, 22050 * 5)
+        signal = np.sin(2 * np.pi * 440 * t)  # Pure tone
+        noise = np.random.normal(0, 0.1, len(t))  # Background noise
+        noisy_signal = signal + noise
+        features = extractor.extract_features(noisy_signal)
+        is_music = extractor.is_music(features)
+        assert is_music  # Should still detect music with noise
+
+class TestFeatureExtractorErrorRecovery:
+    @pytest.fixture
+    def extractor(self):
+        return FeatureExtractor()
+
+    def test_recover_from_nan(self, extractor):
+        # Test recovery from NaN values in audio
+        audio = np.random.rand(22050)
+        audio[1000:1100] = np.nan  # Insert NaN values
+        # Replace NaN values with zeros before processing
+        audio = np.nan_to_num(audio, nan=0.0)
+        features = extractor.extract_features(audio)
+        assert features is not None
+        assert isinstance(features, dict)
+        assert not np.any(np.isnan(features['mel_spectrogram']))
+
+    def test_recover_from_inf(self, extractor):
+        # Test recovery from infinite values
+        audio = np.random.rand(22050)
+        audio[1000:1100] = np.inf  # Insert infinite values
+        # Replace inf values with large finite values before processing
+        audio = np.nan_to_num(audio, posinf=1.0, neginf=-1.0)
+        features = extractor.extract_features(audio)
+        assert features is not None
+        assert isinstance(features, dict)
+        assert not np.any(np.isinf(features['mel_spectrogram']))
+
+    def test_recover_from_zeros(self, extractor):
+        # Test recovery from zero segments
+        audio = np.random.rand(22050)
+        audio[1000:2000] = 0  # Insert zero segment
+        features = extractor.extract_features(audio)
+        assert features is not None
+        assert isinstance(features, dict)
+        assert features['mel_spectrogram'].shape[1] > 0
+
+class TestFeatureExtractorIntegration:
+    @pytest.fixture
+    def extractor(self):
+        return FeatureExtractor()
+
+    def test_stream_processing(self, extractor):
+        # Test processing audio in chunks (simulating streaming)
+        chunk_size = 4096
+        audio = np.random.rand(22050)
+        chunks = [audio[i:i+chunk_size] for i in range(0, len(audio), chunk_size)]
+        
+        mel_specs = []
+        for chunk in chunks:
+            features = extractor.extract_features(chunk)
+            if features is not None and features['mel_spectrogram'].shape[1] > 0:
+                mel_specs.append(features['mel_spectrogram'])
+        
+        assert len(mel_specs) > 0
+        # Verify features can be concatenated
+        combined_features = np.concatenate(mel_specs, axis=1)
+        assert combined_features.shape[1] > 0
+
+    def test_feature_consistency(self, extractor):
+        # Test consistency of features across multiple extractions
+        audio = np.random.rand(22050)
+        features1 = extractor.extract_features(audio)
+        features2 = extractor.extract_features(audio)
+        
+        # Compare each feature type separately
+        for feature_type in ['mel_spectrogram', 'mfcc', 'spectral_contrast', 'chroma']:
+            if feature_type in features1 and feature_type in features2:
+                np.testing.assert_array_almost_equal(
+                    features1[feature_type],
+                    features2[feature_type]
+                )
+
+    def test_memory_cleanup(self, extractor):
+        # Test memory cleanup after processing
+        initial_memory = psutil.Process().memory_info().rss
+        for _ in range(10):
+            audio = np.random.rand(22050 * 10)  # Large audio chunk
+            _ = extractor.extract_features(audio)
+        final_memory = psutil.Process().memory_info().rss
+        # Allow for some memory overhead but check for no major leaks
+        assert (final_memory - initial_memory) < 100 * 1024 * 1024  # Less than 100MB growth 
+
+def test_noise_characteristics(feature_extractor, noise_audio):
+    """Test detailed noise characteristics."""
+    features = feature_extractor.extract_features(noise_audio)
+    
+    # Check spectral characteristics
+    spectral_flux = feature_extractor._calculate_spectral_flux(features["mel_spectrogram"])
+    assert spectral_flux > 0.4, "Noise should have high spectral flux"
+    
+    # Check rhythm characteristics
+    rhythm_strength = feature_extractor._calculate_rhythm_strength(features["mel_spectrogram"])
+    assert rhythm_strength < 0.3, "Noise should have low rhythm strength"
+    
+    # Check harmonic characteristics
+    harmonic_ratio = feature_extractor._calculate_harmonic_ratio(features["spectral_contrast"])
+    assert harmonic_ratio < 0.2, "Noise should have low harmonic content"
+    
+    # Check overall detection
+    is_music, confidence = feature_extractor.is_music(features)
+    assert is_music is False, "Noise should not be detected as music"
+    assert confidence < 0.3, "Confidence should be low for noise"
+
+def test_complex_audio_characteristics(feature_extractor, complex_audio):
+    """Test detailed characteristics of complex musical audio."""
+    features = feature_extractor.extract_features(complex_audio)
+    
+    # Check spectral characteristics
+    spectral_flux = feature_extractor._calculate_spectral_flux(features["mel_spectrogram"])
+    assert spectral_flux < 0.6, "Music should have moderate spectral flux"
+    
+    # Check rhythm characteristics
+    rhythm_strength = feature_extractor._calculate_rhythm_strength(features["mel_spectrogram"])
+    assert rhythm_strength > 0.4, "Music should have strong rhythm"
+    
+    # Check harmonic characteristics
+    harmonic_ratio = feature_extractor._calculate_harmonic_ratio(features["spectral_contrast"])
+    assert harmonic_ratio > 0.3, "Music should have strong harmonic content"
+    
+    # Check chroma variation
+    chroma_var = np.std(features["chroma"])
+    assert chroma_var > 0.1, "Music should have significant pitch content variation"
+    
+    # Check overall detection
+    is_music, confidence = feature_extractor.is_music(features)
+    assert is_music is True, "Complex audio should be detected as music"
+    assert confidence > 0.4, "Confidence should be high for music"
+
+def test_mixed_content(feature_extractor, complex_audio, noise_audio):
+    """Test detection with mixed music and noise content."""
+    # Mix music and noise with different ratios
+    mix_ratios = [0.2, 0.5, 0.8]  # Music proportion
+    
+    for ratio in mix_ratios:
+        # Create mixed signal
+        mixed = ratio * complex_audio + (1 - ratio) * noise_audio
+        features = feature_extractor.extract_features(mixed)
+        is_music, confidence = feature_extractor.is_music(features)
+        
+        if ratio >= 0.5:
+            assert is_music is True, f"Should detect as music with {ratio:.1f} music ratio"
+            assert confidence > 0.3, f"Should have moderate confidence with {ratio:.1f} music ratio"
+        else:
+            assert is_music is False, f"Should not detect as music with {ratio:.1f} music ratio"
+            assert confidence < 0.3, f"Should have low confidence with {ratio:.1f} music ratio"
+
+def test_gradual_transition(feature_extractor, complex_audio, noise_audio):
+    """Test detection with gradual transition between noise and music."""
+    duration = len(complex_audio)
+    t = np.linspace(0, 1, duration)
+    
+    # Create smooth transition
+    transition = 0.5 * (1 + np.cos(np.pi * t))  # Cosine fade
+    mixed = transition * complex_audio + (1 - transition) * noise_audio
+    
+    # Analyze segments
+    segment_length = len(mixed) // 4
+    for i in range(4):
+        segment = mixed[i*segment_length:(i+1)*segment_length]
+        features = feature_extractor.extract_features(segment)
+        is_music, confidence = feature_extractor.is_music(features)
+        
+        if i <= 1:  # First half (more music)
+            assert is_music is True, f"Should detect as music in segment {i}"
+            assert confidence > 0.3, f"Should have moderate confidence in segment {i}"
+        else:  # Second half (more noise)
+            assert is_music is False, f"Should not detect as music in segment {i}"
+            assert confidence < 0.3, f"Should have low confidence in segment {i}" 

@@ -85,17 +85,20 @@ class MusicRecognizer:
             # First try local database
             result = await self.local_detector.search_local(audio_data)
             if result:
-                if result['confidence'] >= self.min_confidence:
+                confidence = float(result.get('confidence', 0.0))
+                if confidence >= self.min_confidence:
                     logger.info("Track found in local database")
                     await self.db_handler.save_track_to_db(result)
                     return result
                 else:
                     logger.info("Local match rejected due to low confidence")
+                    return None  # Stop here if local match has low confidence
                     
             # Try MusicBrainz
             result = await self.external_handler.recognize_with_musicbrainz(audio_data)
             if result:
-                if result['confidence'] >= self.min_confidence:
+                confidence = float(result.get('confidence', 0.0))
+                if confidence >= self.min_confidence:
                     logger.info("Track found with MusicBrainz")
                     await self.db_handler.save_track_to_db(result)
                     return result
@@ -105,7 +108,8 @@ class MusicRecognizer:
             # Finally try Audd
             result = await self.external_handler.recognize_with_audd(audio_data)
             if result:
-                if result['confidence'] >= self.min_confidence:
+                confidence = float(result.get('confidence', 0.0))
+                if confidence >= self.min_confidence:
                     logger.info("Track found with Audd")
                     await self.db_handler.save_track_to_db(result)
                     return result

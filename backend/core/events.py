@@ -4,11 +4,11 @@ import logging
 import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from ..models import Base
-from ..database import engine
+from ..models.database import engine
 from ..utils.logging_config import setup_logging
-from ..redis_config import init_redis, close_redis
+from ..core.config.redis import init_redis, close_redis
 from ..utils.analytics.stats_updater import StatsUpdater
 from ..utils.streams.websocket import manager
 
@@ -22,6 +22,8 @@ class EventManager:
         self.background_tasks: List[asyncio.Task] = []
         self.stats_updater: Optional[StatsUpdater] = None
         self.is_shutting_down = False
+        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        self.db_session = None
     
     async def startup(self):
         """Exécute les tâches de démarrage."""
@@ -38,14 +40,21 @@ class EventManager:
             await init_redis()
             logger.info("Redis initialized")
             
-            # Démarre les tâches en arrière-plan
-            self.stats_updater = StatsUpdater()
-            task = asyncio.create_task(self.stats_updater.start())
-            self.background_tasks.append(task)
-            logger.info("Background tasks started")
+            # Crée une session de base de données
+            self.db_session = self.SessionLocal()
+            
+            # Initialise le gestionnaire de statistiques
+            self.stats_updater = StatsUpdater(db_session=self.db_session)
+            logger.info("Stats updater initialized")
+            
+            # Initialise les statistiques manquantes
+            await self.stats_updater.verify_and_init_stats()
+            logger.info("Stats initialized")
             
         except Exception as e:
             logger.error(f"Error during startup: {e}")
+            if self.db_session:
+                self.db_session.close()
             raise
     
     async def shutdown(self):
@@ -64,7 +73,7 @@ class EventManager:
                 await asyncio.gather(*self.background_tasks, return_exceptions=True)
             
             # Ferme les connexions WebSocket
-            for connection in manager.active_connections[:]:
+            for connection in list(manager.active_connections):
                 try:
                     await connection.close()
                 except Exception as e:
@@ -73,6 +82,11 @@ class EventManager:
             # Ferme la connexion Redis
             await close_redis()
             logger.info("Redis connection closed")
+            
+            # Ferme la session de base de données
+            if self.db_session:
+                self.db_session.close()
+                logger.info("Database session closed")
             
             logger.info("Shutdown completed")
             

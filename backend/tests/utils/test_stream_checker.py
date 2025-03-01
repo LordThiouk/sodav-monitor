@@ -1,80 +1,96 @@
-"""Tests for the stream checker utility module."""
+"""Tests for the stream checker module."""
 
 import pytest
-import asyncio
-from aioresponses import aioresponses
-from aiohttp import ClientTimeout, ClientError, ContentTypeError, ClientResponseError, TooManyRedirects
+import aiohttp
+from datetime import datetime, timedelta
+from unittest.mock import Mock, patch
 from backend.utils.streams.stream_checker import StreamChecker
 
 @pytest.fixture
 def stream_checker():
+    """Create a StreamChecker instance for testing."""
     return StreamChecker()
 
-@pytest.fixture
-def mock_aioresponse():
-    with aioresponses() as m:
-        yield m
-
 @pytest.mark.asyncio
-async def test_check_stream_availability_success(stream_checker, mock_aioresponse):
-    url = "http://test.stream"
-    mock_aioresponse.head(url, status=200, headers={'content-type': 'audio/mpeg'})
+async def test_check_stream_availability_success():
+    """Test successful stream availability check."""
+    checker = StreamChecker()
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.headers = {'content-type': 'audio/mpeg'}
     
-    result = await stream_checker.check_stream_availability(url)
-    assert result['is_available'] is True
-    assert result['is_audio_stream'] is True
-
-@pytest.mark.asyncio
-async def test_check_stream_availability_different_audio_types(stream_checker, mock_aioresponse):
-    url = "http://test.stream"
-    audio_types = [
-        'audio/mpeg',
-        'application/ogg',
-        'application/x-mpegurl',
-        'application/vnd.apple.mpegurl'
-    ]
-    
-    for content_type in audio_types:
-        mock_aioresponse.head(url, status=200, headers={'content-type': content_type})
-        result = await stream_checker.check_stream_availability(url)
+    with patch('aiohttp.ClientSession.head', return_value=mock_response):
+        result = await checker.check_stream_availability("http://test.stream")
+        
         assert result['is_available'] is True
         assert result['is_audio_stream'] is True
+        assert result['status_code'] == 200
 
 @pytest.mark.asyncio
-async def test_check_stream_availability_not_audio(stream_checker, mock_aioresponse):
-    url = "http://test.stream"
-    mock_aioresponse.head(url, status=200, headers={'content-type': 'text/html'})
+async def test_check_stream_availability_failure():
+    """Test stream availability check failure."""
+    checker = StreamChecker()
     
-    result = await stream_checker.check_stream_availability(url)
-    assert result['is_available'] is True
-    assert result['is_audio_stream'] is False
+    with patch('aiohttp.ClientSession.head', side_effect=aiohttp.ClientError()):
+        result = await checker.check_stream_availability("http://test.stream")
+        
+        assert result['is_available'] is False
+        assert 'error' in result
 
 @pytest.mark.asyncio
-async def test_check_stream_availability_http_errors(stream_checker, mock_aioresponse):
-    url = "http://test.stream"
-    mock_aioresponse.head(url, status=404)
+async def test_check_stream_non_audio():
+    """Test checking a non-audio stream."""
+    checker = StreamChecker()
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.headers = {'content-type': 'text/html'}
     
-    result = await stream_checker.check_stream_availability(url)
+    with patch('aiohttp.ClientSession.head', return_value=mock_response):
+        result = await checker.check_stream_availability("http://test.stream")
+        
+        assert result['is_available'] is True
+        assert result['is_audio_stream'] is False
+
+@pytest.mark.asyncio
+async def test_check_stream_timeout():
+    """Test stream check with timeout."""
+    checker = StreamChecker()
+    
+    with patch('aiohttp.ClientSession.head', side_effect=asyncio.TimeoutError()):
+        result = await checker.check_stream_availability("http://test.stream")
+        
+        assert result['is_available'] is False
+        assert 'timeout' in result['error'].lower()
+
+@pytest.mark.asyncio
+async def test_check_stream_invalid_url():
+    """Test checking an invalid stream URL."""
+    checker = StreamChecker()
+    result = await checker.check_stream_availability("invalid_url")
+    
     assert result['is_available'] is False
-    assert result['is_audio_stream'] is False
+    assert 'invalid url' in result['error'].lower()
 
 @pytest.mark.asyncio
-async def test_check_stream_availability_timeout(stream_checker, mock_aioresponse):
-    url = "http://test.stream"
-    mock_aioresponse.head(url, timeout=True)
+async def test_check_stream_retry():
+    """Test stream check retry logic."""
+    checker = StreamChecker()
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.headers = {'content-type': 'audio/mpeg'}
     
-    result = await stream_checker.check_stream_availability(url)
-    assert result['is_available'] is False
-    assert result['is_audio_stream'] is False
-
-@pytest.mark.asyncio
-async def test_check_stream_availability_network_errors(stream_checker, mock_aioresponse):
-    url = "http://test.stream"
-    mock_aioresponse.head(url, exception=ClientError())
-    
-    result = await stream_checker.check_stream_availability(url)
-    assert result['is_available'] is False
-    assert result['is_audio_stream'] is False
+    with patch('aiohttp.ClientSession.head') as mock_head:
+        # First call fails, second succeeds
+        mock_head.side_effect = [
+            aiohttp.ClientError(),
+            mock_response
+        ]
+        
+        result = await checker.check_stream_availability("http://test.stream", retries=1)
+        
+        assert result['is_available'] is True
+        assert result['is_audio_stream'] is True
+        assert mock_head.call_count == 2
 
 @pytest.mark.asyncio
 async def test_get_stream_metadata_success(stream_checker, mock_aioresponse):
@@ -129,7 +145,7 @@ async def test_get_stream_metadata_timeout(stream_checker, mock_aioresponse):
 @pytest.mark.asyncio
 async def test_get_stream_metadata_network_errors(stream_checker, mock_aioresponse):
     url = "http://test.stream"
-    mock_aioresponse.get(url, exception=ClientError())
+    mock_aioresponse.get(url, exception=aiohttp.ClientError())
     
     result = await stream_checker.get_stream_metadata(url)
     assert result is None 

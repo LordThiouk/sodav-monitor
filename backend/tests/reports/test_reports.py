@@ -4,10 +4,10 @@ import pytest
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from typing import Dict, List
-from ..models.models import Report, ReportSubscription, ReportType, ReportStatus, ReportFormat
-from ..reports.generate_report import ReportGenerator
-from ..core.security import get_current_user
-from ..models.database import SessionLocal
+from backend.models.models import Report, ReportSubscription, ReportType, ReportStatus, ReportFormat
+from backend.reports.generate_report import ReportGenerator
+from backend.core.security import get_current_user
+from backend.models.database import SessionLocal
 
 @pytest.fixture(scope="function")
 def db_session() -> Session:
