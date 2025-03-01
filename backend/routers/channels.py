@@ -8,7 +8,7 @@ from fastapi import BackgroundTasks
 import asyncio
 
 from backend.models.database import get_db
-from ..models import RadioStation, StationStatus, Track, TrackDetection, Artist
+from ..models import RadioStation, StationStatus, Track, TrackDetection, Artist, User
 from ..utils.radio.manager import RadioManager
 from ..utils.streams.websocket import broadcast_station_update
 from ..utils.streams.stream_checker import StreamChecker
@@ -20,7 +20,6 @@ from ..core.config import get_settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/api/channels",
     tags=["channels"],
     responses={
         404: {"description": "Station not found"},
@@ -32,32 +31,6 @@ router = APIRouter(
 
 # Initialize StreamChecker
 stream_checker = StreamChecker()
-
-class StationResponse(BaseModel):
-    """Response model for radio station data."""
-    id: int = Field(..., description="Unique identifier for the station")
-    name: str = Field(..., description="Name of the radio station")
-    stream_url: str = Field(..., description="URL of the radio stream")
-    country: Optional[str] = Field(None, description="Country code of the station")
-    language: Optional[str] = Field(None, description="Language code(s) of the station")
-    is_active: bool = Field(..., description="Whether the station is currently active")
-    last_checked: datetime = Field(..., description="Last time the station was checked")
-    status: str = Field(..., description="Current status of the station")
-
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
-            "example": {
-                "id": 1,
-                "name": "Radio Senegal",
-                "stream_url": "http://stream.example.com/radio",
-                "country": "SN",
-                "language": "fr",
-                "is_active": True,
-                "last_checked": "2024-03-01T12:00:00",
-                "status": "active"
-            }
-        }
 
 class StationStats(BaseModel):
     total_stations: int
@@ -130,7 +103,7 @@ class DetectionsResponse(BaseModel):
                         "country": "SN",
                         "language": "fr",
                         "is_active": True,
-                        "last_checked": "2024-03-01T12:00:00",
+                        "last_check": "2024-03-01T12:00:00",
                         "status": "active"
                     }]
                 }
@@ -138,7 +111,7 @@ class DetectionsResponse(BaseModel):
         }
     }
 )
-async def get_stations(
+def get_stations(
     country: Optional[str] = Query(None, description="Filter by country code"),
     language: Optional[str] = Query(None, description="Filter by language code"),
     status: Optional[str] = Query(None, description="Filter by station status"),
@@ -146,7 +119,7 @@ async def get_stations(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> List[StationResponse]:
     """
     Retrieve a list of radio stations with optional filtering.
@@ -308,7 +281,7 @@ async def refresh_channels(db: Session = Depends(get_db)):
                 "name": station.name,
                 "status": station.status.value if station.status else "inactive",
                 "is_active": station.is_active,
-                "last_checked": station.last_checked.isoformat() if station.last_checked else None,
+                "last_check": station.last_check.isoformat() if station.last_check else None,
                 "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None,
                 "stream_url": station.stream_url,
                 "country": station.country,
@@ -363,7 +336,7 @@ async def refresh_channel(channel_id: int, db: Session = Depends(get_db)):
             "name": station.name,
             "status": station.status.value if station.status else "inactive",
             "is_active": station.is_active,
-            "last_checked": station.last_checked.isoformat() if station.last_checked else None,
+            "last_check": station.last_check.isoformat() if station.last_check else None,
             "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None,
             "stream_url": station.stream_url,
             "country": station.country,
@@ -655,7 +628,7 @@ def get_station_stats(station_id: int, db: Session = Depends(get_db)):
             "country": station.country or "Non spécifié",
             "language": station.language or "Non spécifié",
             "status": station.status.value if station.status else "inactive",
-            "last_checked": station.last_checked.isoformat() if station.last_checked else None,
+            "last_check": station.last_check.isoformat() if station.last_check else None,
             "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None
         }
         

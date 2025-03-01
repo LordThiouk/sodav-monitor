@@ -11,14 +11,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from datetime import datetime, timedelta
 import jwt
+import logging
+from backend.core.security import get_current_user, create_access_token
+from backend.core.config import get_settings
+from backend.models.models import StationStatus, User, RadioStation, Track, TrackDetection, ReportType, ReportFormat, Artist, StationHealth, ArtistStats, TrackStats
 
-from backend.models.database import Base, get_db
-from backend.models.models import (
-    User, RadioStation, Track, TrackDetection, ReportType, ReportFormat,
-    Artist, StationStatus, StationHealth, ArtistStats, TrackStats
-)
-from backend.routers import auth, channels, analytics, detections, reports
-from backend.core.security import create_access_token
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Mock settings before any imports
 mock_settings = MagicMock()
@@ -47,19 +47,23 @@ mock_settings.ACOUSTID_CONFIDENCE_THRESHOLD = 0.7
 mock_settings.AUDD_CONFIDENCE_THRESHOLD = 0.6
 mock_settings.LOCAL_CONFIDENCE_THRESHOLD = 0.8
 
-# Apply the mock settings
+# Apply the mock settings and import models
 with patch('backend.core.config.settings.get_settings', return_value=mock_settings):
-    from backend.models.database import Base
-    from backend.models.models import User, RadioStation, Track, TrackDetection, ReportType, ReportFormat
+    from backend.models.database import Base, get_db
+    from backend.models.models import (
+        User, RadioStation, Track, TrackDetection, ReportType, ReportFormat,
+        Artist, StationHealth, ArtistStats, TrackStats,
+        Report, ReportSubscription, DetectionHourly, DetectionDaily,
+        DetectionMonthly, StationStats, TrackDaily, TrackMonthly,
+        ArtistDaily, ArtistMonthly, StationTrackStats, AnalyticsData
+    )
     from backend.routers import auth, channels, analytics, detections, reports
 
-# Create test database engine
+# Create test database engine with minimal pooling for tests
 test_engine = create_engine(
     "postgresql://postgres:postgres@localhost:5432/sodav_test",
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-    pool_timeout=30
+    poolclass=StaticPool,
+    connect_args={"connect_timeout": 5}
 )
 
 # Create test session factory
@@ -81,63 +85,85 @@ def test_app():
     return app
 
 @pytest.fixture(scope="function")
-def test_db_setup():
+def test_db():
     """Set up test database."""
-    # Drop all tables
-    Base.metadata.drop_all(bind=test_engine)
-    
-    # Create all tables
-    Base.metadata.create_all(bind=test_engine)
-    
-    # Create a new session
-    connection = test_engine.connect()
-    transaction = connection.begin()
-    session = TestingSessionLocal(bind=connection)
-    
-    # Verify tables are created
-    inspector = inspect(test_engine)
-    if 'users' not in inspector.get_table_names():
-        raise Exception("Users table not created")
-    
-    # Verify columns exist
-    user_columns = [col['name'] for col in inspector.get_columns('users')]
-    required_columns = ['id', 'username', 'email', 'password_hash', 'is_active', 'created_at', 'last_login', 'role', 'reset_token', 'reset_token_expires']
-    missing_columns = [col for col in required_columns if col not in user_columns]
-    if missing_columns:
-        raise Exception(f"Missing columns in users table: {missing_columns}")
-    
     try:
-        yield session
-    finally:
-        # Roll back transaction and close session
-        session.close()
-        transaction.rollback()
-        connection.close()
         # Drop all tables
         Base.metadata.drop_all(bind=test_engine)
+        logger.info("Dropped all tables")
+        
+        # Create all tables
+        Base.metadata.create_all(bind=test_engine)
+        logger.info("Created all tables")
+        
+        # Create a new session
+        connection = test_engine.connect()
+        transaction = connection.begin()
+        session = TestingSessionLocal(bind=connection)
+        
+        # Verify tables are created
+        inspector = inspect(test_engine)
+        tables = inspector.get_table_names()
+        logger.info(f"Created tables: {tables}")
+        
+        if 'users' not in tables:
+            raise Exception("Users table not created. Available tables: " + ", ".join(tables))
+            
+        yield session
+        
+        # Rollback the transaction
+        transaction.rollback()
+        connection.close()
+        
+    except Exception as e:
+        logger.error(f"Error setting up test database: {str(e)}")
+        raise
 
 @pytest.fixture(scope="function")
-def db_session(test_db_setup) -> Generator[Session, None, None]:
-    """Create a test database session."""
-    yield test_db_setup  # Use the session from test_db_setup
-
-@pytest.fixture
-def client(test_app, db_session) -> Generator:
+def client(test_app, test_db) -> Generator:
     """Create a test client."""
     def override_get_db():
         try:
-            yield db_session
+            yield test_db
         finally:
-            pass
+            test_db.close()
+            
+    def override_get_settings():
+        return mock_settings
     
+    async def override_get_current_user():
+        # Create a test user if it doesn't exist
+        user = test_db.query(User).filter(User.email == "test@example.com").first()
+        if not user:
+            user = User(
+                username="testuser",
+                email="test@example.com",
+                role="user",
+                is_active=True,
+                created_at=datetime.utcnow()
+            )
+            user.set_password("testpass")
+            test_db.add(user)
+            test_db.commit()
+            test_db.refresh(user)
+        return user
+            
     test_app.dependency_overrides[get_db] = override_get_db
-    with TestClient(test_app) as c:
-        yield c
+    test_app.dependency_overrides[get_settings] = override_get_settings
+    test_app.dependency_overrides[get_current_user] = override_get_current_user
+    
+    with TestClient(test_app) as client:
+        yield client
+        
     test_app.dependency_overrides.clear()
 
 @pytest.fixture
-def test_user(db_session: Session) -> User:
+def test_user(test_db: Session) -> User:
     """Create a test user."""
+    user = test_db.query(User).filter(User.email == "test@example.com").first()
+    if user:
+        return user
+        
     user = User(
         username="testuser",
         email="test@example.com",
@@ -146,9 +172,9 @@ def test_user(db_session: Session) -> User:
         created_at=datetime.utcnow()
     )
     user.set_password("testpass")
-    db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
     return user
 
 @pytest.fixture
@@ -161,26 +187,25 @@ def auth_headers(test_user: User) -> Dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 @pytest.fixture
-def test_station(db_session: Session) -> RadioStation:
+def test_station(test_db: Session) -> RadioStation:
     """Create a test radio station."""
     station = RadioStation(
         name="Test Radio",
         stream_url="http://test.stream/audio",
         country="SN",
-        language="fr",
-        is_active=True,
-        status=StationStatus.active.value,
-        last_checked=datetime.utcnow(),
         region="Dakar",
-        type="radio"
+        language="fr",
+        type="radio",
+        status=StationStatus.ACTIVE.value,
+        is_active=True,
+        last_check=datetime.utcnow()
     )
-    db_session.add(station)
-    db_session.commit()
-    db_session.refresh(station)
+    test_db.add(station)
+    test_db.flush()  # Use flush instead of commit to keep changes in the current transaction
     return station
 
 @pytest.fixture
-def test_artist(db_session: Session) -> Artist:
+def test_artist(test_db: Session) -> Artist:
     """Create a test artist."""
     artist = Artist(
         name="Test Artist",
@@ -190,9 +215,9 @@ def test_artist(db_session: Session) -> Artist:
         label="Test Label",
         created_at=datetime.utcnow()
     )
-    db_session.add(artist)
-    db_session.commit()
-    db_session.refresh(artist)
+    test_db.add(artist)
+    test_db.commit()
+    test_db.refresh(artist)
     
     # Create artist stats
     stats = ArtistStats(
@@ -201,12 +226,12 @@ def test_artist(db_session: Session) -> Artist:
         total_play_time=timedelta(0),
         average_confidence=0.0
     )
-    db_session.add(stats)
-    db_session.commit()
+    test_db.add(stats)
+    test_db.commit()
     return artist
 
 @pytest.fixture
-def test_track(db_session: Session, test_artist: Artist) -> Track:
+def test_track(test_db: Session, test_artist: Artist) -> Track:
     """Create a test track."""
     track = Track(
         title="Test Track",
@@ -215,9 +240,9 @@ def test_track(db_session: Session, test_artist: Artist) -> Track:
         fingerprint="test_fingerprint",
         created_at=datetime.utcnow()
     )
-    db_session.add(track)
-    db_session.commit()
-    db_session.refresh(track)
+    test_db.add(track)
+    test_db.commit()
+    test_db.refresh(track)
     
     # Create track stats
     stats = TrackStats(
@@ -226,12 +251,12 @@ def test_track(db_session: Session, test_artist: Artist) -> Track:
         total_play_time=timedelta(0),
         average_confidence=0.0
     )
-    db_session.add(stats)
-    db_session.commit()
+    test_db.add(stats)
+    test_db.commit()
     return track
 
 @pytest.fixture
-def test_detection(db_session: Session, test_track: Track, test_station: RadioStation) -> TrackDetection:
+def test_detection(test_db: Session, test_track: Track, test_station: RadioStation) -> TrackDetection:
     """Create a test detection."""
     detection = TrackDetection(
         track_id=test_track.id,
@@ -243,13 +268,13 @@ def test_detection(db_session: Session, test_track: Track, test_station: RadioSt
         fingerprint="test_detection_fingerprint",
         audio_hash="test_audio_hash"
     )
-    db_session.add(detection)
-    db_session.commit()
-    db_session.refresh(detection)
+    test_db.add(detection)
+    test_db.commit()
+    test_db.refresh(detection)
     return detection
 
 @pytest.fixture
-def test_station_health(db_session: Session, test_station: RadioStation) -> StationHealth:
+def test_station_health(test_db: Session, test_station: RadioStation) -> StationHealth:
     """Create a test station health record."""
     health = StationHealth(
         station_id=test_station.id,
@@ -258,9 +283,9 @@ def test_station_health(db_session: Session, test_station: RadioStation) -> Stat
         response_time=0.1,
         content_type="audio/mpeg"
     )
-    db_session.add(health)
-    db_session.commit()
-    db_session.refresh(health)
+    test_db.add(health)
+    test_db.commit()
+    test_db.refresh(health)
     return health
 
 @pytest.fixture
@@ -273,9 +298,9 @@ def mock_db_session():
     return session
 
 @pytest.fixture
-def audio_processor(db_session):
+def audio_processor(test_db):
     """Create an AudioProcessor instance for testing."""
-    return AudioProcessor(db_session)
+    return AudioProcessor(test_db)
 
 @pytest.fixture
 def feature_extractor():
@@ -283,14 +308,14 @@ def feature_extractor():
     return FeatureExtractor()
 
 @pytest.fixture
-def track_manager(db_session):
+def track_manager(test_db):
     """Create a TrackManager instance for testing."""
-    return TrackManager(db_session)
+    return TrackManager(test_db)
 
 @pytest.fixture
-def station_monitor(db_session):
+def station_monitor(test_db):
     """Create a StationMonitor instance for testing."""
-    return StationMonitor(db_session)
+    return StationMonitor(test_db)
 
 @pytest.fixture(scope="session")
 def app():
@@ -309,19 +334,19 @@ def test_client(app):
     return TestClient(app)
 
 @pytest.fixture
-def sample_station(db_session):
+def sample_station(test_db):
     """Create a test radio station."""
     station = RadioStation(
         name="Radio Test",
         stream_url="http://test.stream/live",
         status="active"
     )
-    db_session.add(station)
-    db_session.commit()
+    test_db.add(station)
+    test_db.commit()
     return station
 
 @pytest.fixture
-def sample_track(db_session):
+def sample_track(test_db):
     """Create a test track."""
     track = Track(
         title="Test Song",
@@ -329,12 +354,12 @@ def sample_track(db_session):
         duration=180.0,
         fingerprint="test_fingerprint"
     )
-    db_session.add(track)
-    db_session.commit()
+    test_db.add(track)
+    test_db.commit()
     return track
 
 @pytest.fixture
-def sample_detection(db_session, sample_station, sample_track):
+def sample_detection(test_db, sample_station, sample_track):
     """Create a test detection."""
     detection = TrackDetection(
         station_id=sample_station.id,
@@ -342,8 +367,8 @@ def sample_detection(db_session, sample_station, sample_track):
         confidence=0.95,
         detected_at=datetime.utcnow()
     )
-    db_session.add(detection)
-    db_session.commit()
+    test_db.add(detection)
+    test_db.commit()
     return detection
 
 @pytest.fixture
@@ -359,7 +384,7 @@ def sample_report_data():
     }
 
 @pytest.fixture
-def report_generator(db_session):
+def report_generator(test_db):
     """Crée un générateur de rapports de test."""
-    stats_manager = StatsManager(db_session)
-    return ReportGenerator(db_session, stats_manager) 
+    stats_manager = StatsManager(test_db)
+    return ReportGenerator(test_db, stats_manager) 

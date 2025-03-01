@@ -237,6 +237,52 @@ tests/
 - Analytics calculations accurate
 - Performance meeting targets
 
+## API Testing Strategy
+
+### Current Progress
+We have successfully fixed several API test issues:
+
+1. **Channel API Tests Fixed**
+   - ✅ `test_get_stations_with_filters`: Fixed by ensuring proper test station data and transaction management
+   - ✅ `test_update_station`: Fixed by wrapping update data in `station_update` field
+   - ✅ `test_update_nonexistent_station`: Fixed request format to match API expectations
+
+### Next Focus: Detections API
+The next component to test is the Detections API, which includes:
+
+1. **Core Functionality**
+   - Get all detections
+   - Filter detections by station/track
+   - Pagination support
+   - Create new detections
+   - Delete detections
+
+2. **Test Cases**:
+```python
+def test_get_detections(client: TestClient, auth_headers: Dict[str, str], test_detection: TrackDetection):
+    """Test retrieving all detections."""
+    response = client.get("/api/detections/", headers=auth_headers)
+    assert response.status_code == 200
+```
+
+### Progress Tracking
+- ✅ Authentication endpoints
+- ✅ Channel management endpoints
+- ⬜ Detection endpoints
+- ⬜ Analytics endpoints
+- ⬜ Report generation endpoints
+
+## Running API Tests
+To run API tests specifically:
+```bash
+pytest tests/api/test_api.py -v
+```
+
+To run a specific test case:
+```bash
+pytest tests/api/test_api.py::TestAuthAPI::test_login_success -v
+```
+
 ## Running Tests
 To run tests for specific components:
 ```

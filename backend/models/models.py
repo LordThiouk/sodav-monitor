@@ -1,13 +1,11 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Text, Enum, Interval, JSON, ARRAY, LargeBinary, Index
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime, timedelta
 import enum
 from passlib.context import CryptContext
+from .database import Base
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-Base = declarative_base()
 
 class ReportType(str, enum.Enum):
     """Types de rapports disponibles."""

@@ -23,7 +23,6 @@ from passlib.context import CryptContext
 from ..core.config import get_settings
 
 router = APIRouter(
-    prefix="/api/auth",
     tags=["auth"],
     responses={
         401: {"description": "Not authenticated"},
@@ -44,6 +43,13 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive",
             headers={"WWW-Authenticate": "Bearer"},
         )
     

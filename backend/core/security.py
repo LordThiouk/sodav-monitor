@@ -29,7 +29,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None, s
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        # Use settings override if provided, otherwise use global settings
+        if settings_override and 'ACCESS_TOKEN_EXPIRE_MINUTES' in settings_override:
+            expire = datetime.utcnow() + timedelta(minutes=settings_override['ACCESS_TOKEN_EXPIRE_MINUTES'])
+        else:
+            expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     
     # Use settings override if provided, otherwise use global settings
@@ -54,15 +58,16 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    # Use settings override if provided, otherwise use global settings
+    if settings_override:
+        secret_key = settings_override['SECRET_KEY']
+        algorithm = settings_override['ALGORITHM']
+    else:
+        secret_key = settings.SECRET_KEY
+        algorithm = settings.ALGORITHM
+        
     try:
-        # Use settings override if provided, otherwise use global settings
-        if settings_override:
-            secret_key = settings_override['SECRET_KEY']
-            algorithm = settings_override['ALGORITHM']
-        else:
-            secret_key = settings.SECRET_KEY
-            algorithm = settings.ALGORITHM
-            
         try:
             payload = jwt.decode(token, secret_key, algorithms=[algorithm])
             email: str = payload.get("sub")
@@ -76,13 +81,12 @@ async def get_current_user(
             )
         except jwt.JWTError:
             raise credentials_exception
-    
-        try:
-            user = db.query(User).filter(User.email == email).first()
-            if user is None:
-                raise credentials_exception
-            return user
-        except Exception as e:
+        
+        user = db.query(User).filter(User.email == email).first()
+        if user is None:
             raise credentials_exception
-    except Exception as e:
+        return user
+    except HTTPException:
+        raise
+    except Exception:
         raise credentials_exception 

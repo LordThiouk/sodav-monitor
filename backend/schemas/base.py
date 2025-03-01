@@ -67,27 +67,34 @@ class AnalyticsResponse(BaseModel):
 class StationBase(BaseModel):
     name: str
     stream_url: str
+    country: Optional[str] = None
     region: Optional[str] = None
     language: Optional[str] = None
     type: Optional[str] = "radio"
+    status: Optional[str] = "inactive"
+    is_active: Optional[bool] = False
 
 class StationCreate(StationBase):
     pass
 
-class StationUpdate(StationBase):
+class StationUpdate(BaseModel):
+    name: Optional[str] = None
+    stream_url: Optional[str] = None
+    country: Optional[str] = None
+    region: Optional[str] = None
+    language: Optional[str] = None
+    type: Optional[str] = None
     status: Optional[str] = None
     is_active: Optional[bool] = None
 
 class StationResponse(StationBase):
     id: int
-    status: str
-    is_active: bool
-    last_checked: Optional[datetime] = None
+    last_check: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class StationStatusResponse(BaseModel):
     id: int

@@ -41,12 +41,12 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Include routers
-app.include_router(auth.router)
-app.include_router(analytics.router)
-app.include_router(channels.router)
-app.include_router(reports.router)
-app.include_router(detections.router)
-app.include_router(websocket.router)
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(channels.router, prefix="/api/channels", tags=["channels"])
+app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
+app.include_router(detections.router, prefix="/api/detections", tags=["detections"])
+app.include_router(websocket.router, prefix="/api/ws", tags=["websocket"])
 
 @app.on_event("startup")
 async def startup_event():
