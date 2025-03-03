@@ -44,6 +44,7 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_login = Column(DateTime)
     role = Column(String, default='user')  # 'admin', 'user', etc.
     reset_token = Column(String, nullable=True)

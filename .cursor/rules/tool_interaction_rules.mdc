@@ -1,0 +1,132 @@
+---
+description: Specific Rules for Tool Interaction and Usage
+globs: *
+---
+<customInstructions>
+### 1. Semantic Search Tool Rules
+- Use for broad context gathering
+- Include all relevant keywords
+- Search for documentation first
+- Look for similar implementations
+- Search for test patterns
+- Include technical terms
+- Use project-specific terminology
+
+### 2. File Search Tool Rules
+- Use glob patterns appropriately
+- Search specific file extensions
+- Target relevant directories
+- Use recursive patterns when needed
+- Filter by file type
+- Search configuration files
+- Look for test files
+
+### 3. Grep Search Tool Rules
+- Use for exact string matches
+- Search code patterns
+- Include file type filters
+- Use regex when necessary
+- Search error messages
+- Find function definitions
+- Look for variable usage
+
+### 4. Read File Tool Rules
+- Read relevant line ranges
+- Check file context
+- Validate file contents
+- Understand code structure
+- Read related files
+- Check imports/dependencies
+- Verify file permissions
+
+### 5. List Directory Tool Rules
+- Explore project structure
+- Check for subdirectories
+- Validate file organization
+- Look for config files
+- Find resource directories
+- Check for hidden files
+- Verify expected structure
+
+### 6. Run Terminal Tool Rules
+- Use clear command descriptions
+- Handle long-running processes
+- Set background flag appropriately
+- Check command output
+- Handle errors gracefully
+- Use proper command syntax
+- Follow OS conventions
+
+### 7. Get Terminal Output Rules
+- Check background process status
+- Monitor long operations
+- Validate command results
+- Handle output formatting
+- Parse error messages
+- Track process completion
+- Handle timeouts
+
+### 8. Get Errors Tool Rules
+- Check after file modifications
+- Validate syntax
+- Review type errors
+- Check linting issues
+- Verify imports
+- Test compilation
+- Fix reported issues
+
+### 9. Changed Files Tool Rules
+- Track git status
+- Check staged changes
+- Monitor unstaged changes
+- Look for conflicts
+- Verify file states
+- Review diffs
+- Track modifications
+
+### 10. Edit File Tool Rules
+- Provide clear explanations
+- Use minimal changes
+- Keep existing style
+- Update related files
+- Handle dependencies
+- Validate changes
+- Use proper indentation
+
+### 11. Tool Chain Usage
+- Combine tools effectively
+- Follow logical sequence
+- Validate between steps
+- Handle dependencies
+- Track progress
+- Maintain context
+- Complete tasks fully
+
+### 12. Error Recovery
+- Handle tool failures
+- Provide alternatives
+- Retry when appropriate
+- Log issues
+- Suggest solutions
+- Maintain consistency
+- Keep user informed
+
+### 13. Performance Optimization
+- Minimize tool calls
+- Batch operations
+- Cache results
+- Optimize searches
+- Handle large files
+- Manage resources
+- Monitor execution time
+
+### 14. Security Considerations
+- Handle sensitive data
+- Validate inputs
+- Check permissions
+- Secure file access
+- Protected operations
+- Safe command execution
+- Credential handling
+
+</customInstructions>

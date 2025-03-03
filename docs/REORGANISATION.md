@@ -18,6 +18,9 @@ Ce document suit les changements majeurs effectués lors de la réorganisation d
   - `reports.py` : Génération et gestion des rapports
   - `auth.py` : Authentification et gestion des utilisateurs
   - `websocket.py` : Communication en temps réel
+  - `reports.py` : Génération et gestion des rapports
+  - `auth.py` : Authentification et gestion des utilisateurs
+  - `websocket.py` : Communication en temps réel
 
 ### 2024-03-23
 - Amélioration du routeur des rapports (`reports.py`) :

@@ -1,0 +1,49 @@
+---
+description: Analytics and Reporting Rules
+globs: *
+---
+### Analytics Guidelines
+
+1. Real-time Updates
+- Update statistics immediately after each detection
+- Tables to update:
+  - track_stats
+  - artist_stats
+  - station_stats
+  - station_track_stats
+  - analytics_data
+
+2. Daily Reports Generation
+Required Metrics:
+- Station Performance:
+  - Total detections per station
+  - Total play duration
+  - Unique tracks played
+- Artist Analytics:
+  - Most played artists
+  - Play duration per artist
+  - Peak play times
+- Track Statistics:
+  - Most played tracks
+  - Average play duration
+  - Play frequency patterns
+- Label Reports:
+  - Plays by label
+  - Artist distribution
+  - Genre distribution
+
+3. Trend Analysis
+- 7-day rolling metrics:
+  - Detection success rate
+  - Most popular tracks
+  - Station activity levels
+- 30-day analytics:
+  - Long-term trends
+  - Seasonal patterns
+  - Performance comparisons
+
+4. Data Quality
+- Validate all metrics before storage
+- Flag anomalous patterns
+- Maintain data consistency
+- Archive historical data regularly

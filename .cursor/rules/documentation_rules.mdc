@@ -1,0 +1,39 @@
+---
+description: Documentation Standards and Requirements
+globs: *
+---
+### Documentation Guidelines
+
+1. Project Structure Documentation
+- Maintain REORGANISATION.md:
+  - Document all structural changes
+  - Explain reorganization rationale
+  - Track directory structure updates
+  - Document migration steps
+
+2. Testing Documentation
+- Maintain TESTING_STRATEGY.md:
+  - Document test organization
+  - Explain testing approaches
+  - List required test coverage
+  - Provide testing examples
+
+3. Code Documentation
+- Clear function/method docstrings
+- Module-level documentation
+- Type hints and annotations
+- Architecture documentation
+- API endpoint documentation
+
+4. Change Management
+- Document all API changes
+- Update documentation with code
+- Version documentation with code
+- Track breaking changes
+
+5. Developer Guides
+- Setup instructions
+- Development environment
+- Contribution guidelines
+- Troubleshooting guide
+- API usage examples
