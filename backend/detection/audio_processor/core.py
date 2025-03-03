@@ -36,8 +36,8 @@ class AudioProcessor:
         self.sample_rate = sample_rate
         self.stream_handler = StreamHandler()
         self.feature_extractor = FeatureExtractor()
-        self.track_manager = TrackManager()
-        self.station_monitor = StationMonitor()
+        self.track_manager = TrackManager(db_session)
+        self.station_monitor = StationMonitor(db_session)
         self.stats_updater = StatsUpdater(db_session)
         
         logger.info(f"AudioProcessor initialized with sample_rate={sample_rate}")

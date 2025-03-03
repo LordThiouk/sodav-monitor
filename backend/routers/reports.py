@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.responses import FileResponse, JSONResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, distinct, case, and_
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
 import pandas as pd
@@ -16,6 +16,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
+import csv
 
 # Add the parent directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -23,7 +24,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from backend.models.database import get_db
 from ..models.models import Report, ReportSubscription, User, TrackDetection, Track, RadioStation, ReportStatus, Artist, ReportType, ReportFormat
 from utils.auth.auth import get_current_user
-from schemas.base import ReportCreate, ReportResponse, ReportStatusResponse
+from schemas.base import ReportCreate, ReportResponse, ReportStatusResponse, SubscriptionCreate, SubscriptionResponse, SubscriptionUpdate
 from reports.generator import ReportGenerator
 from utils.file_manager import get_report_path
 from ..core.config import get_settings
@@ -270,57 +271,37 @@ async def generate_monthly_report(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/subscriptions", response_model=Dict)
+@router.post("/subscriptions", response_model=SubscriptionResponse)
 async def create_subscription(
     subscription: SubscriptionCreate,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Crée un nouvel abonnement aux rapports."""
-    try:
-        db_subscription = ReportSubscription(
-            name=subscription.name,
-            email=subscription.email,
-            frequency=subscription.frequency,
-            report_type=subscription.report_type,
-            format=subscription.format,
-            filters=subscription.filters,
-            include_graphs=subscription.include_graphs,
-            language=subscription.language,
-            created_by=current_user.id
-        )
-        
-        db.add(db_subscription)
-        db.commit()
-        db.refresh(db_subscription)
-        
-        logger.info(f"Created new report subscription for {subscription.email}")
-        return {"message": "Subscription created successfully", "id": db_subscription.id}
-    except Exception as e:
-        logger.error(f"Error creating subscription: {str(e)}")
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+    """Create a new subscription."""
+    db_subscription = ReportSubscription(
+        **subscription.model_dump(),
+        user_id=current_user.id,
+        created_by=current_user.id,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+    db.add(db_subscription)
+    db.commit()
+    db.refresh(db_subscription)
+    return db_subscription
 
-@router.get("/subscriptions", response_model=List[Dict])
+@router.get("/subscriptions", response_model=List[SubscriptionResponse])
 async def get_subscriptions(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Récupère la liste des abonnements aux rapports."""
-    try:
-        subscriptions = db.query(ReportSubscription)\
-            .filter(ReportSubscription.created_by == current_user.id)\
-            .order_by(ReportSubscription.created_at.desc())\
-            .offset(skip)\
-            .limit(limit)\
-            .all()
-        
-        return [subscription.__dict__ for subscription in subscriptions]
-    except Exception as e:
-        logger.error(f"Error fetching subscriptions: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    """Get all subscriptions."""
+    subscriptions = db.query(ReportSubscription).filter(
+        ReportSubscription.user_id == current_user.id
+    ).offset(skip).limit(limit).all()
+    return subscriptions
 
 @router.delete("/subscriptions/{subscription_id}")
 async def delete_subscription(
@@ -740,70 +721,219 @@ def get_labels_data(db: Session, start_date: datetime, end_date: datetime) -> pd
 
     return pd.DataFrame(labels)
 
-@router.post("/generate")
+@router.post("/generate", response_model=Dict)
 async def generate_report(
-    request: ReportRequest,
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    report_type: str = Query("daily", enum=["daily", "weekly", "monthly", "comprehensive"]),
+    report_format: str = Query("pdf", enum=["pdf", "csv", "json", "xlsx"]),
+    date: Optional[str] = None,
+    include_graphs: bool = True,
+    language: str = "fr",
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
-    """Generate a new report"""
+    """Generate a report in the specified format."""
     try:
-        # Create report record
-        report = Report(
-            type=request.report_type,
-            format=request.format,
-            start_date=request.start_date,
-            end_date=request.end_date,
-            status="pending",
-            user_id=current_user.id,
-            filters=request.filters
-        )
-        db.add(report)
-        db.commit()
-        db.refresh(report)
-
-        # Generate report
-        report_path = generate_comprehensive_report(
-            db,
-            request.start_date,
-            request.end_date,
-            request.format,
-            request.include_graphs,
-            request.filters
-        )
-
-        # Update report status
-        report.status = "completed"
-        report.file_path = report_path
-        report.completed_at = datetime.now()
-        db.commit()
-
-        # If email provided, send report via email
-        if request.email:
-            background_tasks.add_task(
-                send_email_with_report,
-                request.email,
-                report_path,
-                request.report_type,
-                request.language
+        logger.info(f"Generating {report_type} report in {report_format} format")
+        
+        # Parse date if provided, otherwise use current date
+        if date:
+            try:
+                report_date = datetime.strptime(date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid date format. Use YYYY-MM-DD"
+                )
+        else:
+            report_date = datetime.utcnow().date()
+        
+        # Calculate date range based on report type
+        if report_type == "daily":
+            start_date = datetime.combine(report_date, datetime.min.time())
+            end_date = datetime.combine(report_date, datetime.max.time())
+        elif report_type == "weekly":
+            start_date = datetime.combine(report_date - timedelta(days=report_date.weekday()), datetime.min.time())
+            end_date = datetime.combine(start_date.date() + timedelta(days=6), datetime.max.time())
+        elif report_type == "monthly":
+            start_date = datetime.combine(report_date.replace(day=1), datetime.min.time())
+            if report_date.month == 12:
+                end_date = datetime.combine(report_date.replace(year=report_date.year + 1, month=1, day=1) - timedelta(days=1), datetime.max.time())
+            else:
+                end_date = datetime.combine(report_date.replace(month=report_date.month + 1, day=1) - timedelta(days=1), datetime.max.time())
+        else:  # comprehensive
+            start_date = datetime.combine(report_date - timedelta(days=30), datetime.min.time())
+            end_date = datetime.combine(report_date, datetime.max.time())
+        
+        # Get detections for the period
+        detections = db.query(TrackDetection).options(
+            joinedload(TrackDetection.track).joinedload(Track.artist),
+            joinedload(TrackDetection.station)
+        ).filter(
+            TrackDetection.detected_at >= start_date,
+            TrackDetection.detected_at <= end_date
+        ).all()
+        
+        # Calculate basic metrics
+        total_detections = len(detections)
+        unique_tracks = len(set(d.track_id for d in detections))
+        unique_artists = len(set(d.track.artist_id for d in detections if d.track))
+        total_play_time = sum((d.play_duration.total_seconds() for d in detections if d.play_duration), start=0)
+        
+        # Get top tracks
+        track_stats = {}
+        for detection in detections:
+            if not detection.track:
+                continue
+            if detection.track_id not in track_stats:
+                track_stats[detection.track_id] = {
+                    "title": detection.track.title,
+                    "artist": detection.track.artist.name if detection.track.artist else "Unknown",
+                    "plays": 0,
+                    "play_time": 0
+                }
+            track_stats[detection.track_id]["plays"] += 1
+            track_stats[detection.track_id]["play_time"] += detection.play_duration.total_seconds() if detection.play_duration else 0
+        
+        top_tracks = sorted(track_stats.values(), key=lambda x: x["plays"], reverse=True)[:10]
+        
+        # Get top artists
+        artist_stats = {}
+        for detection in detections:
+            if detection.track and detection.track.artist:
+                artist_id = detection.track.artist.id
+                if artist_id not in artist_stats:
+                    artist_stats[artist_id] = {
+                        "name": detection.track.artist.name,
+                        "plays": 0,
+                        "play_time": 0
+                    }
+                artist_stats[artist_id]["plays"] += 1
+                artist_stats[artist_id]["play_time"] += detection.play_duration.total_seconds() if detection.play_duration else 0
+        
+        top_artists = sorted(artist_stats.values(), key=lambda x: x["plays"], reverse=True)[:10]
+        
+        # Format report data
+        report_data = {
+            "report_type": report_type,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "metrics": {
+                "total_detections": total_detections,
+                "unique_tracks": unique_tracks,
+                "unique_artists": unique_artists,
+                "total_play_time": str(timedelta(seconds=int(total_play_time)))
+            },
+            "top_tracks": [
+                {
+                    "title": track["title"],
+                    "artist": track["artist"],
+                    "plays": track["plays"],
+                    "play_time": str(timedelta(seconds=int(track["play_time"])))
+                }
+                for track in top_tracks
+            ],
+            "top_artists": [
+                {
+                    "name": artist["name"],
+                    "plays": artist["plays"],
+                    "play_time": str(timedelta(seconds=int(artist["play_time"])))
+                }
+                for artist in top_artists
+            ]
+        }
+        
+        # Return data in requested format
+        if report_format == "json":
+            return report_data
+        elif report_format == "csv":
+            # Create CSV data
+            csv_data = []
+            # Add header
+            csv_data.append(["Report Type", report_type])
+            csv_data.append(["Start Date", start_date.isoformat()])
+            csv_data.append(["End Date", end_date.isoformat()])
+            csv_data.append([])
+            csv_data.append(["Metrics"])
+            csv_data.append(["Total Detections", total_detections])
+            csv_data.append(["Unique Tracks", unique_tracks])
+            csv_data.append(["Unique Artists", unique_artists])
+            csv_data.append(["Total Play Time", str(timedelta(seconds=int(total_play_time)))])
+            csv_data.append([])
+            csv_data.append(["Top Tracks"])
+            csv_data.append(["Title", "Artist", "Plays", "Play Time"])
+            for track in top_tracks:
+                csv_data.append([
+                    track["title"],
+                    track["artist"],
+                    track["plays"],
+                    str(timedelta(seconds=int(track["play_time"])))
+                ])
+            csv_data.append([])
+            csv_data.append(["Top Artists"])
+            csv_data.append(["Name", "Plays", "Play Time"])
+            for artist in top_artists:
+                csv_data.append([
+                    artist["name"],
+                    artist["plays"],
+                    str(timedelta(seconds=int(artist["play_time"])))
+                ])
+            
+            # Create CSV file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"report_{report_type}_{timestamp}.csv"
+            filepath = REPORTS_DIR / filename
+            
+            with open(filepath, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerows(csv_data)
+            
+            return FileResponse(
+                filepath,
+                media_type="text/csv",
+                filename=filename
             )
-            return {"message": "Rapport généré et envoyé par email", "status": "success"}
-
-        # Otherwise return file for download
-        return FileResponse(
-            report_path,
-            filename=f"sodav_rapport_{request.report_type}_{datetime.now().strftime('%Y%m%d')}.{request.format}",
-            media_type="application/octet-stream"
-        )
-
+        elif report_format == "xlsx":
+            # Create Excel file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"report_{report_type}_{timestamp}.xlsx"
+            filepath = REPORTS_DIR / filename
+            
+            with pd.ExcelWriter(filepath) as writer:
+                # Write overview
+                overview_data = pd.DataFrame([
+                    ["Report Type", report_type],
+                    ["Start Date", start_date.isoformat()],
+                    ["End Date", end_date.isoformat()],
+                    ["Total Detections", total_detections],
+                    ["Unique Tracks", unique_tracks],
+                    ["Unique Artists", unique_artists],
+                    ["Total Play Time", str(timedelta(seconds=int(total_play_time)))]
+                ], columns=["Metric", "Value"])
+                overview_data.to_excel(writer, sheet_name="Overview", index=False)
+                
+                # Write top tracks
+                tracks_data = pd.DataFrame(top_tracks)
+                tracks_data.to_excel(writer, sheet_name="Top Tracks", index=False)
+                
+                # Write top artists
+                artists_data = pd.DataFrame(top_artists)
+                artists_data.to_excel(writer, sheet_name="Top Artists", index=False)
+            
+            return FileResponse(
+                filepath,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                filename=filename
+            )
+        else:  # pdf
+            # For now, return JSON data since PDF generation is not implemented
+            return report_data
+            
     except Exception as e:
         logger.error(f"Error generating report: {str(e)}")
-        if report:
-            report.status = "failed"
-            report.error_message = str(e)
-            db.commit()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating report: {str(e)}"
+        )
 
 @router.get("/subscriptions")
 async def list_subscriptions(
@@ -879,4 +1009,48 @@ async def send_report_by_email(
         raise he
     except Exception as e:
         logger.error(f"Error sending report: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error sending report") 
+        raise HTTPException(status_code=500, detail="Error sending report")
+
+@router.put("/{report_id}/status", response_model=ReportResponse)
+async def update_report_status(
+    report_id: int,
+    update_data: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Update report status."""
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    if "status" in update_data:
+        report.status = update_data["status"]
+    if "progress" in update_data:
+        report.progress = update_data["progress"]
+    
+    report.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(report)
+    return report
+
+@router.put("/subscriptions/{subscription_id}", response_model=SubscriptionResponse)
+async def update_subscription(
+    subscription_id: int,
+    update_data: SubscriptionUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Update a subscription."""
+    subscription = db.query(ReportSubscription).filter(ReportSubscription.id == subscription_id).first()
+    if not subscription:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    
+    # Update fields from the validated data
+    update_dict = update_data.model_dump(exclude_unset=True)
+    for field, value in update_dict.items():
+        setattr(subscription, field, value)
+    
+    subscription.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(subscription)
+    return subscription 

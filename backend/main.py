@@ -6,6 +6,10 @@ from typing import Optional, Dict
 import uvicorn
 import os
 from dotenv import load_dotenv
+from sqlalchemy.orm import Session
+import logging
+import redis.asyncio as redis
+from datetime import datetime
 
 # Local imports
 from backend.core.events import event_manager
@@ -17,15 +21,26 @@ from backend.routers import (
     detections,
     websocket
 )
+from .models.database import init_db, get_db
+from .core.config import get_settings
+from .utils.redis_config import init_redis_pool
+from .core.security import get_current_user
 
 # Load environment variables
 load_dotenv()
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Create FastAPI app
 app = FastAPI(
-    title="SODAV Monitor API",
-    description="API for monitoring and detecting music in radio streams",
-    version="1.0.0"
+    title="SODAV Monitor",
+    description="API for monitoring radio stations and detecting music",
+    version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json"
 )
 
 # Configure CORS
@@ -40,28 +55,57 @@ app.add_middleware(
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Include routers
-app.include_router(auth.router)
-app.include_router(analytics.router)
-app.include_router(channels.router)
-app.include_router(reports.router)
-app.include_router(detections.router)
-app.include_router(websocket.router)
+# Include routers in specific order
+app.include_router(auth.router, prefix="/api")
+app.include_router(detections.router)  # Detections router first for /search endpoint
+app.include_router(channels.router, prefix="/api")
+app.include_router(analytics.router, prefix="/api/analytics")
+app.include_router(reports.router, prefix="/api/reports")
+app.include_router(websocket.router, prefix="/api/ws")
 
 @app.on_event("startup")
 async def startup_event():
     """Événement de démarrage de l'application."""
-    await event_manager.startup()
+    try:
+        # Initialize database
+        init_db()
+        logger.info("Database initialized successfully")
+
+        # Initialize Redis pool
+        app.state.redis_pool = await init_redis_pool()
+        logger.info("Redis pool initialized successfully")
+
+    except Exception as e:
+        logger.error(f"Error during startup: {str(e)}")
+        raise
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Événement d'arrêt de l'application."""
-    await event_manager.shutdown()
+    try:
+        if hasattr(app.state, 'redis_pool'):
+            await app.state.redis_pool.close()
+            logger.info("Redis pool closed successfully")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {str(e)}")
 
 @app.get("/health")
 async def health_check():
     """Point de terminaison pour vérifier l'état du système."""
-    return await event_manager.health_check()
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0"
+    }
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "message": "Welcome to SODAV Monitor API",
+        "version": "1.0.0",
+        "docs_url": "/docs"
+    }
 
 if __name__ == "__main__":
     host = os.getenv('HOST', '0.0.0.0')

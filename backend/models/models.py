@@ -49,8 +49,10 @@ class User(Base):
     reset_token = Column(String, nullable=True)
     reset_token_expires = Column(DateTime, nullable=True)
     
-    reports = relationship("Report", back_populates="user")
-    subscriptions = relationship("ReportSubscription", back_populates="user")
+    reports = relationship("Report", back_populates="user", foreign_keys="Report.user_id")
+    created_reports = relationship("Report", back_populates="creator", foreign_keys="Report.created_by")
+    subscriptions = relationship("ReportSubscription", back_populates="user", foreign_keys="ReportSubscription.user_id")
+    created_subscriptions = relationship("ReportSubscription", back_populates="creator", foreign_keys="ReportSubscription.created_by")
 
     def set_password(self, password):
         self.password_hash = pwd_context.hash(password)
@@ -62,18 +64,25 @@ class Report(Base):
     __tablename__ = "reports"
 
     id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=False)
     type = Column(String, nullable=False)  # Changed to String to accept any type
+    report_type = Column(String, nullable=False)  # Added report_type field
+    format = Column(String, nullable=False)
     status = Column(String, nullable=False, default="pending")
     progress = Column(Float, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
-    parameters = Column(JSON, nullable=True)  # Added parameters field
+    parameters = Column(JSON, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    file_path = Column(String, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Added created_by field
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    user = relationship("User", back_populates="reports")
+    user = relationship("User", back_populates="reports", foreign_keys=[user_id])
+    creator = relationship("User", back_populates="created_reports", foreign_keys=[created_by])
 
     def __repr__(self):
-        return f"<Report(id={self.id}, type={self.type}, status={self.status}, progress={self.progress})>"
+        return f"<Report(id={self.id}, title={self.title}, type={self.type}, status={self.status}, progress={self.progress})>"
 
 class ReportSubscription(Base):
     __tablename__ = "report_subscriptions"
@@ -81,14 +90,21 @@ class ReportSubscription(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=True)
     email = Column(String, nullable=True)
-    frequency = Column(String, nullable=False)  # Changed to String
-    report_type = Column(String, nullable=False)  # Added report_type field
-    parameters = Column(JSON, nullable=True)  # Added parameters field
+    frequency = Column(String, nullable=False)
+    report_type = Column(String, nullable=False)
+    format = Column(String, nullable=False)
+    parameters = Column(JSON, nullable=True)
+    filters = Column(JSON, nullable=True)  # Added filters field
+    include_graphs = Column(Boolean, default=True)
+    language = Column(String, default="fr")
     active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Added created_by field
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    user = relationship("User", back_populates="subscriptions")
+    user = relationship("User", back_populates="subscriptions", foreign_keys=[user_id])
+    creator = relationship("User", back_populates="created_subscriptions", foreign_keys=[created_by])
 
     def __repr__(self):
         return f"<ReportSubscription(id={self.id}, name={self.name}, email={self.email}, frequency={self.frequency})>"
@@ -139,20 +155,25 @@ class Artist(Base):
         return f"<Artist(name='{self.name}', country='{self.country}', type='{self.type}', label='{self.label}')>"
 
 class Track(Base):
-    __tablename__ = 'tracks'
-    
-    id = Column(Integer, primary_key=True)
+    """Track model."""
+    __tablename__ = "tracks"
+
+    id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
-    artist_id = Column(Integer, ForeignKey('artists.id'), nullable=True)
-    duration = Column(Interval)  # Changed to Interval
-    fingerprint = Column(String)
+    artist_id = Column(Integer, ForeignKey("artists.id"))
+    isrc = Column(String, index=True)
+    label = Column(String)
+    album = Column(String)
+    duration = Column(Interval)
+    fingerprint = Column(String, unique=True)
+    fingerprint_raw = Column(LargeBinary)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    external_ids = Column(JSON, nullable=True)
 
-    detections = relationship("TrackDetection", back_populates="track", cascade="all, delete-orphan")
-    stats = relationship("TrackStats", back_populates="track", uselist=False, cascade="all, delete-orphan")
-    artist = relationship("Artist", back_populates="tracks")  # Renamed from artist_rel
+    # Relationships
+    artist = relationship("Artist", back_populates="tracks")
+    detections = relationship("TrackDetection", back_populates="track")
+    stats = relationship("TrackStats", back_populates="track", uselist=False)
 
 class TrackDetection(Base):
     __tablename__ = 'track_detections'

@@ -8,7 +8,7 @@ from ..models.models import RadioStation, StationStatus, Track, TrackDetection
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from ..utils.logging_config import setup_logging
-from .audio_processor import AudioProcessor
+from ..detection.audio_processor.core import AudioProcessor
 
 class RadioManager:
     def __init__(self, db_session: Session, audio_processor: AudioProcessor = None):
@@ -123,7 +123,9 @@ class RadioManager:
                     if not self.audio_processor:
                         raise ValueError("AudioProcessor not initialized")
                         
-                    result = await self.audio_processor.analyze_stream(station.stream_url, station.id)
+                    # Get audio data from stream handler
+                    audio_data = await self.audio_processor.stream_handler.get_audio_data(station.stream_url)
+                    result = await self.audio_processor.process_stream(audio_data, station.id)
                     if result:
                         results.append({
                             "station_id": station.id,

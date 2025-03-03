@@ -17,7 +17,11 @@ def get_database_url():
     """Get database URL based on environment"""
     env = os.getenv("ENV", "development")
     
-    if env == "production":
+    if env == "test":
+        # Use test PostgreSQL database
+        db_url = os.getenv("TEST_DATABASE_URL", "postgresql://sodav:sodav123@localhost:5432/sodav_test")
+        logger.info("Using test database")
+    elif env == "production":
         # Use production PostgreSQL URL
         db_url = os.getenv("DATABASE_URL")
         if not db_url:
@@ -110,11 +114,24 @@ def init_db():
         logger.error(f"Error initializing database: {str(e)}")
         raise
 
-def get_test_db() -> Session:
-    """Obtenir une session de base de données de test."""
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
-    engine = create_engine(
-        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    return TestingSessionLocal()
+# Test database configuration
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "postgresql://sodav:sodav123@localhost:5432/sodav_test")
+test_engine = create_engine(
+    TEST_DATABASE_URL,
+    pool_size=5,
+    max_overflow=0,
+    pool_timeout=30,
+    pool_pre_ping=True,
+    pool_recycle=3600,
+    poolclass=QueuePool,
+    connect_args={
+        "connect_timeout": 30,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+        "application_name": "sodav_monitor_test"
+    }
+)
+
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)

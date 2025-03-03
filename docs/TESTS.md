@@ -19,247 +19,149 @@
   - Response validation
   - Mock API responses
 - Authentication Module (95%)
-  - Password verification
-  - Token generation
+  - Token generation and validation
+  - Password hashing
+  - User authentication
   - Session management
-  - Role-based access
-
-### API Tests (>90%)
-- Authentication Endpoints
-  - Login/Logout flows
-  - Token validation
-  - Permission checks
-- Channel Management
-  - Station CRUD operations
-  - Stream status checks
-  - Real-time monitoring
-- Detection API
-  - Music recognition
-  - Stream processing
-  - Detection history
-- Analytics API
-  - Statistical aggregation
-  - Report generation
-  - Data export
-
-### Core Components (>85%)
-- Middleware
-  - Rate limiting
-  - Response caching
   - Error handling
-  - Request validation
-- Stream Processing
-  - Audio analysis
-  - Feature extraction
-  - Music detection
-  - Buffer management
-- Database Operations
-  - Model validation
-  - Relationship integrity
-  - Transaction handling
-  - Query optimization
 
-### Test Coverage par Module
-```python
-Name                                  Stmts   Miss  Cover
----------------------------------------------------------
-backend/core/middleware/cache.py         89      4    96%
-backend/core/middleware/rate_limit.py    76      3    96%
-backend/detection/audio_processor/       543     54    90%
-backend/models/                         312     31    90%
-backend/routers/                        423     42    90%
-backend/utils/                          234     23    90%
----------------------------------------------------------
-TOTAL                                  1677    157    91%
-```
+### Modules en Cours d'Amélioration
+1. **API Endpoints (75%)**
+   - Analytics API
+     - ✅ Overview endpoint
+     - ✅ Track statistics
+     - ✅ Artist statistics
+     - ❌ Station statistics (404 errors)
+     - ❌ Trend analysis (AssertionError)
+     - ❌ Export analytics (404 errors)
+   - Reports API
+     - ✅ Report generation
+     - ✅ Report listing
+     - ❌ Report download (404 errors)
+     - ❌ Report subscriptions (404 errors)
+   - Detections API
+     - ✅ Detection listing
+     - ✅ Detection search
+     - ❌ Audio processing (401 errors)
+     - ❌ Station detections (404 errors)
 
-## Stratégie de Test
+2. **Feature Extractor (85%)**
+   - ✅ Feature extraction
+   - ✅ Music detection
+   - ✅ Performance benchmarks
+   - ❌ Edge cases (failing tests)
+   - ❌ Complex audio analysis (failing tests)
 
-### Tests Unitaires
-- Utilisation de `pytest` comme framework principal
-- Mocking des dépendances externes (Redis, APIs)
-- Tests isolés par composant
-- Fixtures réutilisables
+3. **Stream Handler (70%)**
+   - ✅ Buffer management
+   - ✅ Stream processing
+   - ❌ Error handling (failing tests)
+   - ❌ Performance metrics (failing tests)
 
-### Tests d'Intégration
-- Tests de flux complets
-- Validation des interactions entre composants
-- Tests de performance et charge
-- Gestion des erreurs
+### Problèmes Identifiés
 
-### Tests API
-- Validation des endpoints
-- Tests de sécurité
-- Tests de performance
-- Documentation OpenAPI
+#### 1. Erreurs de Base de Données
+- Tables manquantes:
+  - `radio_stations`
+  - `reports`
+  - `report_subscriptions`
+- Colonnes manquantes:
+  - `reports.title`
+  - `report_subscriptions.format`
+- Violations de contraintes:
+  - Clés étrangères dans `track_detections`
+  - Contraintes d'unicité dans les tables
 
-## Exécution des Tests
+#### 2. Erreurs d'API
+- Authentification (401):
+  - Détections API: Problèmes de validation des tokens
+- Ressources non trouvées (404):
+  - Analytics API: Endpoints statistiques
+  - Reports API: Téléchargement et abonnements
+- Validation des données (400):
+  - Reports API: Paramètres invalides
 
-### Tests Unitaires
-```bash
-# Exécuter tous les tests
-PYTHONPATH=. pytest
+#### 3. Erreurs Asynchrones
+- Coroutines non attendues:
+  - Stream Handler
+  - Redis Client
+  - WebSocket Manager
+- Event loops manquants:
+  - Tests Radio
+  - Tests WebSocket
 
-# Tests spécifiques
-PYTHONPATH=. pytest backend/tests/core/test_middleware.py
-PYTHONPATH=. pytest backend/tests/detection/
-PYTHONPATH=. pytest backend/tests/api/
-```
+### Plan d'Action
 
-### Tests de Couverture
-```bash
-# Générer un rapport de couverture
-PYTHONPATH=. pytest --cov=backend --cov-report=html
+1. **Base de Données**
+   - Exécuter les migrations Alembic
+   - Vérifier les contraintes de clé étrangère
+   - Ajouter les colonnes manquantes
+   - Nettoyer les données de test
 
-# Voir le rapport
-open htmlcov/index.html
-```
+2. **API Endpoints**
+   - Corriger les problèmes d'authentification
+   - Implémenter la gestion des erreurs 404
+   - Améliorer la validation des données
+   - Ajouter des tests de régression
 
-## Bonnes Pratiques
-1. Écrire les tests avant le code (TDD)
-2. Maintenir une couverture >90%
-3. Documenter les cas de test
-4. Utiliser des fixtures pour le code commun
-5. Tester les cas d'erreur
-6. Vérifier les fuites mémoire
+3. **Tests Asynchrones**
+   - Utiliser pytest-asyncio
+   - Ajouter des event loops de test
+   - Corriger les mocks asynchrones
+   - Améliorer la gestion des timeouts
 
-## Prochaines Étapes
-1. Améliorer la couverture des nouveaux modules
-2. Ajouter des tests de performance
-3. Implémenter des tests end-to-end
-4. Automatiser les tests de régression
+### Résultats des Tests
 
-## Structure des Tests
+#### Tests Réussis (226)
+- Tests unitaires de base
+- Tests de configuration
+- Tests d'authentification
+- Tests de modèles de données
 
-```
-backend/tests/
-├── analytics/              # Tests des fonctionnalités analytiques
-│   ├── test_stats.py
-│   └── test_trends.py
-├── detection/             # Tests du module de détection
-│   ├── audio_processor/
-│   │   ├── test_core.py
-│   │   ├── test_stream_handler.py
-│   │   ├── test_feature_extractor.py
-│   │   └── test_track_manager.py
-│   └── test_detection.py
-├── utils/               # Tests des utilitaires
-│   ├── test_auth.py
-│   ├── test_redis_config.py
-│   └── test_stream_checker.py
-└── conftest.py         # Fixtures partagées
-```
+#### Tests Échoués (173)
+- Tests d'API (endpoints manquants)
+- Tests de détection (erreurs de configuration)
+- Tests de streaming (erreurs asynchrones)
+- Tests de rapports (erreurs de base de données)
 
-## Configuration des Tests
+#### Tests Ignorés (8)
+- Tests de performance (benchmarks)
+- Tests d'intégration externe
+- Tests de charge
 
-### Variables d'Environnement
-```bash
-TEST_DATABASE_URL=sqlite:///./test.db
-TEST_REDIS_URL=redis://localhost:6379/1
-TEST_API_KEY=test_key
-ACOUSTID_API_KEY=test_acoustid_key
-AUDD_API_KEY=test_audd_key
-```
+#### Avertissements (5988)
+- Dépréciations librosa
+- Avertissements numpy
+- Avertissements de coroutines
+- Avertissements de configuration
 
-### Dépendances de Test
-```
-pytest==8.3.4
-pytest-asyncio==0.24.0
-pytest-cov==5.0.0
-pytest-mock==3.14.0
-pytest-redis==3.1.2
-pytest-benchmark==4.0.0
-```
-
-## Exécution des Tests
-
-### Tests Unitaires
-```bash
-# Tous les tests
-python -m pytest backend/tests/
-
-# Tests spécifiques
-python -m pytest backend/tests/detection/audio_processor/test_feature_extractor.py
-```
-
-### Tests avec Couverture
-```bash
-python -m pytest --cov=backend --cov-report=html
-```
-
-### Tests de Performance
-```bash
-# Exécuter les benchmarks
-python -m pytest --benchmark-only
-
-# Générer un rapport de benchmark
-python -m pytest --benchmark-only --benchmark-json output.json
-```
-
-## Critères de Performance
-
-### Temps de Réponse
-- Traitement audio : < 1s par échantillon
-- Détection de piste : < 3s par piste
-- API REST : < 100ms par requête
-- WebSocket : < 50ms par message
-
-### Utilisation des Ressources
-- CPU : < 80% en charge normale
-- Mémoire : < 1GB par processus
-- Disque : < 100MB/s en écriture
-- Redis : < 1000 opérations/s
-
-### Concurrence
-- Flux simultanés : > 50 stations
-- Connexions WebSocket : > 1000
-- Requêtes API : > 1000 req/s
-
-## Maintenance
-
-### Mise à Jour des Tests
-- Revue régulière des tests
-- Mise à jour des mocks
-- Nettoyage des tests obsolètes
-- Documentation à jour
-
-### Intégration Continue
-- Exécution automatique des tests
-- Vérification de la couverture
-- Rapports de test
-- Notifications d'échec
-- Benchmarks automatisés
-
-## Structure des Tests (Mise à jour Mars 2024)
+### Benchmarks de Performance
 
 ```
-backend/tests/
-├── analytics/              # Tests des fonctionnalités analytiques
-│   ├── test_stats.py
-│   └── test_trends.py
-├── detection/             # Tests du module de détection
-│   ├── test_audio_processor/
-│   │   ├── test_core.py
-│   │   ├── test_stream_handler.py
-│   │   ├── test_feature_extractor.py
-│   │   ├── test_track_manager.py
-│   │   └── test_external_services.py
-│   └── test_detection.py
-├── reports/              # Tests de génération de rapports
-│   └── test_generator.py
-├── utils/               # Tests des utilitaires
-│   ├── test_auth.py
-│   ├── test_redis_config.py
-│   └── test_stream_checker.py
-├── test_api.py         # Tests d'API consolidés
-├── test_websocket.py   # Tests WebSocket
-├── test_system.py      # Tests système
-├── test_radio.py       # Tests radio
-├── test_database.py    # Tests base de données
-├── test_error_recovery.py  # Tests de récupération d'erreurs
-├── test_performance.py    # Tests de performance [Nouveau]
-└── conftest.py         # Fixtures partagées
+Name (time in us)                Min      Max     Mean    StdDev  Median   OPS
+------------------------------------------------------------------------------
+test_processing_latency         389.42   1685.41  452.74   68.82  429.15  2208.76
+test_feature_extraction        449.39   1230.06  531.09   94.24  493.30  1882.93
+test_memory_usage              475.01   1014.21  562.51   92.13  528.63  1777.76
+test_batch_processing        2055473.61 2093385.39 2075847.13 13665.04 2077697.96 0.48
 ```
+
+### Prochaines Étapes
+
+1. **Correction des Tests**
+   - Résoudre les erreurs de base de données
+   - Corriger les tests asynchrones
+   - Améliorer les mocks et fixtures
+
+2. **Optimisation des Performances**
+   - Réduire la latence de traitement
+   - Optimiser l'utilisation mémoire
+   - Améliorer les benchmarks
+
+3. **Documentation**
+   - Mettre à jour la documentation API
+   - Documenter les cas d'erreur
+   - Ajouter des exemples de test
 
 ## État Actuel de la Couverture (Mars 2024)
 
@@ -1267,10 +1169,10 @@ Component           | Current | Target | Status
 User Model         | 100%    | 100%    | ✅
 Artist Model       | 90%     | 95%     | 🔄
 Track Model        | 85%     | 95%     | 🔄
-Detection Model    | 85%     | 95%     | 🔄
+Detection Model    | 100%    | 95%     | ✅
 Report Model       | 80%     | 90%     | 🔄
 Analytics Model    | 85%     | 90%     | 🔄
-Overall           | 87%     | 95%     | 🔄
+Overall           | 90%     | 95%     | 🔄
 
 ### Recent Test Improvements
 

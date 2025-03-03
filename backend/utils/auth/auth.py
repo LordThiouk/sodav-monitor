@@ -9,10 +9,12 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from backend.models.database import get_db
 from backend.models.models import User
-from backend.core.config import settings
+from backend.core.config.settings import get_settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+settings = get_settings()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
@@ -27,54 +29,34 @@ def create_access_token(
     expires_delta: Optional[timedelta] = None,
     settings_override: Optional[dict] = None
 ) -> str:
-    """
-    Create a JWT access token.
-    
-    Args:
-        data: Data to encode in the token
-        expires_delta: Optional expiration time delta
-        settings_override: Optional settings override for testing
-        
-    Returns:
-        str: Encoded JWT token
-    """
+    """Create an access token."""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.now() + expires_delta
+        expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.now() + timedelta(minutes=15)
+        expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": int(expire.timestamp())})
     
     # Use settings override if provided, otherwise use global settings
     if settings_override:
-        secret_key = settings_override['SECRET_KEY']
+        secret_key = settings_override.get('SECRET_KEY') or settings_override.get('JWT_SECRET_KEY')
         algorithm = settings_override['ALGORITHM']
     else:
         secret_key = settings.SECRET_KEY
         algorithm = settings.ALGORITHM
     
+    if not secret_key:
+        raise ValueError("No secret key provided")
+    
     encoded_jwt = jwt.encode(to_encode, secret_key, algorithm=algorithm)
     return encoded_jwt
 
-def get_current_user(
+async def get_current_user(
     db: Session = Depends(get_db),
     token: str = Depends(oauth2_scheme),
     settings_override: Optional[dict] = None
 ) -> User:
-    """
-    Get the current user from a JWT token.
-    
-    Args:
-        db: Database session
-        token: JWT token
-        settings_override: Optional settings override for testing
-        
-    Returns:
-        User: Current user
-        
-    Raises:
-        HTTPException: If credentials are invalid
-    """
+    """Get the current user from a JWT token."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -83,19 +65,22 @@ def get_current_user(
     try:
         # Use settings override if provided, otherwise use global settings
         if settings_override:
-            secret_key = settings_override['SECRET_KEY']
+            secret_key = settings_override.get('SECRET_KEY') or settings_override.get('JWT_SECRET_KEY')
             algorithm = settings_override['ALGORITHM']
         else:
             secret_key = settings.SECRET_KEY
             algorithm = settings.ALGORITHM
         
+        if not secret_key:
+            raise ValueError("No secret key provided")
+        
         payload = jwt.decode(token, secret_key, algorithms=[algorithm])
-        username: str = payload.get("sub")
-        if username is None:
+        email: str = payload.get("sub")
+        if email is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-    user = db.query(User).filter(User.username == username).first()
+    user = db.query(User).filter(User.email == email).first()
     if user is None:
         raise credentials_exception
     return user 

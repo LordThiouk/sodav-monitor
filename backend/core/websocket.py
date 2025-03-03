@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 import json
 import logging
 from datetime import datetime
+from .config.redis import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +11,7 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, List[WebSocket]] = {}
         self.user_connections: Dict[str, List[WebSocket]] = {}
+        self.redis_channel = "sodav_monitor:websocket"
 
     async def connect(self, websocket: WebSocket, client_id: str, user_id: Optional[str] = None) -> None:
         """Connect a new WebSocket client."""
@@ -51,12 +53,20 @@ class ConnectionManager:
 
     async def broadcast(self, message: dict) -> None:
         """Broadcast a message to all connected clients."""
+        # Broadcast to WebSocket clients
         for connections in self.active_connections.values():
             for connection in connections:
                 try:
                     await connection.send_json(message)
                 except Exception as e:
                     logger.error(f"Error broadcasting message: {str(e)}")
+        
+        # Publish to Redis
+        try:
+            redis = get_redis()
+            await redis.publish(self.redis_channel, json.dumps(message))
+        except Exception as e:
+            logger.error(f"Error publishing to Redis: {str(e)}")
 
     async def broadcast_to_users(self, message: dict, user_ids: List[str]) -> None:
         """Broadcast a message to specific users."""

@@ -3,63 +3,91 @@
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 import os
-from typing import Generator, Dict
-from sqlalchemy import create_engine, event, inspect
+from typing import Generator, Dict, List
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.testclient import TestClient
 from datetime import datetime, timedelta
 import jwt
+import numpy as np
+from unittest.mock import AsyncMock
+from fastapi.middleware.cors import CORSMiddleware
+import uuid
+import asyncio
+import pytest_asyncio
+import logging
 
-from backend.models.database import Base, get_db
+from backend.models.database import Base, get_db, TestingSessionLocal, test_engine
 from backend.models.models import (
     User, RadioStation, Track, TrackDetection, ReportType, ReportFormat,
-    Artist, StationStatus, StationHealth, ArtistStats, TrackStats
+    Artist, StationStatus, ArtistStats, TrackStats, Report, ReportSubscription,
+    DetectionHourly, AnalyticsData, DetectionDaily, DetectionMonthly, StationStats,
+    TrackDaily, TrackMonthly, ArtistDaily, ArtistMonthly, StationTrackStats, StationHealth
 )
-from backend.routers import auth, channels, analytics, detections, reports
-from backend.core.security import create_access_token
+from backend.routers import auth, channels, analytics, detections, reports, websocket
+from backend.detection.audio_processor.core import AudioProcessor
+from backend.core.config import get_settings, settings
+from backend.core.security import get_current_user, oauth2_scheme, create_access_token
+from backend.detection.audio_processor.stream_handler import StreamHandler
+from backend.analytics.stats_manager import StatsManager
+from backend.main import app
+from backend.utils.auth.auth import get_password_hash
+
+# Test configuration constants
+TEST_SECRET_KEY = "test_secret_key"
+TEST_ALGORITHM = "HS256"
+TEST_TOKEN_EXPIRE_MINUTES = 15
 
 # Mock settings before any imports
-mock_settings = MagicMock()
-mock_settings.SECRET_KEY = "test_secret_key"
-mock_settings.ALGORITHM = "HS256"
-mock_settings.ACCESS_TOKEN_EXPIRE_MINUTES = 15
-mock_settings.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/sodav_test"
-mock_settings.REDIS_HOST = "localhost"
-mock_settings.REDIS_PORT = 6379
-mock_settings.REDIS_DB = 0
-mock_settings.REDIS_PASSWORD = None
-mock_settings.MUSICBRAINZ_API_KEY = "test_key"
-mock_settings.ACOUSTID_API_KEY = "test_acoustid_key"
-mock_settings.AUDD_API_KEY = "test_audd_key"
-mock_settings.MUSICBRAINZ_APP_NAME = "SODAV Monitor Test"
-mock_settings.MUSICBRAINZ_VERSION = "1.0"
-mock_settings.MUSICBRAINZ_CONTACT = "test@sodav.sn"
-mock_settings.LOG_LEVEL = "INFO"
-mock_settings.LOG_FILE = "logs/test.log"
-mock_settings.DETECTION_INTERVAL = 10
-mock_settings.CONFIDENCE_THRESHOLD = 50.0
-mock_settings.MAX_FAILURES = 3
-mock_settings.RESPONSE_TIMEOUT = 10
-mock_settings.MIN_CONFIDENCE_THRESHOLD = 0.8
-mock_settings.ACOUSTID_CONFIDENCE_THRESHOLD = 0.7
-mock_settings.AUDD_CONFIDENCE_THRESHOLD = 0.6
-mock_settings.LOCAL_CONFIDENCE_THRESHOLD = 0.8
+mock_settings = {
+    "SECRET_KEY": TEST_SECRET_KEY,
+    "JWT_SECRET_KEY": TEST_SECRET_KEY,
+    "ALGORITHM": TEST_ALGORITHM,
+    "ACCESS_TOKEN_EXPIRE_MINUTES": TEST_TOKEN_EXPIRE_MINUTES,
+    "DATABASE_URL": "postgresql://sodav:sodav123@localhost:5432/sodav_test",  # Use PostgreSQL for tests
+    "REDIS_HOST": "localhost",
+    "REDIS_PORT": 6379,
+    "REDIS_DB": 0,
+    "REDIS_PASSWORD": None,
+    "MUSICBRAINZ_API_KEY": "test_key",
+    "ACOUSTID_API_KEY": "test_acoustid_key",
+    "AUDD_API_KEY": "test_audd_key",
+    "MUSICBRAINZ_APP_NAME": "SODAV Monitor Test",
+    "MUSICBRAINZ_VERSION": "1.0",
+    "MUSICBRAINZ_CONTACT": "test@sodav.sn",
+    "LOG_LEVEL": "INFO",
+    "LOG_FILE": "logs/test.log",
+    "DETECTION_INTERVAL": 10,
+    "CONFIDENCE_THRESHOLD": 50.0,
+    "MAX_FAILURES": 3,
+    "RESPONSE_TIMEOUT": 10,
+    "MIN_CONFIDENCE_THRESHOLD": 0.8,
+    "ACOUSTID_CONFIDENCE_THRESHOLD": 0.7,
+    "AUDD_CONFIDENCE_THRESHOLD": 0.6,
+    "LOCAL_CONFIDENCE_THRESHOLD": 0.8
+}
 
-# Apply the mock settings
-with patch('backend.core.config.settings.get_settings', return_value=mock_settings):
-    from backend.models.database import Base
-    from backend.models.models import User, RadioStation, Track, TrackDetection, ReportType, ReportFormat
-    from backend.routers import auth, channels, analytics, detections, reports
+# Override settings for testing
+@pytest.fixture(autouse=True)
+def override_settings():
+    with patch("backend.core.config.get_settings") as mock_get_settings:
+        mock_get_settings.return_value = mock_settings
+        yield mock_settings
 
-# Create test database engine
+# Create test database engine with PostgreSQL settings
 test_engine = create_engine(
-    "postgresql://postgres:postgres@localhost:5432/sodav_test",
-    pool_pre_ping=True,
+    mock_settings["DATABASE_URL"],
     pool_size=5,
     max_overflow=10,
-    pool_timeout=30
+    pool_timeout=30,
+    pool_pre_ping=True,
+    pool_recycle=3600,
+    connect_args={
+        "connect_timeout": 30,
+        "application_name": "sodav_monitor_test"
+    }
 )
 
 # Create test session factory
@@ -69,199 +97,298 @@ TestingSessionLocal = sessionmaker(
     bind=test_engine
 )
 
-@pytest.fixture(scope="session")
-def test_app():
-    """Create a test FastAPI application."""
-    app = FastAPI()
-    app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-    app.include_router(channels.router, prefix="/api/channels", tags=["channels"])
-    app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
-    app.include_router(detections.router, prefix="/api/detections", tags=["detections"])
-    app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
-    return app
-
 @pytest.fixture(scope="function")
-def test_db_setup():
-    """Set up test database."""
-    # Drop all tables
-    Base.metadata.drop_all(bind=test_engine)
-    
-    # Create all tables
-    Base.metadata.create_all(bind=test_engine)
-    
-    # Create a new session
-    connection = test_engine.connect()
-    transaction = connection.begin()
-    session = TestingSessionLocal(bind=connection)
-    
-    # Verify tables are created
-    inspector = inspect(test_engine)
-    if 'users' not in inspector.get_table_names():
-        raise Exception("Users table not created")
-    
-    # Verify columns exist
-    user_columns = [col['name'] for col in inspector.get_columns('users')]
-    required_columns = ['id', 'username', 'email', 'password_hash', 'is_active', 'created_at', 'last_login', 'role', 'reset_token', 'reset_token_expires']
-    missing_columns = [col for col in required_columns if col not in user_columns]
-    if missing_columns:
-        raise Exception(f"Missing columns in users table: {missing_columns}")
-    
-    try:
-        yield session
-    finally:
-        # Roll back transaction and close session
-        session.close()
-        transaction.rollback()
-        connection.close()
-        # Drop all tables
-        Base.metadata.drop_all(bind=test_engine)
-
-@pytest.fixture(scope="function")
-def db_session(test_db_setup) -> Generator[Session, None, None]:
+def db_session() -> Generator:
     """Create a test database session."""
-    yield test_db_setup  # Use the session from test_db_setup
+    try:
+        # Drop all tables first to ensure clean state
+        Base.metadata.drop_all(bind=test_engine)
+        
+        # Create all tables
+        Base.metadata.create_all(bind=test_engine)
+        
+        # Create a new session
+        session = TestingSessionLocal()
+        
+        # Override get_db dependency
+        app.dependency_overrides[get_db] = lambda: session
+        
+        yield session
+    except Exception as e:
+        logger.error(f"Error setting up test database: {e}")
+        raise
+    finally:
+        session.close()
+        # Clean up by dropping all tables
+        Base.metadata.drop_all(bind=test_engine)
+        # Remove dependency override
+        app.dependency_overrides.clear()
 
-@pytest.fixture
-def client(test_app, db_session) -> Generator:
+@pytest.fixture(scope="function")
+def test_user(db_session: Session) -> User:
+    """Create a test user."""
+    email = f"test_{uuid.uuid4().hex[:8]}@example.com"  # Ensure unique email
+    password_hash = get_password_hash("testpassword123")
+    user = User(
+        username=email,  # Use email as username
+        email=email,
+        password_hash=password_hash,
+        is_active=True,
+        role="admin",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+        last_login=datetime.utcnow()
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+@pytest.fixture(scope="function")
+def auth_headers(test_user: User) -> Dict[str, str]:
+    """Create authentication headers for test user."""
+    settings_override = {
+        "SECRET_KEY": TEST_SECRET_KEY,
+        "JWT_SECRET_KEY": TEST_SECRET_KEY,
+        "ALGORITHM": TEST_ALGORITHM,
+        "ACCESS_TOKEN_EXPIRE_MINUTES": TEST_TOKEN_EXPIRE_MINUTES
+    }
+    
+    # Create a valid access token for the test user
+    access_token = create_access_token(
+        data={"sub": test_user.email},
+        expires_delta=timedelta(minutes=TEST_TOKEN_EXPIRE_MINUTES),
+        settings_override=settings_override
+    )
+    
+    # Return the headers with the Bearer token
+    return {"Authorization": f"Bearer {access_token}"}
+
+@pytest.fixture(scope="function")
+def test_client(db_session: Session, test_user: User, auth_headers: Dict[str, str]) -> TestClient:
     """Create a test client."""
     def override_get_db():
         try:
             yield db_session
         finally:
             pass
-    
-    test_app.dependency_overrides[get_db] = override_get_db
-    with TestClient(test_app) as c:
-        yield c
-    test_app.dependency_overrides.clear()
 
-@pytest.fixture
-def test_user(db_session: Session) -> User:
-    """Create a test user."""
-    user = User(
-        username="testuser",
-        email="test@example.com",
-        role="user",
-        is_active=True,
-        created_at=datetime.utcnow()
-    )
-    user.set_password("testpass")
-    db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
-    return user
+    def override_get_current_user():
+        return test_user
 
-@pytest.fixture
-def auth_headers(test_user: User) -> Dict[str, str]:
-    """Create authentication headers."""
-    access_token = create_access_token(
-        data={"sub": test_user.email},
-        settings_override=mock_settings
-    )
-    return {"Authorization": f"Bearer {access_token}"}
+    def override_oauth2_scheme():
+        return auth_headers["Authorization"].split(" ")[1]
 
-@pytest.fixture
+    def override_get_settings():
+        return {
+            "SECRET_KEY": TEST_SECRET_KEY,
+            "JWT_SECRET_KEY": TEST_SECRET_KEY,
+            "ALGORITHM": TEST_ALGORITHM,
+            "ACCESS_TOKEN_EXPIRE_MINUTES": TEST_TOKEN_EXPIRE_MINUTES,
+            "DATABASE_URL": "postgresql://sodav:sodav123@localhost:5432/sodav_test",
+            "REDIS_HOST": "localhost",
+            "REDIS_PORT": 6379,
+            "REDIS_DB": 0,
+            "REDIS_PASSWORD": None,
+            "MUSICBRAINZ_API_KEY": "test_key",
+            "ACOUSTID_API_KEY": "test_acoustid_key",
+            "AUDD_API_KEY": "test_audd_key",
+            "MUSICBRAINZ_APP_NAME": "SODAV Monitor Test",
+            "MUSICBRAINZ_VERSION": "1.0",
+            "MUSICBRAINZ_CONTACT": "test@sodav.sn",
+            "LOG_LEVEL": "INFO",
+            "LOG_FILE": "logs/test.log",
+            "DETECTION_INTERVAL": 10,
+            "CONFIDENCE_THRESHOLD": 50.0,
+            "MAX_FAILURES": 3,
+            "RESPONSE_TIMEOUT": 10,
+            "MIN_CONFIDENCE_THRESHOLD": 0.8,
+            "ACOUSTID_CONFIDENCE_THRESHOLD": 0.7,
+            "AUDD_CONFIDENCE_THRESHOLD": 0.6,
+            "LOCAL_CONFIDENCE_THRESHOLD": 0.8
+        }
+
+    # Override dependencies
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[oauth2_scheme] = override_oauth2_scheme
+    app.dependency_overrides[get_settings] = override_get_settings
+
+    with TestClient(app) as client:
+        client.headers.update(auth_headers)
+        yield client
+
+    app.dependency_overrides.clear()
+
+@pytest.fixture(scope="function")
+def event_loop():
+    """Create an event loop for async tests."""
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
+@pytest.fixture(scope="function")
 def test_station(db_session: Session) -> RadioStation:
     """Create a test radio station."""
     station = RadioStation(
-        name="Test Radio",
+        name="Test Station",
         stream_url="http://test.stream/audio",
         country="SN",
         language="fr",
-        is_active=True,
-        status=StationStatus.active.value,
-        last_checked=datetime.utcnow(),
         region="Dakar",
-        type="radio"
+        type="radio",
+        status="active",
+        is_active=True,
+        last_check=datetime.utcnow(),
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
     )
     db_session.add(station)
     db_session.commit()
     db_session.refresh(station)
     return station
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def test_artist(db_session: Session) -> Artist:
     """Create a test artist."""
     artist = Artist(
-        name="Test Artist",
+        name=f"Test Artist {uuid.uuid4().hex[:8]}",  # Ensure unique name
         country="SN",
         region="Dakar",
-        type="solo",
+        type="musician",
         label="Test Label",
-        created_at=datetime.utcnow()
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+        total_play_time=timedelta(hours=1),
+        total_plays=100,
+        external_ids={"musicbrainz": "test_id"}
     )
     db_session.add(artist)
     db_session.commit()
     db_session.refresh(artist)
-    
-    # Create artist stats
-    stats = ArtistStats(
-        artist_id=artist.id,
-        total_plays=0,
-        total_play_time=timedelta(0),
-        average_confidence=0.0
-    )
-    db_session.add(stats)
-    db_session.commit()
     return artist
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def test_track(db_session: Session, test_artist: Artist) -> Track:
     """Create a test track."""
     track = Track(
-        title="Test Track",
+        title=f"Test Track {uuid.uuid4().hex[:8]}",  # Ensure unique title
         artist_id=test_artist.id,
+        isrc="USABC1234567",
+        label="Test Label",
+        album="Test Album",
         duration=timedelta(minutes=3),
-        fingerprint="test_fingerprint",
-        created_at=datetime.utcnow()
+        fingerprint=f"test_fingerprint_{uuid.uuid4().hex}",  # Ensure unique fingerprint
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
     )
     db_session.add(track)
     db_session.commit()
     db_session.refresh(track)
-    
-    # Create track stats
-    stats = TrackStats(
-        track_id=track.id,
-        total_plays=0,
-        total_play_time=timedelta(0),
-        average_confidence=0.0
-    )
-    db_session.add(stats)
-    db_session.commit()
     return track
 
-@pytest.fixture
-def test_detection(db_session: Session, test_track: Track, test_station: RadioStation) -> TrackDetection:
-    """Create a test detection."""
-    detection = TrackDetection(
-        track_id=test_track.id,
-        station_id=test_station.id,
-        confidence=0.95,
-        detected_at=datetime.utcnow(),
-        play_duration=timedelta(minutes=3),
-        is_valid=True,
-        fingerprint="test_detection_fingerprint",
-        audio_hash="test_audio_hash"
+@pytest.fixture(scope="function")
+def test_report(db_session: Session, test_user: User) -> Report:
+    """Create a test report."""
+    report = Report(
+        title="Test Report",
+        type="daily",  # String type as defined in the model
+        report_type="daily",  # String type as defined in the model
+        format="xlsx",  # String type as defined in the model
+        status="completed",  # String type as defined in the model
+        progress=100.0,
+        parameters={
+            "start_date": datetime.utcnow().date().isoformat(),
+            "end_date": datetime.utcnow().date().isoformat(),
+            "include_graphs": True,
+            "language": "fr"
+        },
+        user_id=test_user.id,
+        created_by=test_user.id,
+        created_at=datetime.utcnow(),
+        completed_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
     )
-    db_session.add(detection)
+    db_session.add(report)
     db_session.commit()
-    db_session.refresh(detection)
-    return detection
+    db_session.refresh(report)
+    return report
+
+@pytest.fixture(scope="function")
+def test_subscription(db_session: Session, test_user: User) -> ReportSubscription:
+    """Create a test report subscription."""
+    subscription = ReportSubscription(
+        name="Test Subscription",
+        email=f"test_{uuid.uuid4().hex[:8]}@example.com",  # Ensure unique email
+        frequency="daily",  # String type as defined in the model
+        report_type="daily",  # String type as defined in the model
+        format="xlsx",  # String type as defined in the model
+        parameters={
+            "include_graphs": True,
+            "language": "fr"
+        },
+        filters={
+            "stations": ["all"],
+            "artists": ["all"]
+        },
+        include_graphs=True,
+        language="fr",
+        active=True,
+        user_id=test_user.id,
+        created_by=test_user.id,
+        created_at=datetime.utcnow()
+    )
+    db_session.add(subscription)
+    db_session.commit()
+    db_session.refresh(subscription)
+    return subscription
 
 @pytest.fixture
-def test_station_health(db_session: Session, test_station: RadioStation) -> StationHealth:
-    """Create a test station health record."""
-    health = StationHealth(
-        station_id=test_station.id,
-        timestamp=datetime.utcnow(),
-        status="healthy",
-        response_time=0.1,
-        content_type="audio/mpeg"
+def test_analytics_data(db_session: Session) -> AnalyticsData:
+    """Create test analytics data."""
+    now = datetime.utcnow()
+    data = AnalyticsData(
+        timestamp=now,
+        detection_count=100,
+        detection_rate=0.95,
+        active_stations=10,
+        average_confidence=0.92
     )
-    db_session.add(health)
+    db_session.add(data)
     db_session.commit()
-    db_session.refresh(health)
-    return health
+    db_session.refresh(data)
+    return data
+
+@pytest.fixture
+def test_hourly_detections(db_session: Session, test_track: Track, test_station: RadioStation) -> List[DetectionHourly]:
+    """Create test hourly detections."""
+    now = datetime.utcnow()
+    detections = []
+    for i in range(24):
+        hour = now - timedelta(hours=23-i)
+        detection = DetectionHourly(
+            track_id=test_track.id,
+            station_id=test_station.id,
+            hour=hour.replace(minute=0, second=0, microsecond=0),
+            count=i * 10
+        )
+        detections.append(detection)
+    db_session.add_all(detections)
+    db_session.commit()
+    return detections
+
+@pytest.fixture
+def test_stats_manager(db_session: Session) -> StatsManager:
+    """Create a test stats manager."""
+    return StatsManager(db_session)
+
+@pytest.fixture
+def mock_audio_processor():
+    """Create a mock audio processor."""
+    mock = MagicMock()
+    mock.detect_music = MagicMock(return_value={"status": "success", "detections": []})
+    mock.is_initialized = MagicMock(return_value=True)
+    return mock
 
 @pytest.fixture
 def mock_db_session():
@@ -292,22 +419,6 @@ def station_monitor(db_session):
     """Create a StationMonitor instance for testing."""
     return StationMonitor(db_session)
 
-@pytest.fixture(scope="session")
-def app():
-    """Create a FastAPI instance for testing."""
-    app = FastAPI()
-    app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-    app.include_router(channels.router, prefix="/api/channels", tags=["channels"])
-    app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
-    app.include_router(detections.router, prefix="/api/detections", tags=["detections"])
-    app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
-    return app
-
-@pytest.fixture(scope="session")
-def test_client(app):
-    """Crée un client de test FastAPI."""
-    return TestClient(app)
-
 @pytest.fixture
 def sample_station(db_session):
     """Create a test radio station."""
@@ -323,13 +434,43 @@ def sample_station(db_session):
 @pytest.fixture
 def sample_track(db_session):
     """Create a test track."""
+    # Create test artist first
+    artist = Artist(
+        name="Test Artist",
+        country="SN",
+        region="Dakar",
+        type="solo",
+        label="Test Label",
+        created_at=datetime.utcnow()
+    )
+    db_session.add(artist)
+    db_session.commit()
+    db_session.refresh(artist)
+    
     track = Track(
         title="Test Song",
-        artist="Test Artist",
-        duration=180.0,
-        fingerprint="test_fingerprint"
+        artist_id=artist.id,
+        duration=timedelta(seconds=180),
+        fingerprint="test_fingerprint",
+        fingerprint_raw=b"test_fingerprint_raw",
+        isrc="USABC1234567",
+        label="Test Label",
+        album="Test Album",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
     )
     db_session.add(track)
+    db_session.commit()
+    db_session.refresh(track)
+    
+    # Create track stats
+    stats = TrackStats(
+        track_id=track.id,
+        total_plays=0,
+        total_play_time=timedelta(0),
+        average_confidence=0.0
+    )
+    db_session.add(stats)
     db_session.commit()
     return track
 
@@ -362,4 +503,43 @@ def sample_report_data():
 def report_generator(db_session):
     """Crée un générateur de rapports de test."""
     stats_manager = StatsManager(db_session)
-    return ReportGenerator(db_session, stats_manager) 
+    return ReportGenerator(db_session, stats_manager)
+
+@pytest.fixture
+def multiple_detections(db_session: Session, test_track: Track, test_station: RadioStation) -> List[TrackDetection]:
+    """Create multiple test detections."""
+    now = datetime.utcnow()
+    detections = []
+    for i in range(10):
+        detection = TrackDetection(
+            track_id=test_track.id,
+            station_id=test_station.id,
+            detected_at=now - timedelta(hours=i),
+            confidence=0.95,
+            play_duration=timedelta(minutes=3),
+            fingerprint="test_fingerprint",
+            audio_hash=f"test_hash_{i}"
+        )
+        detections.append(detection)
+    db_session.add_all(detections)
+    db_session.commit()
+    return detections
+
+@pytest.fixture(scope="function")
+def test_detection(db_session: Session, test_track: Track, test_station: RadioStation) -> TrackDetection:
+    """Create a test detection."""
+    detection = TrackDetection(
+        track_id=test_track.id,
+        station_id=test_station.id,
+        confidence=0.95,
+        detected_at=datetime.utcnow(),
+        end_time=datetime.utcnow() + timedelta(minutes=3),
+        play_duration=timedelta(minutes=3),
+        fingerprint=f"test_detection_fingerprint_{uuid.uuid4().hex}",  # Ensure unique fingerprint
+        audio_hash=f"test_audio_hash_{uuid.uuid4().hex}",  # Ensure unique audio hash
+        _is_valid=True
+    )
+    db_session.add(detection)
+    db_session.commit()
+    db_session.refresh(detection)
+    return detection 

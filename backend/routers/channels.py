@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, desc, and_
+from sqlalchemy import func, desc, and_, or_
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 from fastapi import BackgroundTasks
 import asyncio
+import json
+import redis
 
 from backend.models.database import get_db
 from ..models import RadioStation, StationStatus, Track, TrackDetection, Artist
@@ -16,6 +18,7 @@ import logging
 from ..schemas.base import StationCreate, StationUpdate, StationResponse, StationStatusResponse
 from ..core.security import get_current_user
 from ..core.config import get_settings
+from backend.core.config.redis import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -66,52 +69,51 @@ class StationStats(BaseModel):
     languages: Dict[str, int]
 
 class TrackInfo(BaseModel):
-    title: str
-    artist: str
-    isrc: Optional[str] = ""
-    label: Optional[str] = ""
-    fingerprint: Optional[str] = ""
-
-    class Config:
-        from_attributes = True
+    """Model for track information."""
+    title: str = Field(..., description="Title of the track")
+    artist: str = Field(..., description="Artist name")
+    isrc: Optional[str] = Field(None, description="International Standard Recording Code")
+    label: Optional[str] = Field(None, description="Record label")
+    fingerprint: Optional[str] = Field(None, description="Audio fingerprint")
 
 class DetectionResponse(BaseModel):
-    id: int
-    station_id: int
-    track_id: int
-    confidence: float
-    detected_at: datetime
-    play_duration: str
-    track: TrackInfo
-
-    class Config:
-        from_attributes = True
+    """Model for detection response."""
+    id: int = Field(..., description="Detection ID")
+    station_id: int = Field(..., description="Station ID")
+    track_id: int = Field(..., description="Track ID")
+    confidence: float = Field(..., description="Detection confidence")
+    detected_at: datetime = Field(..., description="Detection timestamp")
+    play_duration: str = Field(..., description="Play duration")
+    track: TrackInfo = Field(..., description="Track information")
 
 class StationInfo(BaseModel):
-    id: int
-    name: str
-    country: Optional[str]
-    language: Optional[str]
-    status: str
-    total_detections: int
-    average_confidence: float
-    total_play_duration: str
-
-    class Config:
-        from_attributes = True
+    """Model for station information."""
+    id: int = Field(..., description="Station ID")
+    name: str = Field(..., description="Station name")
+    country: Optional[str] = Field(None, description="Station country")
+    language: Optional[str] = Field(None, description="Station language")
+    status: str = Field(..., description="Station status")
+    total_detections: int = Field(..., description="Total number of detections")
+    average_confidence: float = Field(..., description="Average detection confidence")
+    total_play_duration: str = Field(..., description="Total play duration")
 
 class DetectionsResponse(BaseModel):
-    detections: List[DetectionResponse]
-    total: int
-    page: int
-    pages: int
-    has_next: bool
-    has_prev: bool
-    labels: List[str]
-    station: StationInfo
+    """Model for detections list response."""
+    detections: List[DetectionResponse] = Field(..., description="List of detections")
+    total: int = Field(..., description="Total number of detections")
+    page: int = Field(..., description="Current page number")
+    pages: int = Field(..., description="Total number of pages")
+    has_next: bool = Field(..., description="Whether there is a next page")
+    has_prev: bool = Field(..., description="Whether there is a previous page")
+    labels: List[str] = Field(..., description="List of unique labels")
+    station: StationInfo = Field(..., description="Station information")
 
-    class Config:
-        from_attributes = True
+class StationStatsResponse(BaseModel):
+    """Response model for station statistics."""
+    total_stations: int = Field(..., description="Total number of stations")
+    active_stations: int = Field(..., description="Number of active stations")
+    inactive_stations: int = Field(..., description="Number of inactive stations")
+    languages: Dict[str, int] = Field(default_factory=dict, description="Count of stations by language")
 
 @router.get(
     "/",
@@ -484,14 +486,14 @@ async def detect_music_all_channels(
         logger.error(f"Error in music detection: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/stats", response_model=Dict[str, StationStats])
+@router.get("/stats", response_model=Dict[str, StationStatsResponse])
 def get_channel_stats(db: Session = Depends(get_db)):
     """Get channel statistics"""
     try:
         stations = db.query(RadioStation).all()
         
         total_stations = len(stations)
-        active_stations = len([s for s in stations if s.status == StationStatus.active])
+        active_stations = len([s for s in stations if s.status == "active"])
         inactive_stations = total_stations - active_stations
         
         languages = {}
@@ -502,7 +504,7 @@ def get_channel_stats(db: Session = Depends(get_db)):
                     languages[lang] = languages.get(lang, 0) + 1
         
         return {
-            "stats": StationStats(
+            "stats": StationStatsResponse(
                 total_stations=total_stations,
                 active_stations=active_stations,
                 inactive_stations=inactive_stations,
@@ -511,6 +513,7 @@ def get_channel_stats(db: Session = Depends(get_db)):
         }
         
     except Exception as e:
+        logger.error(f"Error getting channel stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{station_id}/stats", response_model=Dict)
@@ -557,57 +560,6 @@ def get_station_stats(station_id: int, db: Session = Depends(get_db)):
         
         logger.info(f"Detection counts - 24h: {detections_24h}, 7d: {detections_7d}, 30d: {detections_30d}")
         
-        # Get top tracks for this station with NULL handling
-        try:
-            top_tracks = db.query(
-                Track,
-                func.count(TrackDetection.id).label('plays'),
-                func.coalesce(func.avg(TrackDetection.confidence), 0.0).label('avg_confidence'),
-                func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0)).label('total_duration')
-            ).join(
-                TrackDetection, Track.id == TrackDetection.track_id
-            ).join(
-                Artist, Track.artist_id == Artist.id
-            ).filter(
-                TrackDetection.station_id == station_id,
-                TrackDetection.detected_at >= last_24h
-            ).group_by(
-                Track.id
-            ).order_by(
-                desc('plays')
-            ).limit(10).all()
-            
-            logger.info(f"Found {len(top_tracks)} top tracks")
-            
-        except Exception as track_error:
-            logger.error(f"Error getting top tracks: {str(track_error)}")
-            top_tracks = []
-        
-        # Get top artists for this station with NULL handling
-        try:
-            top_artists = db.query(
-                Artist,
-                func.count(TrackDetection.id).label('plays'),
-                func.coalesce(func.sum(TrackDetection.play_duration), timedelta(0)).label('total_duration')
-            ).join(
-                Track, Track.artist_id == Artist.id
-            ).join(
-                TrackDetection, TrackDetection.track_id == Track.id
-            ).filter(
-                TrackDetection.station_id == station_id,
-                TrackDetection.detected_at >= last_24h
-            ).group_by(
-                Artist.id
-            ).order_by(
-                desc('plays')
-            ).limit(10).all()
-            
-            logger.info(f"Found {len(top_artists)} top artists")
-            
-        except Exception as artist_error:
-            logger.error(f"Error getting top artists: {str(artist_error)}")
-            top_artists = []
-        
         # Get hourly detection counts
         try:
             hourly_detections = db.query(
@@ -648,69 +600,36 @@ def get_station_stats(station_id: int, db: Session = Depends(get_db)):
         
         avg_duration = total_play_time / total_detections if total_detections > 0 else timedelta(0)
         
-        # Ensure all datetime objects are converted to ISO format strings
-        station_data = {
-            "id": station.id,
+        # Format response
+        return {
+            "station_id": station.id,
             "name": station.name,
-            "country": station.country or "Non spécifié",
-            "language": station.language or "Non spécifié",
             "status": station.status.value if station.status else "inactive",
-            "last_checked": station.last_checked.isoformat() if station.last_checked else None,
-            "last_detection_time": station.last_detection_time.isoformat() if station.last_detection_time else None
+            "total_detections": total_detections,
+            "detections_24h": detections_24h,
+            "detections_7d": detections_7d,
+            "detections_30d": detections_30d,
+            "total_play_time": str(total_play_time),
+            "average_duration": str(avg_duration),
+            "uptime_percentage": uptime_percentage,
+            "hourly_detections": [
+                {
+                    "hour": detection.hour.isoformat(),
+                    "count": detection.count,
+                    "duration": str(detection.duration)
+                }
+                for detection in hourly_detections
+            ]
         }
         
-        # Helper function to safely convert datetime to ISO format
-        def safe_datetime_to_iso(dt):
-            if isinstance(dt, datetime):
-                return dt.isoformat()
-            elif isinstance(dt, str):
-                try:
-                    return datetime.strptime(dt, '%Y-%m-%d %H:%M:%S').isoformat()
-                except ValueError:
-                    return dt
-            else:
-                return str(dt) if dt is not None else None
-        
-        response = {
-            "station": station_data,
-            "metrics": {
-                "total_play_time": f"{int(total_play_time.total_seconds() // 3600):01d}:{int((total_play_time.total_seconds() % 3600) // 60):02d}:{int(total_play_time.total_seconds() % 60):02d}" if total_play_time else "0:00:00",
-                "detection_count": total_detections,
-                "unique_tracks": len(top_tracks),
-                "average_track_duration": f"{int(avg_duration.total_seconds() // 3600):01d}:{int((avg_duration.total_seconds() % 3600) // 60):02d}:{int(avg_duration.total_seconds() % 60):02d}" if avg_duration else "0:00:00",
-                "uptime_percentage": round(uptime_percentage, 2)
-            },
-            "detections": {
-                "last_24h": detections_24h,
-                "last_7d": detections_7d,
-                "last_30d": detections_30d
-            },
-            "top_tracks": [{
-                "title": track.title,
-                "artist": track.artist.name if track.artist else "Unknown",
-                "play_count": plays,
-                "play_time": f"{int(total_duration.total_seconds() // 3600):01d}:{int((total_duration.total_seconds() % 3600) // 60):02d}:{int(total_duration.total_seconds() % 60):02d}" if total_duration else "0:00:00"
-            } for track, plays, avg_confidence, total_duration in top_tracks],
-            "top_artists": [{
-                "name": artist.name,
-                "label": artist.label or "Unknown",
-                "country": artist.country or "Unknown",
-                "play_count": plays,
-                "play_time": f"{int(total_duration.total_seconds() // 3600):01d}:{int((total_duration.total_seconds() % 3600) // 60):02d}:{int(total_duration.total_seconds() % 60):02d}" if total_duration else "0:00:00"
-            } for artist, plays, total_duration in top_artists],
-            "hourly_detections": [{
-                "hour": safe_datetime_to_iso(hour),
-                "count": count,
-                "duration": f"{int(duration.total_seconds() // 3600):01d}:{int((duration.total_seconds() % 3600) // 60):02d}:{int(duration.total_seconds() % 60):02d}" if duration else "0:00:00"
-            } for hour, count, duration in hourly_detections]
-        }
-        
-        logger.info("Successfully generated station stats response")
-        return response
-        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting station stats: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting station stats: {str(e)}"
+        )
 
 @router.get("/{station_id}/detections", response_model=DetectionsResponse)
 async def get_channel_detections(
@@ -755,9 +674,11 @@ async def get_channel_detections(
                 search = f"%{search.lower()}%"
                 logger.info(f"Applying search filter: {search}")
                 query = query.join(Track).join(Artist).filter(
-                    (Track.title.ilike(search)) |
-                    (Artist.name.ilike(search)) |
-                    (Track.isrc.ilike(search))
+                    or_(
+                        func.lower(Track.title).like(search),
+                        func.lower(Artist.name).like(search),
+                        func.lower(Track.isrc).like(search) if Track.isrc else False
+                    )
                 )
 
             # Apply label filter if provided
@@ -782,22 +703,36 @@ async def get_channel_detections(
             unique_labels = [label[0] for label in labels if label[0]]
             logger.info(f"Found {len(unique_labels)} unique labels")
 
+            # Calculate average confidence
+            avg_confidence = db.query(func.avg(TrackDetection.confidence)).filter(
+                TrackDetection.station_id == station_id
+            ).scalar() or 0.0
+
             # Format response
             detection_list = []
             for detection in detections:
                 try:
+                    if not detection.track:
+                        logger.warning(f"Detection {detection.id} has no track")
+                        continue
+                        
                     track = detection.track
                     artist = track.artist if track else None
+                    
+                    if not artist:
+                        logger.warning(f"Track {track.id} has no artist")
+                        continue
+                        
                     detection_dict = DetectionResponse(
                         id=detection.id,
                         station_id=detection.station_id,
                         track_id=detection.track_id,
                         confidence=detection.confidence,
                         detected_at=detection.detected_at,
-                        play_duration=f"{int(detection.play_duration.total_seconds() // 3600):01d}:{int((detection.play_duration.total_seconds() % 3600) // 60):02d}:{int(detection.play_duration.total_seconds() % 60):02d}" if detection.play_duration else "0:00:00",
+                        play_duration=str(detection.play_duration) if detection.play_duration else "0:00:00",
                         track=TrackInfo(
-                            title=track.title if track else "Unknown",
-                            artist=artist.name if artist else "Unknown",
+                            title=track.title,
+                            artist=artist.name,
                             isrc=track.isrc or "",
                             label=track.label or "",
                             fingerprint=track.fingerprint or ""
@@ -816,8 +751,8 @@ async def get_channel_detections(
                 language=station.language,
                 status=station.status.value if station.status else "inactive",
                 total_detections=total_count,
-                average_confidence=0.0,  # Calculate this if needed
-                total_play_duration=f"{int(station.total_play_time.total_seconds() // 3600):01d}:{int((station.total_play_time.total_seconds() % 3600) // 60):02d}:{int(station.total_play_time.total_seconds() % 60):02d}" if station.total_play_time else "0:00:00"
+                average_confidence=round(avg_confidence, 2),
+                total_play_duration=str(station.total_play_time) if station.total_play_time else "0:00:00"
             )
 
             response = DetectionsResponse(
@@ -842,4 +777,85 @@ async def get_channel_detections(
         raise e
     except Exception as e:
         logger.error(f"Error getting channel detections: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{channel_id}/detect-music")
+async def detect_music_channel(
+    channel_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+    redis_client: redis.Redis = Depends(get_redis)
+):
+    """Detect music on a specific radio channel"""
+    try:
+        logger.info(f"Starting music detection for channel {channel_id}")
+        
+        # Get the station
+        station = db.query(RadioStation).filter(
+            RadioStation.id == channel_id,
+            RadioStation.status == "active",
+            RadioStation.is_active == True
+        ).first()
+        
+        if not station:
+            logger.warning(f"Station {channel_id} not found or not active")
+            raise HTTPException(status_code=404, detail="Station not found or not active")
+        
+        # Get RadioManager from app state
+        manager = request.app.state.radio_manager
+        if not manager:
+            raise HTTPException(
+                status_code=500,
+                detail="RadioManager not initialized. Please check server configuration."
+            )
+        
+        # Verify audio processor is available
+        if not hasattr(manager, 'audio_processor') or not manager.audio_processor:
+            raise HTTPException(
+                status_code=500,
+                detail="Audio processor not initialized. Please check server configuration."
+            )
+        
+        # Process the station
+        result = await manager.detect_music(station.id)
+        
+        # Check for error status
+        if result.get("status") == "error":
+            raise HTTPException(status_code=500, detail=result.get("message", "Unknown error"))
+        
+        # Prepare response data
+        response_data = {
+            "status": "success",
+            "message": f"Successfully processed station {station.name}",
+            "details": {
+                "station_id": station.id,
+                "station_name": station.name,
+                "detections": result.get("detections", [])
+            }
+        }
+        
+        # Publish detection update to Redis
+        detection_data = {
+            "type": "detection_update",
+            "data": {
+                "station_id": station.id,
+                "confidence": result.get("detections", [{}])[0].get("detection", {}).get("confidence", 0.0) if result.get("detections") else 0.0,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        }
+        try:
+            # Get Redis client from dependency injection
+            redis_client.publish("sodav_monitor:websocket", json.dumps(detection_data))
+        except Exception as e:
+            logger.error(f"Error publishing to Redis: {str(e)}")
+            # Don't fail the request if Redis publish fails
+        
+        return response_data
+            
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error in music detection: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

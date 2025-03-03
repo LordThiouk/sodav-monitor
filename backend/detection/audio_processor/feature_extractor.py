@@ -83,6 +83,9 @@ class FeatureExtractor:
             raise TypeError("Audio data must be a numpy array")
         if audio.size == 0:
             raise ValueError("Audio data cannot be empty")
+        
+        # Ensure float32 format
+        audio = audio.astype(np.float32)
 
         try:
             # Convert to mono if stereo
@@ -174,7 +177,7 @@ class FeatureExtractor:
             if not isinstance(features, dict):
                 raise ValueError("Features must be a dictionary")
                 
-            required_features = ["mel_spectrogram", "mfcc", "chroma"]
+            required_features = ["mel_spectrogram", "mfcc", "spectral_contrast", "chroma"]
             if not all(key in features for key in required_features):
                 raise ValueError(f"Missing required features: {required_features}")
                 
@@ -676,4 +679,4 @@ class FeatureExtractor:
             
         except Exception as e:
             logger.error(f"Error in timbre stability calculation: {str(e)}")
-            return 0.0 
+            return 0.0

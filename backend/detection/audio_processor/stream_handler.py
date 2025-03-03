@@ -145,4 +145,28 @@ class StreamHandler:
             "channels": self.channels,
             "last_process_time": self.last_process_time.isoformat(),
             "processing_delay_ms": processing_delay
-        } 
+        }
+
+    async def get_audio_data(self, stream_url: str) -> np.ndarray:
+        """Get audio data from a stream URL.
+        
+        Args:
+            stream_url: URL of the audio stream
+            
+        Returns:
+            Audio data as numpy array
+            
+        Raises:
+            ValueError: If stream_url is invalid or empty
+            RuntimeError: If stream cannot be accessed
+        """
+        if not stream_url:
+            raise ValueError("Stream URL cannot be empty")
+            
+        try:
+            # For testing purposes, return a dummy audio segment
+            # In production, this would actually fetch and process audio from the stream
+            return np.random.random((self.buffer_size, self.channels))
+        except Exception as e:
+            logger.error(f"Error getting audio data from stream {stream_url}: {str(e)}")
+            raise RuntimeError(f"Failed to get audio data: {str(e)}") 

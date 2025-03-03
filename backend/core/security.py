@@ -34,10 +34,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None, s
     
     # Use settings override if provided, otherwise use global settings
     if settings_override:
-        secret_key = settings_override['SECRET_KEY']
+        secret_key = settings_override['JWT_SECRET_KEY']
         algorithm = settings_override['ALGORITHM']
     else:
-        secret_key = settings.SECRET_KEY
+        secret_key = settings.JWT_SECRET_KEY
         algorithm = settings.ALGORITHM
     
     encoded_jwt = jwt.encode(to_encode, secret_key, algorithm=algorithm)
@@ -57,10 +57,10 @@ async def get_current_user(
     try:
         # Use settings override if provided, otherwise use global settings
         if settings_override:
-            secret_key = settings_override['SECRET_KEY']
+            secret_key = settings_override['JWT_SECRET_KEY']
             algorithm = settings_override['ALGORITHM']
         else:
-            secret_key = settings.SECRET_KEY
+            secret_key = settings.JWT_SECRET_KEY
             algorithm = settings.ALGORITHM
             
         try:

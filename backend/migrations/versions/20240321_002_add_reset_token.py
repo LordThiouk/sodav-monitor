@@ -1,7 +1,7 @@
 """add reset token columns
 
 Revision ID: 20240321_002_add_reset_token
-Revises: 20240321_001_merge_heads
+Revises: 20240321_001_merge
 Create Date: 2024-03-21
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20240321_002_add_reset_token'
-down_revision = '20240321_001_merge_heads'
+down_revision = '20240321_001_merge'
 branch_labels = None
 depends_on = None
 

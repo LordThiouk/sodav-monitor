@@ -669,3 +669,58 @@ Les imports ont été mis à jour dans les fichiers suivants pour refléter la n
 2. Mettre à jour la documentation des imports
 3. Optimiser les imports pour réduire les dépendances
 4. Ajouter des tests d'importation pour éviter les imports circulaires 
+
+## 2024-03-28: Test Organization and Documentation Updates
+
+### Test Documentation
+- Updated `docs/TESTING_STRATEGY.md` with:
+  - Latest performance test results and benchmarks
+  - Detailed test coverage by module
+  - Mock strategy documentation
+  - Current status and known issues
+  - Test execution instructions
+  - Continuous integration requirements
+
+### Test Organization
+- Consolidated test structure:
+  ```
+  tests/
+  ├── api/                     # API endpoint tests
+  │   ├── test_api_performance.py
+  │   ├── test_music_detection_api.py
+  │   ├── test_analytics_api.py
+  │   └── test_reports_api.py
+  ├── detection/              # Detection module tests
+  │   ├── audio_processor/    # Audio processor tests
+  │   │   ├── test_core.py
+  │   │   ├── test_feature_extractor.py
+  │   │   ├── test_performance.py
+  │   │   └── test_stream_handler.py
+  │   └── test_detection.py
+  ├── analytics/             # Analytics module tests
+  │   └── test_analytics.py
+  ├── reports/              # Report generation tests
+  │   └── test_reports.py
+  └── conftest.py          # Shared fixtures
+  ```
+
+### Performance Testing
+- Added comprehensive performance benchmarks for:
+  - Music detection endpoint
+  - Analytics overview
+  - Report generation
+  - Search functionality
+  - Concurrent request handling
+
+### Known Issues
+- Identified and documented current test failures:
+  - Search endpoint validation (422 errors)
+  - Report generation (404 errors)
+  - Station stats queries (500 errors)
+  - Detection history performance issues
+
+### Next Steps
+1. Fix search endpoint validation
+2. Implement proper error handling in report generation
+3. Debug station stats queries
+4. Optimize detection history performance 
