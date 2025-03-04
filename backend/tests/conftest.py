@@ -136,7 +136,6 @@ def test_user(db_session: Session) -> User:
         is_active=True,
         role="admin",
         created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
         last_login=datetime.utcnow()
     )
     db_session.add(user)

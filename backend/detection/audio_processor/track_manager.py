@@ -8,6 +8,10 @@ from backend.models.models import Track, TrackDetection, RadioStation, StationTr
 from backend.utils.logging_config import setup_logging
 from backend.utils.analytics.stats_updater import StatsUpdater
 import numpy as np
+from backend.detection.audio_processor.external_services import MusicBrainzService, AuddService, ExternalServiceHandler
+import os
+import io
+from pydub import AudioSegment
 
 logger = setup_logging(__name__)
 
@@ -67,13 +71,13 @@ class TrackManager:
         """Met à jour les informations de la piste en cours."""
         try:
             current = self.current_tracks[station_id]
-            current["duration"] += timedelta(seconds=features.get("duration", 0))
+            current["play_duration"] += timedelta(seconds=features.get("play_duration", 0))
             current["features"] = features
             
             return {
                 "status": "playing",
                 "track": current["track"].to_dict(),
-                "duration": current["duration"].total_seconds()
+                "play_duration": current["play_duration"].total_seconds()
             }
             
         except Exception as e:
@@ -90,9 +94,11 @@ class TrackManager:
                 detection = TrackDetection(
                     track_id=current["track"].id,
                     station_id=station_id,
-                    start_time=current["start_time"],
+                    detected_at=current["start_time"],
                     end_time=datetime.utcnow(),
-                    duration=current["duration"].total_seconds(),
+                    play_duration=current["play_duration"],
+                    fingerprint=current["features"].get("fingerprint", ""),
+                    audio_hash=current["features"].get("audio_hash", ""),
                     confidence=current["features"].get("confidence", 0)
                 )
                 self.db_session.add(detection)
@@ -101,7 +107,7 @@ class TrackManager:
                 self._update_station_track_stats(
                     station_id,
                     current["track"].id,
-                    current["duration"]
+                    current["play_duration"]
                 )
                 
                 # Supprime la piste courante
@@ -144,7 +150,7 @@ class TrackManager:
                 title=features.get("title"),
                 artist_id=artist.id,
                 artist_name=artist.name,
-                duration=features.get("duration", 0),
+                duration=features.get("play_duration", 0),
                 genre=features.get("genre"),
                 release_date=features.get("release_date"),
                 fingerprint=features.get("fingerprint")
@@ -167,7 +173,7 @@ class TrackManager:
             self.current_tracks[station_id] = {
                 "track": track,
                 "start_time": start_time,
-                "duration": timedelta(seconds=features.get("duration", 0)),
+                "play_duration": timedelta(seconds=features.get("play_duration", 0)),
                 "features": features
             }
             
@@ -181,7 +187,7 @@ class TrackManager:
             self.logger.error(f"Erreur lors du démarrage de la détection: {str(e)}")
             return {}
     
-    def _update_station_track_stats(self, station_id: int, track_id: int, duration: timedelta):
+    def _update_station_track_stats(self, station_id: int, track_id: int, play_duration: timedelta):
         """Met à jour les statistiques de diffusion."""
         try:
             stats = self.db_session.query(StationTrackStats).filter_by(
@@ -191,14 +197,14 @@ class TrackManager:
             
             if stats:
                 stats.play_count += 1
-                stats.total_play_time += duration.total_seconds()
+                stats.total_play_time += play_duration.total_seconds()
                 stats.last_played = datetime.utcnow()
             else:
                 stats = StationTrackStats(
                     station_id=station_id,
                     track_id=track_id,
                     play_count=1,
-                    total_play_time=duration.total_seconds(),
+                    total_play_time=play_duration.total_seconds(),
                     last_played=datetime.utcnow()
                 )
                 self.db_session.add(stats)
@@ -248,4 +254,222 @@ class TrackManager:
             
         except Exception as e:
             self.logger.error(f"Erreur lors du calcul de similarité: {str(e)}")
-            return 0.0 
+            return 0.0
+            
+    # Implémentation des méthodes manquantes
+    
+    async def find_local_match(self, features: np.ndarray) -> Optional[Dict[str, Any]]:
+        """
+        Recherche une correspondance dans la base de données locale.
+        
+        Args:
+            features: Caractéristiques audio extraites
+            
+        Returns:
+            Dictionnaire contenant les informations de la piste correspondante ou None si aucune correspondance
+        """
+        try:
+            # Extraire l'empreinte digitale des caractéristiques
+            fingerprint = self._extract_fingerprint(features)
+            
+            # Rechercher dans la base de données
+            track = self.db_session.query(Track).filter(
+                Track.fingerprint == fingerprint
+            ).first()
+            
+            if not track:
+                return None
+                
+            return {
+                "track": track,
+                "confidence": 0.95,  # Haute confiance pour les correspondances locales
+                "source": "local"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors de la recherche locale: {str(e)}")
+            return None
+            
+    async def find_musicbrainz_match(self, features: np.ndarray) -> Optional[Dict[str, Any]]:
+        """
+        Recherche une correspondance via l'API MusicBrainz.
+        
+        Args:
+            features: Caractéristiques audio extraites
+            
+        Returns:
+            Dictionnaire contenant les informations de la piste correspondante ou None si aucune correspondance
+        """
+        try:
+            # Convertir les caractéristiques en données audio
+            audio_data = self._convert_features_to_audio(features)
+            if not audio_data:
+                return None
+            
+            # Utiliser le gestionnaire de services externes
+            external_handler = ExternalServiceHandler(self.db_session)
+            
+            # Appeler le service MusicBrainz
+            result = await external_handler.recognize_with_musicbrainz(audio_data)
+            
+            if not result:
+                return None
+            
+            # Créer ou récupérer l'artiste
+            artist = self.db_session.query(Artist).filter(
+                Artist.name == result.get('artist')
+            ).first()
+            
+            if not artist:
+                artist = Artist(
+                    name=result.get('artist'),
+                    external_ids={'musicbrainz': result.get('artist_id', '')}
+                )
+                self.db_session.add(artist)
+                self.db_session.flush()
+            
+            # Créer ou récupérer la piste
+            track = self._get_or_create_track({
+                'title': result.get('title'),
+                'artist_id': artist.id,
+                'duration': result.get('duration', 0),
+                'source': 'musicbrainz',
+                'external_id': result.get('recording_id', '')
+            })
+            
+            if not track:
+                return None
+            
+            return {
+                "track": track,
+                "confidence": result.get('confidence', 0.7),
+                "source": "musicbrainz"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors de la recherche MusicBrainz: {str(e)}")
+            return None
+            
+    async def find_audd_match(self, features: np.ndarray) -> Optional[Dict[str, Any]]:
+        """
+        Recherche une correspondance via l'API AudD.
+        
+        Args:
+            features: Caractéristiques audio extraites
+            
+        Returns:
+            Dictionnaire contenant les informations de la piste correspondante ou None si aucune correspondance
+        """
+        try:
+            # Convertir les caractéristiques en données audio
+            audio_data = self._convert_features_to_audio(features)
+            if not audio_data:
+                return None
+            
+            # Utiliser le gestionnaire de services externes
+            external_handler = ExternalServiceHandler(
+                self.db_session, 
+                audd_api_key=os.getenv('AUDD_API_KEY')
+            )
+            
+            # Appeler le service AudD
+            result = await external_handler.recognize_with_audd(audio_data)
+            
+            if not result:
+                return None
+            
+            # Créer ou récupérer l'artiste
+            artist = self.db_session.query(Artist).filter(
+                Artist.name == result.get('artist')
+            ).first()
+            
+            if not artist:
+                artist = Artist(
+                    name=result.get('artist'),
+                    external_ids={'audd': result.get('artist_id', '')}
+                )
+                self.db_session.add(artist)
+                self.db_session.flush()
+            
+            # Créer ou récupérer la piste
+            track = self._get_or_create_track({
+                'title': result.get('title'),
+                'artist_id': artist.id,
+                'duration': result.get('duration', 0),
+                'source': 'audd',
+                'external_id': result.get('song_id', '')
+            })
+            
+            if not track:
+                return None
+            
+            return {
+                "track": track,
+                "confidence": result.get('confidence', 0.8),
+                "source": "audd"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors de la recherche AudD: {str(e)}")
+            return None
+            
+    def _extract_fingerprint(self, features: np.ndarray) -> str:
+        """
+        Extrait une empreinte digitale à partir des caractéristiques audio.
+        
+        Args:
+            features: Caractéristiques audio extraites
+            
+        Returns:
+            Empreinte digitale sous forme de chaîne de caractères
+        """
+        # Simuler l'extraction d'empreinte (à implémenter avec un algorithme réel)
+        # Dans une implémentation réelle, on utiliserait un algorithme comme Chromaprint
+        
+        # Pour l'instant, retourner une chaîne aléatoire
+        import hashlib
+        return hashlib.md5(features.tobytes()).hexdigest()
+
+    def _convert_features_to_audio(self, features: np.ndarray) -> Optional[bytes]:
+        """
+        Convertit les caractéristiques audio en données audio brutes.
+        
+        Args:
+            features: Caractéristiques audio extraites
+            
+        Returns:
+            Données audio brutes ou None en cas d'erreur
+        """
+        try:
+            # Cette méthode est une simplification - dans un cas réel,
+            # les caractéristiques seraient déjà extraites de données audio
+            # et il faudrait stocker les données audio originales
+            
+            # Pour l'instant, on simule un signal audio simple
+            sample_rate = 44100
+            duration = 5  # secondes
+            
+            # Créer un signal sinusoïdal simple
+            t = np.linspace(0, duration, int(sample_rate * duration), False)
+            signal = np.sin(2 * np.pi * 440 * t)  # 440 Hz = La4
+            
+            # Normaliser
+            signal = signal * 32767 / np.max(np.abs(signal))
+            signal = signal.astype(np.int16)
+            
+            # Convertir en bytes
+            audio_segment = AudioSegment(
+                signal.tobytes(),
+                frame_rate=sample_rate,
+                sample_width=2,
+                channels=1
+            )
+            
+            buffer = io.BytesIO()
+            audio_segment.export(buffer, format="wav")
+            
+            return buffer.getvalue()
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors de la conversion des caractéristiques en audio: {str(e)}")
+            return None 

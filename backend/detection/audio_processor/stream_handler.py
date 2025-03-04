@@ -164,9 +164,48 @@ class StreamHandler:
             raise ValueError("Stream URL cannot be empty")
             
         try:
-            # For testing purposes, return a dummy audio segment
-            # In production, this would actually fetch and process audio from the stream
-            return np.random.random((self.buffer_size, self.channels))
+            # En environnement de production, cette méthode devrait:
+            # 1. Se connecter au flux audio
+            # 2. Capturer un segment audio
+            # 3. Convertir en tableau numpy
+            # 4. Retourner les données
+            
+            # Pour les tests, générer un signal audio plus réaliste
+            # au lieu de simplement utiliser des données aléatoires
+            
+            # Paramètres du signal
+            duration = 5.0  # 5 secondes de données audio
+            sample_rate = 44100  # Fréquence d'échantillonnage standard
+            t = np.linspace(0, duration, int(duration * sample_rate), endpoint=False)
+            
+            # Générer un signal sinusoïdal (simulant une note de musique)
+            # Fréquence de 440 Hz (La4)
+            frequency = 440.0
+            amplitude = 0.5
+            
+            # Créer un signal avec plusieurs harmoniques pour simuler un son musical
+            signal = amplitude * np.sin(2 * np.pi * frequency * t)
+            signal += 0.3 * np.sin(2 * np.pi * 2 * frequency * t)  # Première harmonique
+            signal += 0.15 * np.sin(2 * np.pi * 3 * frequency * t)  # Deuxième harmonique
+            signal += 0.05 * np.sin(2 * np.pi * 4 * frequency * t)  # Troisième harmonique
+            
+            # Ajouter un peu de bruit pour simuler un signal réel
+            noise = np.random.normal(0, 0.01, len(signal))
+            signal += noise
+            
+            # Normaliser le signal
+            signal = signal / np.max(np.abs(signal))
+            
+            # Convertir en format stéréo si nécessaire
+            if self.channels == 2:
+                # Créer un signal stéréo légèrement différent sur chaque canal
+                signal2 = signal * 0.98 + np.random.normal(0, 0.005, len(signal))
+                stereo_signal = np.column_stack((signal, signal2))
+                return stereo_signal
+            else:
+                # Format mono
+                return signal.reshape(-1, 1)
+            
         except Exception as e:
             logger.error(f"Error getting audio data from stream {stream_url}: {str(e)}")
             raise RuntimeError(f"Failed to get audio data: {str(e)}") 

@@ -43,75 +43,105 @@ class AudioProcessor:
         logger.info(f"AudioProcessor initialized with sample_rate={sample_rate}")
         
     async def process_stream(self, audio_data: np.ndarray, station_id: Optional[int] = None) -> Dict[str, Any]:
-        """Process an audio segment to detect the presence of music.
+        """
+        Traite un segment audio pour détecter la présence de musique.
+        
+        Cette méthode implémente le processus de détection hiérarchique:
+        1. Identifie le type de contenu (musique ou parole)
+        2. Si c'est de la musique, tente une détection locale
+        3. Si la détection locale échoue, tente une détection via MusicBrainz
+        4. Si MusicBrainz échoue, tente une détection via AudD
         
         Args:
-            audio_data: Audio data as numpy array
-            station_id: ID of the station (optional)
+            audio_data: Données audio sous forme de tableau numpy
+            station_id: ID de la station (optionnel)
             
         Returns:
-            Dictionary containing detection results
+            Dictionnaire contenant les résultats de la détection avec:
+            - type: "music" ou "speech"
+            - source: "local", "musicbrainz", "audd" ou "unknown"
+            - confidence: Score de confiance entre 0 et 1
+            - track: Informations sur la piste (si détectée)
+            - play_duration: Durée de lecture en secondes
+            - station_id: ID de la station
         """
         try:
-            # 1. Identify content type
+            # 1. Extraire les caractéristiques audio
             features = self.feature_extractor.extract_features(audio_data)
-            is_music = self.feature_extractor.is_music(features)
+            
+            # Récupérer la durée de lecture
+            play_duration = features.get("play_duration", 0.0)
+            
+            # Vérifier si c'est de la musique
+            is_music = features.get("is_music", False)
             
             if not is_music:
                 return {
                     "type": "speech",
                     "confidence": 0.0,
-                    "station_id": station_id
+                    "station_id": station_id,
+                    "play_duration": play_duration
                 }
             
-            # 2. Hierarchical detection
-            # a) Local detection
+            # 2. Détection hiérarchique
+            # a) Détection locale
             local_match = await self.track_manager.find_local_match(features)
             if local_match:
+                # Ajouter la durée de lecture au résultat
+                local_match["play_duration"] = play_duration
                 return {
                     "type": "music",
                     "source": "local",
                     "confidence": local_match["confidence"],
                     "track": local_match["track"],
-                    "station_id": station_id
+                    "station_id": station_id,
+                    "play_duration": play_duration
                 }
             
-            # b) MusicBrainz detection
+            # b) Détection MusicBrainz
             mb_match = await self.track_manager.find_musicbrainz_match(features)
             if mb_match:
+                # Ajouter la durée de lecture au résultat
+                mb_match["play_duration"] = play_duration
                 return {
                     "type": "music",
                     "source": "musicbrainz",
                     "confidence": mb_match["confidence"],
                     "track": mb_match["track"],
-                    "station_id": station_id
+                    "station_id": station_id,
+                    "play_duration": play_duration
                 }
             
-            # c) Audd detection
+            # c) Détection AudD
             audd_match = await self.track_manager.find_audd_match(features)
             if audd_match:
+                # Ajouter la durée de lecture au résultat
+                audd_match["play_duration"] = play_duration
                 return {
                     "type": "music",
                     "source": "audd",
                     "confidence": audd_match["confidence"],
                     "track": audd_match["track"],
-                    "station_id": station_id
+                    "station_id": station_id,
+                    "play_duration": play_duration
                 }
             
-            # No match found
+            # Aucune correspondance trouvée
             return {
                 "type": "music",
                 "source": "unknown",
-                "confidence": 0.0,
-                "station_id": station_id
+                "confidence": features.get("confidence", 0.0),
+                "station_id": station_id,
+                "play_duration": play_duration
             }
             
         except Exception as e:
-            logger.error(f"Error processing stream: {str(e)}")
+            logger.error(f"Erreur lors du traitement du flux: {str(e)}")
             return {
                 "type": "error",
                 "error": str(e),
-                "station_id": station_id
+                "station_id": station_id,
+                "play_duration": 0.0  # Durée par défaut en cas d'erreur
             }
     
     async def start_monitoring(self, station_id: int) -> bool:

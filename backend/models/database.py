@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
@@ -6,6 +6,8 @@ import os
 from dotenv import load_dotenv
 import logging
 from sqlalchemy.sql import text
+from datetime import datetime
+from sqlalchemy.inspection import inspect
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -65,6 +67,15 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Create base class for declarative models
 Base = declarative_base()
+
+# Add event listener to automatically update updated_at column
+@event.listens_for(SessionLocal, 'before_flush')
+def before_flush(session, flush_context, instances):
+    for instance in session.dirty:
+        # Check if the instance has an updated_at attribute
+        if hasattr(instance, 'updated_at'):
+            # Update the updated_at attribute
+            instance.updated_at = datetime.utcnow()
 
 def get_db():
     """Get database session"""
@@ -135,3 +146,12 @@ test_engine = create_engine(
 )
 
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+# Add event listener to automatically update updated_at column for test sessions
+@event.listens_for(TestingSessionLocal, 'before_flush')
+def before_flush_test(session, flush_context, instances):
+    for instance in session.dirty:
+        # Check if the instance has an updated_at attribute
+        if hasattr(instance, 'updated_at'):
+            # Update the updated_at attribute
+            instance.updated_at = datetime.utcnow()
