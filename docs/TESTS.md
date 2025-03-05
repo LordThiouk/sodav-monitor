@@ -48,120 +48,130 @@
 2. **Feature Extractor (85%)**
    - ✅ Feature extraction
    - ✅ Music detection
-   - ✅ Performance benchmarks
-   - ❌ Edge cases (failing tests)
-   - ❌ Complex audio analysis (failing tests)
+   - ✅ Fingerprint generation
+   - ❌ Edge case handling (NaN values)
+   - ❌ Memory optimization
 
-3. **Stream Handler (70%)**
-   - ✅ Buffer management
-   - ✅ Stream processing
-   - ❌ Error handling (failing tests)
-   - ❌ Performance metrics (failing tests)
+3. **Track Manager (70%)**
+   - ✅ Track creation
+   - ✅ Track update
+   - ✅ Local detection
+   - ❌ MusicBrainz fallback (timeout issues)
+   - ❌ Audd fallback (API key issues)
 
-### Problèmes Identifiés
+4. **Analytics Manager (65%)**
+   - ✅ Basic statistics
+   - ✅ Data aggregation
+   - ❌ Time-based grouping (incorrect results)
+   - ❌ Performance optimization
 
-#### 1. Erreurs de Base de Données
-- Tables manquantes:
-  - `radio_stations`
-  - `reports`
-  - `report_subscriptions`
-- Colonnes manquantes:
-  - `reports.title`
-  - `report_subscriptions.format`
-- Violations de contraintes:
-  - Clés étrangères dans `track_detections`
-  - Contraintes d'unicité dans les tables
+## Tests d'Intégration (Nouveau)
 
-#### 2. Erreurs d'API
-- Authentification (401):
-  - Détections API: Problèmes de validation des tokens
-- Ressources non trouvées (404):
-  - Analytics API: Endpoints statistiques
-  - Reports API: Téléchargement et abonnements
-- Validation des données (400):
-  - Reports API: Paramètres invalides
-
-#### 3. Erreurs Asynchrones
-- Coroutines non attendues:
-  - Stream Handler
-  - Redis Client
-  - WebSocket Manager
-- Event loops manquants:
-  - Tests Radio
-  - Tests WebSocket
-
-### Plan d'Action
-
-1. **Base de Données**
-   - Exécuter les migrations Alembic
-   - Vérifier les contraintes de clé étrangère
-   - Ajouter les colonnes manquantes
-   - Nettoyer les données de test
-
-2. **API Endpoints**
-   - Corriger les problèmes d'authentification
-   - Implémenter la gestion des erreurs 404
-   - Améliorer la validation des données
-   - Ajouter des tests de régression
-
-3. **Tests Asynchrones**
-   - Utiliser pytest-asyncio
-   - Ajouter des event loops de test
-   - Corriger les mocks asynchrones
-   - Améliorer la gestion des timeouts
-
-### Résultats des Tests
-
-#### Tests Réussis (226)
-- Tests unitaires de base
-- Tests de configuration
-- Tests d'authentification
-- Tests de modèles de données
-
-#### Tests Échoués (173)
-- Tests d'API (endpoints manquants)
-- Tests de détection (erreurs de configuration)
-- Tests de streaming (erreurs asynchrones)
-- Tests de rapports (erreurs de base de données)
-
-#### Tests Ignorés (8)
-- Tests de performance (benchmarks)
-- Tests d'intégration externe
-- Tests de charge
-
-#### Avertissements (5988)
-- Dépréciations librosa
-- Avertissements numpy
-- Avertissements de coroutines
-- Avertissements de configuration
-
-### Benchmarks de Performance
+Nous avons ajouté des tests d'intégration pour vérifier que les différents composants du système fonctionnent correctement ensemble. Ces tests sont organisés par composant :
 
 ```
-Name (time in us)                Min      Max     Mean    StdDev  Median   OPS
-------------------------------------------------------------------------------
-test_processing_latency         389.42   1685.41  452.74   68.82  429.15  2208.76
-test_feature_extraction        449.39   1230.06  531.09   94.24  493.30  1882.93
-test_memory_usage              475.01   1014.21  562.51   92.13  528.63  1777.76
-test_batch_processing        2055473.61 2093385.39 2075847.13 13665.04 2077697.96 0.48
+tests/integration/
+├── api/                     # Tests d'intégration API
+│   └── test_api_integration.py
+├── detection/               # Tests d'intégration du système de détection
+│   └── test_detection_integration.py
+├── analytics/               # Tests d'intégration du système d'analytique
+│   └── test_analytics_integration.py
+├── conftest.py              # Fixtures partagées pour les tests d'intégration
+└── README.md                # Documentation pour les tests d'intégration
 ```
 
-### Prochaines Étapes
+### Types de Tests d'Intégration
 
-1. **Correction des Tests**
-   - Résoudre les erreurs de base de données
-   - Corriger les tests asynchrones
-   - Améliorer les mocks et fixtures
+1. **Tests d'Intégration API**
+   - Test du workflow des rapports
+   - Test du workflow des détections
+   - Test du workflow des analytiques
 
-2. **Optimisation des Performances**
-   - Réduire la latence de traitement
-   - Optimiser l'utilisation mémoire
-   - Améliorer les benchmarks
+2. **Tests d'Intégration du Système de Détection**
+   - Test du pipeline de détection
+   - Test de la détection hiérarchique
 
-3. **Documentation**
-   - Mettre à jour la documentation API
-   - Documenter les cas d'erreur
-   - Ajouter des exemples de test
+3. **Tests d'Intégration du Système d'Analytique**
+   - Test du calcul des statistiques
+   - Test de la génération des données analytiques
+
+### Exécution des Tests d'Intégration
+
+Pour exécuter tous les tests d'intégration :
+
+```bash
+python -m pytest -xvs backend/tests/integration/
+```
+
+Pour exécuter les tests d'intégration pour un composant spécifique :
+
+```bash
+python -m pytest -xvs backend/tests/integration/api/
+python -m pytest -xvs backend/tests/integration/detection/
+python -m pytest -xvs backend/tests/integration/analytics/
+```
+
+Pour plus d'informations sur les tests d'intégration, consultez [INTEGRATION_TESTING.md](INTEGRATION_TESTING.md).
+
+## Stratégie de Test
+
+### Tests Unitaires
+Les tests unitaires vérifient le comportement des composants individuels en isolation. Nous utilisons des mocks pour simuler les dépendances externes.
+
+### Tests d'Intégration
+Les tests d'intégration vérifient que les différents composants du système fonctionnent correctement ensemble. Ces tests utilisent une base de données de test et des fixtures pour configurer l'environnement de test.
+
+### Tests de Performance
+Les tests de performance vérifient que le système répond aux exigences de performance. Nous utilisons des benchmarks pour mesurer les temps de réponse et l'utilisation des ressources.
+
+## Couverture de Code
+
+La couverture de code actuelle est de 78% pour l'ensemble du projet. Notre objectif est d'atteindre 90% de couverture pour les composants critiques.
+
+Pour générer un rapport de couverture :
+
+```bash
+python -m pytest --cov=backend --cov-report=html
+```
+
+Le rapport sera généré dans le répertoire `htmlcov/`.
+
+## Problèmes Connus
+
+1. **Timeouts dans les Tests MusicBrainz**
+   - Les tests qui utilisent l'API MusicBrainz peuvent échouer en raison de timeouts.
+   - Solution temporaire : Augmenter le timeout dans les tests.
+   - Solution à long terme : Implémenter un mécanisme de retry avec backoff exponentiel.
+
+2. **Erreurs 404 dans les Tests API**
+   - Certains endpoints API retournent des erreurs 404.
+   - Cause : Les routes ne sont pas correctement définies ou les handlers ne sont pas implémentés.
+   - Solution : Implémenter les handlers manquants et corriger les routes.
+
+3. **Problèmes de Concurrence**
+   - Les tests qui s'exécutent en parallèle peuvent interférer les uns avec les autres.
+   - Solution : Utiliser des fixtures avec un scope approprié et nettoyer les données de test après chaque test.
+
+## Prochaines Étapes
+
+1. **Améliorer la Couverture des Tests**
+   - Ajouter des tests pour les composants avec une faible couverture
+   - Améliorer les tests existants pour couvrir plus de cas d'utilisation
+
+2. **Ajouter des Tests d'Intégration**
+   - Ajouter des tests d'intégration pour les workflows critiques
+   - Vérifier que les composants fonctionnent correctement ensemble
+
+3. **Optimiser les Tests de Performance**
+   - Ajouter des benchmarks pour les opérations critiques
+   - Mesurer l'utilisation des ressources
+   - Identifier les goulots d'étranglement
+
+4. **Automatiser les Tests**
+   - Configurer l'intégration continue (CI)
+   - Exécuter les tests automatiquement à chaque commit
+   - Générer des rapports de couverture
 
 ## État Actuel de la Couverture (Mars 2024)
 
@@ -360,8 +370,7 @@ pytest-cov==4.1.0
 pytest-mock==3.11.1
 pytest-benchmark==4.0.0  # [Nouveau] Pour les tests de performance
 aioresponses==0.7.4
-psutil==5.9.0
-numpy==1.21.0  # [Nouveau] Pour la génération de données audio
+psutil==5.9.0  # [Nouveau] Pour la génération de données audio
 ```
 
 ## Critères de Performance

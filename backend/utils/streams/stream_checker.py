@@ -2,7 +2,7 @@
 
 import aiohttp
 import asyncio
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -29,8 +29,9 @@ class StreamChecker:
         Returns:
             Dict containing status information:
             {
-                'is_available': bool,
-                'is_audio_stream': bool
+                "available": bool,
+                "accessible": bool,
+                "valid_format": bool
             }
         """
         timeout = timeout or self.timeout
@@ -49,21 +50,24 @@ class StreamChecker:
                     ])
                     
                     return {
-                        'is_available': response.status == 200,
-                        'is_audio_stream': is_audio
+                        "available": response.status == 200,
+                        "accessible": True,
+                        "valid_format": is_audio
                     }
                     
         except asyncio.TimeoutError:
             logger.warning(f"Timeout checking stream: {stream_url}")
             return {
-                'is_available': False,
-                'is_audio_stream': False
+                "available": False,
+                "accessible": False,
+                "valid_format": False
             }
         except aiohttp.ClientError as e:
             logger.error(f"Error checking stream {stream_url}: {str(e)}")
             return {
-                'is_available': False,
-                'is_audio_stream': False
+                "available": False,
+                "accessible": False,
+                "valid_format": False
             }
 
     async def get_stream_metadata(self, stream_url: str, timeout: Optional[int] = None) -> Optional[Dict[str, str]]:
@@ -98,3 +102,32 @@ class StreamChecker:
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
             logger.error(f"Error getting stream metadata {stream_url}: {str(e)}")
             return None 
+
+# Helper function for simpler access
+async def check_stream_status(stream_url: str, timeout: int = 10) -> Tuple[bool, str]:
+    """
+    Check if a radio stream is available and accessible.
+    
+    Args:
+        stream_url: The URL of the radio stream to check
+        timeout: Timeout for the request in seconds
+        
+    Returns:
+        Tuple of (status: bool, message: str)
+    """
+    checker = StreamChecker(timeout=timeout)
+    try:
+        result = await checker.check_stream_availability(stream_url)
+        if result["available"] and result["accessible"]:
+            return True, "Stream is available and accessible"
+        elif not result["available"]:
+            return False, "Stream is not available"
+        elif not result["accessible"]:
+            return False, "Stream is not accessible"
+        elif not result.get("valid_format", True):
+            return False, "Stream format is not valid"
+        else:
+            return False, "Unknown stream status issue"
+    except Exception as e:
+        logger.error(f"Error checking stream status for {stream_url}: {str(e)}")
+        return False, f"Error checking stream: {str(e)}" 

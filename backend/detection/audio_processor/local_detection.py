@@ -1,126 +1,166 @@
 """
-Local music detection functionality for SODAV Monitor.
-Handles local database searches and fingerprint operations.
+Local detection module for SODAV Monitor.
+
+This module provides functionality for detecting music using the local database.
 """
 
 import logging
 import numpy as np
 from typing import Dict, Any, Optional, List
-from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
-from models.models import Track, TrackDetection, Artist
-from utils.logging_config import setup_logging
-from .fingerprint import AudioFingerprinter
+from sqlalchemy import func
+import asyncio
 
-logger = setup_logging(__name__)
+from backend.models.models import Track, Artist
+from backend.detection.audio_processor.fingerprint import AudioFingerprinter
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class LocalDetector:
+    """
+    Class for detecting music using the local database.
+    
+    This class provides methods for detecting music from audio data using
+    fingerprints stored in the local database.
+    """
+    
     def __init__(self, db_session: Session):
-        """Initialize local detector.
+        """
+        Initialize the LocalDetector with a database session.
         
         Args:
-            db_session: Database session
+            db_session: SQLAlchemy database session
         """
         self.db_session = db_session
         self.fingerprinter = AudioFingerprinter()
-        self.initialized = False
-        self.initialize()
-        
-    def initialize(self):
-        """Initialize local detector"""
-        self.initialized = True
-        logger.info("LocalDetector initialized successfully")
-        
-    def calculate_audio_hash(self, audio_data: bytes) -> str:
-        """Calculate hash for audio data.
+        self.min_confidence = 0.6
+    
+    async def detect(self, audio_data: bytes) -> Optional[Dict[str, Any]]:
+        """
+        Detect music from audio data using the local database.
         
         Args:
-            audio_data: Raw audio bytes
+            audio_data: Raw audio data as bytes
             
         Returns:
-            Audio hash string
+            Dictionary with detection results or None if no match found
         """
         try:
-            # Convert audio to numpy array
-            samples = np.frombuffer(audio_data, dtype=np.int16)
+            # Extract fingerprint from audio data
+            fingerprint = self.fingerprinter.generate_fingerprint(audio_data)
             
-            # Calculate hash using fingerprinter
-            return self.fingerprinter.calculate_hash(samples)
-            
-        except Exception as e:
-            logger.error(f"Error calculating audio hash: {str(e)}")
-            raise
-            
-    def save_fingerprint(self, audio_data: bytes, track_id: int) -> Optional[TrackDetection]:
-        """Save audio fingerprint for a track.
-        
-        Args:
-            audio_data: Raw audio bytes
-            track_id: ID of the track
-            
-        Returns:
-            Created TrackDetection object or None if error
-        """
-        try:
-            # Calculate audio hash
-            audio_hash = self.calculate_audio_hash(audio_data)
-            
-            # Create detection entry
-            detection = TrackDetection(
-                track_id=track_id,
-                audio_hash=audio_hash,
-                confidence=1.0,
-                verified=True,
-                verification_date=datetime.now()
-            )
-            
-            self.db_session.add(detection)
-            self.db_session.commit()
-            
-            return detection
-            
-        except Exception as e:
-            logger.error(f"Error saving fingerprint: {str(e)}")
-            return None
-            
-    def search_local(self, audio_data: bytes, min_confidence: float = 0.8) -> Optional[Dict[str, Any]]:
-        """Search for matching tracks in local database.
-        
-        Args:
-            audio_data: Raw audio bytes
-            min_confidence: Minimum confidence threshold
-            
-        Returns:
-            Dictionary with match details or None if no match
-        """
-        try:
-            # Calculate audio hash
-            audio_hash = self.calculate_audio_hash(audio_data)
-            
-            # Search for matches
-            matches = (
-                self.db_session.query(TrackDetection)
-                .join(Track)
-                .join(Artist)
-                .filter(TrackDetection.audio_hash == audio_hash)
-                .filter(TrackDetection.confidence >= min_confidence)
-                .all()
-            )
-            
-            if not matches:
+            if not fingerprint:
+                logger.warning("Failed to generate fingerprint from audio data")
                 return None
-                
-            # Get best match
-            best_match = max(matches, key=lambda x: x.confidence)
+            
+            # Search for matching tracks in the database
+            track = self.db_session.query(Track).filter(
+                func.similarity(Track.fingerprint, fingerprint) > self.min_confidence
+            ).order_by(
+                func.similarity(Track.fingerprint, fingerprint).desc()
+            ).first()
+            
+            if not track:
+                logger.info("No matching track found in local database")
+                return None
+            
+            # Calculate confidence based on fingerprint similarity
+            confidence = self._calculate_confidence(fingerprint, track.fingerprint)
+            
+            # Get artist information
+            artist = self.db_session.query(Artist).filter(Artist.id == track.artist_id).first()
+            artist_name = artist.name if artist else "Unknown"
+            
+            logger.info(f"Local detection successful: {track.title} by {artist_name} (confidence: {confidence:.2f})")
             
             return {
-                'track_id': best_match.track_id,
-                'title': best_match.track.title,
-                'artist': best_match.track.artist.name,
-                'confidence': best_match.confidence
+                'track_id': track.id,
+                'title': track.title,
+                'artist': artist_name,
+                'artist_id': track.artist_id,
+                'isrc': track.isrc,
+                'label': track.label,
+                'confidence': confidence,
+                'fingerprint': fingerprint
             }
             
         except Exception as e:
-            logger.error(f"Error searching local database: {str(e)}")
+            logger.error(f"Error in local detection: {e}")
+            return None
+    
+    def _calculate_confidence(self, fingerprint1: str, fingerprint2: str) -> float:
+        """
+        Calculate confidence score based on fingerprint similarity.
+        
+        Args:
+            fingerprint1: First fingerprint
+            fingerprint2: Second fingerprint
+            
+        Returns:
+            Confidence score between 0.0 and 1.0
+        """
+        try:
+            # Simple Jaccard similarity for string fingerprints
+            set1 = set(fingerprint1)
+            set2 = set(fingerprint2)
+            
+            intersection = len(set1.intersection(set2))
+            union = len(set1.union(set2))
+            
+            if union == 0:
+                return 0.0
+                
+            return intersection / union
+            
+        except Exception as e:
+            logger.error(f"Error calculating confidence: {e}")
+            return 0.0
+    
+    async def search_by_metadata(self, title: str, artist: str) -> Optional[Dict[str, Any]]:
+        """
+        Search for a track by title and artist.
+        
+        Args:
+            title: Track title
+            artist: Artist name
+            
+        Returns:
+            Dictionary with track information or None if no match found
+        """
+        try:
+            # Search for artist first
+            artist_obj = self.db_session.query(Artist).filter(
+                func.lower(Artist.name) == func.lower(artist)
+            ).first()
+            
+            if not artist_obj:
+                logger.info(f"No artist found for name: {artist}")
+                return None
+            
+            # Search for track by title and artist
+            track = self.db_session.query(Track).filter(
+                func.lower(Track.title) == func.lower(title),
+                Track.artist_id == artist_obj.id
+            ).first()
+            
+            if not track:
+                logger.info(f"No track found for title: {title} by artist: {artist}")
+                return None
+            
+            logger.info(f"Found track by metadata: {track.title} by {artist_obj.name}")
+            
+            return {
+                'track_id': track.id,
+                'title': track.title,
+                'artist': artist_obj.name,
+                'artist_id': track.artist_id,
+                'isrc': track.isrc,
+                'label': track.label,
+                'confidence': 1.0,  # High confidence for exact metadata match
+                'fingerprint': track.fingerprint
+            }
+            
+        except Exception as e:
+            logger.error(f"Error searching by metadata: {e}")
             return None 

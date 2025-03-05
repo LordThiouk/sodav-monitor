@@ -63,11 +63,13 @@ def test_app(mock_radio_manager):
     app.state.radio_manager = mock_radio_manager
     
     # Include routers
-    from backend.routers import auth, channels, analytics, detections, reports, websocket
+    from backend.routers import auth, channels, reports, websocket
+    from backend.routers.analytics import router as analytics_router
+    from backend.routers.detections import router as detections_router
     app.include_router(auth.router, prefix="/api")
-    app.include_router(detections.router)  # Detections router first for /search endpoint
+    app.include_router(detections_router, prefix="/api")  # Detections router first for /search endpoint
     app.include_router(channels.router)  # Remove prefix as it's already defined in the router
-    app.include_router(analytics.router, prefix="/api/analytics")
+    app.include_router(analytics_router, prefix="/api/analytics")
     app.include_router(reports.router, prefix="/api/reports")
     app.include_router(websocket.router, prefix="/api/ws")
     
@@ -77,9 +79,9 @@ def test_app(mock_radio_manager):
 def test_client(mock_redis, db_session, test_app, mock_radio_manager):
     """Create a test client with mocked dependencies."""
     from backend.models.database import get_db
-    from backend.core.security import get_current_user
+    from backend.utils.auth import get_current_user
     from backend.core.config import get_settings
-    from backend.core.security import oauth2_scheme
+    from backend.utils.auth import oauth2_scheme
     from backend.core.config.redis import get_redis
     
     def override_get_settings():
@@ -590,7 +592,7 @@ class TestMusicDetectionAPI:
     ):
         """Test detection with invalid authentication."""
         # Override the auth dependency to raise an exception
-        from backend.core.security import get_current_user
+        from backend.utils.auth import get_current_user
         from fastapi import HTTPException
         
         def override_get_current_user():

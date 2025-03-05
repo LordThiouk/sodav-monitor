@@ -26,10 +26,12 @@ from backend.models.models import (
     DetectionHourly, AnalyticsData, DetectionDaily, DetectionMonthly, StationStats,
     TrackDaily, TrackMonthly, ArtistDaily, ArtistMonthly, StationTrackStats, StationHealth
 )
-from backend.routers import auth, channels, analytics, detections, reports, websocket
+from backend.routers import auth, channels, reports, websocket
+from backend.routers.analytics import router as analytics_router
+from backend.routers.detections import router as detections_router
 from backend.detection.audio_processor.core import AudioProcessor
 from backend.core.config import get_settings, settings
-from backend.core.security import get_current_user, oauth2_scheme, create_access_token
+from backend.utils.auth import get_current_user, oauth2_scheme, create_access_token
 from backend.detection.audio_processor.stream_handler import StreamHandler
 from backend.analytics.stats_manager import StatsManager
 from backend.main import app

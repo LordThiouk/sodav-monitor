@@ -1,14 +1,21 @@
-"""Configuration package for the SODAV Monitor application."""
+"""Configuration module for SODAV Monitor."""
 
-from .settings import Settings, get_settings
-from .redis import get_redis, get_test_redis, check_redis_connection, clear_redis_data
-from .constants import *
+from .main import (
+    get_settings,
+    Settings,
+    PATHS,
+    LOGGING_CONFIG,
+    DEFAULT_STATIONS,
+    REPORT_FORMATS,
+    DETECTION_ALGORITHMS
+)
 
 __all__ = [
-    'Settings',
     'get_settings',
-    'get_redis',
-    'get_test_redis',
-    'check_redis_connection',
-    'clear_redis_data'
+    'Settings',
+    'PATHS',
+    'LOGGING_CONFIG',
+    'DEFAULT_STATIONS',
+    'REPORT_FORMATS',
+    'DETECTION_ALGORITHMS'
 ] 

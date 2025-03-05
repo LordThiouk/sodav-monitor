@@ -136,3 +136,72 @@ Ce projet est sous licence [À définir] - voir le fichier LICENSE pour plus de 
 Pour toute question ou suggestion, n'hésitez pas à nous contacter :
 - Email : [À définir]
 - Site web : [À définir]
+
+## Tests
+
+### Tests Unitaires
+
+Pour exécuter les tests unitaires :
+
+```bash
+python -m pytest backend/tests/ -v
+```
+
+### Tests d'Intégration
+
+Nous avons ajouté une structure complète de tests d'intégration pour vérifier que les différents composants du système fonctionnent correctement ensemble. Ces tests sont organisés par composant :
+
+```
+backend/tests/integration/
+├── api/                     # Tests d'intégration API
+│   └── test_api_integration.py
+├── detection/               # Tests d'intégration du système de détection
+│   └── test_detection_integration.py
+├── analytics/               # Tests d'intégration du système d'analytique
+│   └── test_analytics_integration.py
+├── conftest.py              # Fixtures partagées pour les tests d'intégration
+└── README.md                # Documentation pour les tests d'intégration
+```
+
+Pour exécuter les tests d'intégration :
+
+```bash
+python -m pytest backend/tests/integration/ -v
+```
+
+### Scripts de Test
+
+Nous avons ajouté des scripts pour faciliter l'exécution des tests et la génération de rapports de couverture :
+
+- `scripts/run_integration_tests.sh` : Exécute tous les tests d'intégration et génère un rapport de couverture
+- `scripts/run_all_tests.sh` : Exécute tous les tests (unitaires et d'intégration) et génère un rapport de couverture combiné
+
+Pour exécuter ces scripts :
+
+```bash
+./scripts/run_integration_tests.sh
+./scripts/run_all_tests.sh
+```
+
+### Documentation des Tests
+
+Pour plus d'informations sur la stratégie de test, consultez les documents suivants :
+
+- `docs/TESTING_STRATEGY.md` : Documentation détaillée sur la stratégie de test
+- `docs/TESTS.md` : Documentation sur les tests existants et leur organisation
+- `docs/INTEGRATION_TESTING.md` : Documentation spécifique pour les tests d'intégration
+- `backend/tests/integration/README.md` : Documentation pour les tests d'intégration
+
+## Intégration Continue (CI)
+
+Nous avons configuré GitHub Actions pour exécuter automatiquement les tests à chaque push et pull request sur les branches `main` et `develop`. La configuration se trouve dans le fichier `.github/workflows/tests.yml`.
+
+Le workflow CI exécute les étapes suivantes :
+
+1. Configuration de l'environnement Python et Redis
+2. Installation des dépendances
+3. Exécution des tests unitaires avec génération de rapport de couverture
+4. Exécution des tests d'intégration avec génération de rapport de couverture
+5. Téléchargement des rapports de couverture vers Codecov
+
+Pour visualiser les résultats des tests CI, consultez l'onglet "Actions" du dépôt GitHub.

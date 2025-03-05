@@ -1,9 +1,9 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Text, Enum, Interval, JSON, ARRAY, LargeBinary, Index
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime, timedelta
 import enum
 from passlib.context import CryptContext
+from typing import Optional, List, Dict, Any, Union
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -131,6 +131,7 @@ class RadioStation(Base):
 
     detections = relationship("TrackDetection", back_populates="station")
     track_stats = relationship("StationTrackStats", back_populates="station")
+    status_history = relationship("StationStatusHistory", back_populates="station")
 
 class Artist(Base):
     __tablename__ = 'artists'
@@ -254,6 +255,9 @@ class AnalyticsData(Base):
     detection_rate = Column(Float, default=0.0)
     active_stations = Column(Integer, default=0)
     average_confidence = Column(Float, default=0.0)
+    total_tracks = Column(Integer, default=0)
+    total_artists = Column(Integer, default=0)
+    total_stations = Column(Integer, default=0)
     
     def to_dict(self):
         return {
@@ -262,7 +266,10 @@ class AnalyticsData(Base):
             'detection_count': self.detection_count,
             'detection_rate': self.detection_rate,
             'active_stations': self.active_stations,
-            'average_confidence': self.average_confidence
+            'average_confidence': self.average_confidence,
+            'total_tracks': self.total_tracks,
+            'total_artists': self.total_artists,
+            'total_stations': self.total_stations
         }
 
 class DetectionDaily(Base):
@@ -333,6 +340,9 @@ class StationTrackStats(Base):
     station_id = Column(Integer, ForeignKey('radio_stations.id'))
     track_id = Column(Integer, ForeignKey('tracks.id'))
     play_count = Column(Integer, default=0)
+    total_play_time = Column(Interval, default=timedelta(0))
+    last_played = Column(DateTime, nullable=True)
+    average_confidence = Column(Float, default=0.0)
     
     station = relationship("RadioStation", back_populates="track_stats")
     track = relationship("Track")
@@ -355,6 +365,22 @@ class StationHealth(Base):
 
     def __repr__(self):
         return f"<StationHealth(station_id={self.station_id}, status='{self.status}', timestamp={self.timestamp})>"
+
+class StationStatusHistory(Base):
+    """History of station status changes."""
+    __tablename__ = "station_status_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    station_id = Column(Integer, ForeignKey("radio_stations.id", ondelete="CASCADE"))
+    old_status = Column(String, nullable=True)
+    new_status = Column(String, nullable=False)
+    message = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # Relationships
+    station = relationship("RadioStation", back_populates="status_history")
+    user = relationship("User", backref="station_status_changes")
 
 # Add indexes for analytics queries
 Index('idx_track_detections_detected_at', TrackDetection.detected_at)

@@ -1,231 +1,321 @@
-"""Module for monitoring radio stations."""
+"""
+Station monitoring module for SODAV Monitor.
+
+This module provides functionality for monitoring radio stations,
+checking their health, and updating their status.
+"""
 
 import logging
 import asyncio
-from typing import Dict, Any, List
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any, Union
 from sqlalchemy.orm import Session
-from backend.models.models import RadioStation
-from backend.utils.logging_config import setup_logging
+from sqlalchemy.exc import SQLAlchemyError
 
-logger = setup_logging(__name__)
+from backend.models.models import RadioStation, StationHealth, StationStatus
+from backend.utils.streams.stream_checker import StreamChecker
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class StationMonitor:
-    """Moniteur des stations radio."""
+    """
+    Class for monitoring radio stations and their health.
+    
+    This class provides methods for starting and stopping monitoring,
+    checking stream health, and updating station status.
+    """
     
     def __init__(self, db_session: Session):
-        """Initialise le moniteur de stations."""
+        """
+        Initialize the StationMonitor with a database session.
+        
+        Args:
+            db_session: SQLAlchemy database session
+        """
         self.db_session = db_session
-        self.logger = logging.getLogger(__name__)
-        self.monitoring = False
+        self.stream_checker = StreamChecker()
         self.monitoring_tasks = {}
-        
-        # Handlers et extracteurs
-        self.stream_handler = None
-        self.feature_extractor = None
-        self.track_manager = None
-        
-        # Configuration
-        self.check_interval = 300  # 5 minutes
-        self.retry_attempts = 3
-        self.retry_delay = 5  # secondes
-        self.health_check_interval = 60  # 1 minute
+        self.health_check_interval = 300  # 5 minutes
+        self.cleanup_interval = 86400  # 24 hours
+        self.health_record_retention = 30  # days
     
-    async def start_monitoring(
-        self,
-        stream_handler: 'StreamHandler',
-        feature_extractor: 'FeatureExtractor',
-        track_manager: 'TrackManager'
-    ):
-        """Démarre le monitoring des stations."""
+    async def start_monitoring(self, station_id: int) -> bool:
+        """
+        Start monitoring a radio station.
+        
+        Args:
+            station_id: ID of the radio station to monitor
+            
+        Returns:
+            True if monitoring started successfully, False otherwise
+        """
         try:
-            if self.monitoring:
-                self.logger.warning("Le monitoring est déjà en cours")
-                return
+            station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
             
-            self.monitoring = True
-            self.stream_handler = stream_handler
-            self.feature_extractor = feature_extractor
-            self.track_manager = track_manager
+            if not station:
+                logger.error(f"Station with ID {station_id} not found")
+                return False
             
-            self.logger.info("Démarrage du monitoring des stations")
+            if not station.is_active:
+                logger.info(f"Station {station.name} is not active, not starting monitoring")
+                return False
             
-            # Récupère toutes les stations actives
-            stations = self.db_session.query(RadioStation).filter_by(is_active=True).all()
+            # Check initial health
+            health_check = await self.check_stream_health(station.stream_url)
             
-            # Crée une tâche de monitoring pour chaque station
-            for station in stations:
-                if station.id not in self.monitoring_tasks:
-                    task = asyncio.create_task(
-                        self.monitor_station(
-                            station,
-                            stream_handler,
-                            feature_extractor,
-                            track_manager
-                        )
-                    )
-                    self.monitoring_tasks[station.id] = task
+            # Update station health
+            await self.update_station_health(station, health_check)
             
-            # Démarre la tâche de surveillance de la santé des stations
-            health_task = asyncio.create_task(
-                self.monitor_stations_health(stations)
-            )
-            self.monitoring_tasks["health"] = health_task
+            # Start monitoring task if not already running
+            if station_id not in self.monitoring_tasks or self.monitoring_tasks[station_id].done():
+                self.monitoring_tasks[station_id] = asyncio.create_task(
+                    self._monitor_station(station_id)
+                )
+                logger.info(f"Started monitoring station {station.name}")
             
-            # Attend que toutes les tâches soient terminées
-            await asyncio.gather(*self.monitoring_tasks.values())
+            return True
             
         except Exception as e:
-            self.logger.error(f"Erreur lors du démarrage du monitoring: {str(e)}")
-            self.monitoring = False
+            logger.error(f"Error starting monitoring for station {station_id}: {e}")
+            return False
     
-    async def stop_monitoring(self):
-        """Arrête le monitoring des stations."""
+    async def stop_monitoring(self, station_id: int) -> bool:
+        """
+        Stop monitoring a radio station.
+        
+        Args:
+            station_id: ID of the radio station to stop monitoring
+            
+        Returns:
+            True if monitoring stopped successfully, False otherwise
+        """
         try:
-            if not self.monitoring:
-                return
-            
-            self.monitoring = False
-            self.logger.info("Arrêt du monitoring des stations")
-            
-            # Annule toutes les tâches en cours
-            for task in self.monitoring_tasks.values():
-                if not task.done():
-                    task.cancel()
-            
-            # Attend que toutes les tâches soient terminées
-            await asyncio.gather(*self.monitoring_tasks.values(), return_exceptions=True)
-            self.monitoring_tasks.clear()
-            
-        except Exception as e:
-            self.logger.error(f"Erreur lors de l'arrêt du monitoring: {str(e)}")
-    
-    async def monitor_station(
-        self,
-        station: RadioStation,
-        stream_handler: 'StreamHandler',
-        feature_extractor: 'FeatureExtractor',
-        track_manager: 'TrackManager'
-    ):
-        """Monitore une station spécifique."""
-        try:
-            self.logger.info(f"Démarrage du monitoring pour {station.name}")
-            
-            while self.monitoring:
+            if station_id in self.monitoring_tasks and not self.monitoring_tasks[station_id].done():
+                self.monitoring_tasks[station_id].cancel()
                 try:
-                    # Vérifie l'état du flux
-                    stream_status = await stream_handler.check_stream_status(station.stream_url)
-                    
-                    if stream_status["is_alive"]:
-                        # Traite le flux audio
-                        result = await stream_handler.process_stream(
-                            station.stream_url,
-                            feature_extractor,
-                            track_manager,
-                            station.id
-                        )
-                        
-                        if result.get("error"):
-                            self.logger.error(f"Erreur pour {station.name}: {result['error']}")
-                            await self._handle_station_error(station)
-                    else:
-                        self.logger.warning(f"Flux inactif pour {station.name}")
-                        await self._handle_station_error(station)
-                    
-                    # Attend avant la prochaine vérification
-                    await asyncio.sleep(self.check_interval)
-                    
+                    await self.monitoring_tasks[station_id]
                 except asyncio.CancelledError:
-                    break
-                except Exception as e:
-                    self.logger.error(f"Erreur lors du monitoring de {station.name}: {str(e)}")
-                    await asyncio.sleep(self.retry_delay)
+                    pass
+                
+                del self.monitoring_tasks[station_id]
+                
+                # Update station status
+                station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
+                if station:
+                    station.status = StationStatus.inactive
+                    self.db_session.commit()
+                    logger.info(f"Stopped monitoring station {station.name}")
+                
+                return True
+            
+            return False
             
         except Exception as e:
-            self.logger.error(f"Erreur fatale pour {station.name}: {str(e)}")
+            logger.error(f"Error stopping monitoring for station {station_id}: {e}")
+            return False
     
-    async def monitor_stations_health(self, stations: List[RadioStation]):
-        """Surveille la santé de toutes les stations."""
+    async def check_stream_health(self, stream_url: str) -> Dict[str, Any]:
+        """
+        Check the health of a stream.
+        
+        Args:
+            stream_url: URL of the stream to check
+            
+        Returns:
+            Dictionary containing health check results
+        """
         try:
-            while self.monitoring:
-                for station in stations:
-                    try:
-                        # Vérifie le dernier état connu
-                        last_error = station.last_error_time
-                        if last_error:
-                            time_since_error = datetime.utcnow() - last_error
-                            if time_since_error > timedelta(minutes=30):
-                                # Réinitialise le compteur d'erreurs après 30 minutes sans erreur
-                                station.error_count = 0
-                                station.last_error_time = None
-                                self.db_session.commit()
-                        
-                        # Vérifie si la station doit être désactivée
-                        if station.error_count >= self.retry_attempts:
-                            self.logger.warning(f"Désactivation de {station.name} après {station.error_count} erreurs")
-                            station.is_active = False
-                            station.status = "inactive"
-                            self.db_session.commit()
-                            
-                            # Annule la tâche de monitoring si elle existe
-                            if station.id in self.monitoring_tasks:
-                                self.monitoring_tasks[station.id].cancel()
-                                del self.monitoring_tasks[station.id]
-                    
-                    except Exception as e:
-                        self.logger.error(f"Erreur lors de la vérification de santé de {station.name}: {str(e)}")
+            return await self.stream_checker.check_stream(stream_url)
+        except Exception as e:
+            logger.error(f"Error checking stream health for {stream_url}: {e}")
+            return {
+                'is_available': False,
+                'is_audio_stream': False,
+                'status_code': None,
+                'content_type': None,
+                'bitrate': None,
+                'error': str(e)
+            }
+    
+    async def update_station_health(self, station: RadioStation, health_check: Dict[str, Any]) -> None:
+        """
+        Update the health status of a station based on health check results.
+        
+        Args:
+            station: RadioStation object
+            health_check: Health check results
+        """
+        try:
+            # Create health record
+            health_record = StationHealth(
+                station_id=station.id,
+                timestamp=datetime.now(),
+                is_available=health_check.get('is_available', False),
+                is_audio_stream=health_check.get('is_audio_stream', False),
+                status_code=health_check.get('status_code'),
+                content_type=health_check.get('content_type'),
+                bitrate=health_check.get('bitrate'),
+                error=health_check.get('error')
+            )
+            
+            self.db_session.add(health_record)
+            
+            # Update station status
+            station.last_checked = datetime.now()
+            
+            if health_check.get('is_available', False) and health_check.get('is_audio_stream', False):
+                # Stream is healthy
+                if station.status != StationStatus.active:
+                    station.status = StationStatus.active
+                station.failure_count = 0
+            else:
+                # Stream is unhealthy
+                station.failure_count += 1
                 
+                if station.failure_count >= 3:
+                    station.status = StationStatus.error
+                else:
+                    station.status = StationStatus.degraded
+            
+            self.db_session.commit()
+            
+        except SQLAlchemyError as e:
+            self.db_session.rollback()
+            logger.error(f"Database error updating station health for {station.name}: {e}")
+        except Exception as e:
+            logger.error(f"Error updating station health for {station.name}: {e}")
+    
+    async def monitor_all_stations(self) -> None:
+        """
+        Start monitoring all active stations.
+        """
+        try:
+            stations = self.db_session.query(RadioStation).filter(RadioStation.is_active == True).all()
+            
+            for station in stations:
+                await self.start_monitoring(station.id)
+                
+            # Start cleanup task
+            asyncio.create_task(self._cleanup_task())
+            
+        except Exception as e:
+            logger.error(f"Error starting monitoring for all stations: {e}")
+    
+    async def handle_station_recovery(self, station_id: int) -> bool:
+        """
+        Handle recovery of a station that was previously in error state.
+        
+        Args:
+            station_id: ID of the station to recover
+            
+        Returns:
+            True if recovery was successful, False otherwise
+        """
+        try:
+            station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
+            
+            if not station:
+                logger.error(f"Station with ID {station_id} not found")
+                return False
+            
+            # Check current health
+            health_check = await self.check_stream_health(station.stream_url)
+            
+            if health_check.get('is_available', False) and health_check.get('is_audio_stream', False):
+                # Reset failure count and update status
+                station.failure_count = 0
+                station.status = StationStatus.active
+                station.last_checked = datetime.now()
+                
+                # Create health record
+                health_record = StationHealth(
+                    station_id=station.id,
+                    timestamp=datetime.now(),
+                    is_available=True,
+                    is_audio_stream=True,
+                    status_code=health_check.get('status_code'),
+                    content_type=health_check.get('content_type'),
+                    bitrate=health_check.get('bitrate')
+                )
+                
+                self.db_session.add(health_record)
+                self.db_session.commit()
+                
+                # Restart monitoring if needed
+                if station_id not in self.monitoring_tasks or self.monitoring_tasks[station_id].done():
+                    await self.start_monitoring(station_id)
+                
+                logger.info(f"Successfully recovered station {station.name}")
+                return True
+            
+            logger.info(f"Recovery attempt for station {station.name} failed, stream still unhealthy")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error handling recovery for station {station_id}: {e}")
+            return False
+    
+    async def cleanup_old_health_records(self) -> None:
+        """
+        Clean up old health records to prevent database bloat.
+        """
+        try:
+            cutoff_date = datetime.now() - timedelta(days=self.health_record_retention)
+            
+            # Delete old records
+            self.db_session.query(StationHealth).filter(
+                StationHealth.timestamp < cutoff_date
+            ).delete()
+            
+            self.db_session.commit()
+            logger.info(f"Cleaned up health records older than {cutoff_date}")
+            
+        except SQLAlchemyError as e:
+            self.db_session.rollback()
+            logger.error(f"Database error cleaning up old health records: {e}")
+        except Exception as e:
+            logger.error(f"Error cleaning up old health records: {e}")
+    
+    async def _monitor_station(self, station_id: int) -> None:
+        """
+        Internal method to continuously monitor a station.
+        
+        Args:
+            station_id: ID of the station to monitor
+        """
+        try:
+            while True:
+                station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
+                
+                if not station or not station.is_active:
+                    logger.info(f"Station {station_id} is no longer active, stopping monitoring")
+                    break
+                
+                # Check health
+                health_check = await self.check_stream_health(station.stream_url)
+                
+                # Update station health
+                await self.update_station_health(station, health_check)
+                
+                # Wait for next check
                 await asyncio.sleep(self.health_check_interval)
                 
         except asyncio.CancelledError:
-            pass
+            logger.info(f"Monitoring task for station {station_id} cancelled")
         except Exception as e:
-            self.logger.error(f"Erreur lors de la surveillance de santé: {str(e)}")
+            logger.error(f"Error in monitoring task for station {station_id}: {e}")
     
-    async def _handle_station_error(self, station: RadioStation):
-        """Gère une erreur de station."""
+    async def _cleanup_task(self) -> None:
+        """
+        Internal method to periodically clean up old health records.
+        """
         try:
-            station.error_count += 1
-            station.last_error_time = datetime.utcnow()
-            station.status = "error"
-            self.db_session.commit()
-            
-            # Tente de reconnecter si possible
-            if station.error_count < self.retry_attempts:
-                await asyncio.sleep(self.retry_delay * station.error_count)
-                # La reconnexion sera tentée au prochain cycle
-            
+            while True:
+                await self.cleanup_old_health_records()
+                await asyncio.sleep(self.cleanup_interval)
+                
+        except asyncio.CancelledError:
+            logger.info("Cleanup task cancelled")
         except Exception as e:
-            self.logger.error(f"Erreur lors du traitement d'erreur pour {station.name}: {str(e)}")
-    
-    async def add_station(self, station: RadioStation):
-        """Ajoute une nouvelle station au monitoring."""
-        try:
-            if station.id not in self.monitoring_tasks and station.is_active:
-                task = asyncio.create_task(
-                    self.monitor_station(
-                        station,
-                        self.stream_handler,
-                        self.feature_extractor,
-                        self.track_manager
-                    )
-                )
-                self.monitoring_tasks[station.id] = task
-                self.logger.info(f"Station {station.name} ajoutée au monitoring")
-            
-        except Exception as e:
-            self.logger.error(f"Erreur lors de l'ajout de la station {station.name}: {str(e)}")
-    
-    async def remove_station(self, station_id: int):
-        """Retire une station du monitoring."""
-        try:
-            if station_id in self.monitoring_tasks:
-                task = self.monitoring_tasks[station_id]
-                if not task.done():
-                    task.cancel()
-                await task
-                del self.monitoring_tasks[station_id]
-                self.logger.info(f"Station {station_id} retirée du monitoring")
-            
-        except Exception as e:
-            self.logger.error(f"Erreur lors du retrait de la station {station_id}: {str(e)}") 
+            logger.error(f"Error in cleanup task: {e}") 

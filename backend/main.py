@@ -10,21 +10,22 @@ from sqlalchemy.orm import Session
 import logging
 import redis.asyncio as redis
 from datetime import datetime
+from contextlib import asynccontextmanager
 
 # Local imports
 from backend.core.events import event_manager
 from backend.routers import (
     auth,
-    analytics,
-    channels,
-    reports,
-    detections,
     websocket
 )
+from backend.routers.analytics import router as analytics_router
+from backend.routers.reports import router as reports_router
+from backend.routers.channels import router as channels_router
+from backend.routers.detections import router as detections_router
 from .models.database import init_db, get_db
 from .core.config import get_settings
 from .utils.redis_config import init_redis_pool
-from .core.security import get_current_user
+from .utils.auth import get_current_user
 
 # Load environment variables
 load_dotenv()
@@ -33,6 +34,33 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Define lifespan context manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for the application."""
+    # Startup
+    try:
+        # Initialize database
+        init_db()
+        logger.info("Database initialized successfully")
+
+        # Initialize Redis pool
+        app.state.redis_pool = await init_redis_pool()
+        logger.info("Redis pool initialized successfully")
+    except Exception as e:
+        logger.error(f"Error during startup: {str(e)}")
+        raise
+
+    yield  # Application runs here
+
+    # Shutdown
+    try:
+        if hasattr(app.state, 'redis_pool'):
+            await app.state.redis_pool.aclose()  # Using aclose() instead of close()
+            logger.info("Redis pool closed successfully")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {str(e)}")
+
 # Create FastAPI app
 app = FastAPI(
     title="SODAV Monitor",
@@ -40,7 +68,8 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json"
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan
 )
 
 # Configure CORS
@@ -57,37 +86,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Include routers in specific order
 app.include_router(auth.router, prefix="/api")
-app.include_router(detections.router)  # Detections router first for /search endpoint
-app.include_router(channels.router, prefix="/api")
-app.include_router(analytics.router, prefix="/api/analytics")
-app.include_router(reports.router, prefix="/api/reports")
+app.include_router(detections_router, prefix="/api")  # Detections router first for /search endpoint
+app.include_router(channels_router, prefix="/api")
+app.include_router(analytics_router, prefix="/api/analytics")
+app.include_router(reports_router, prefix="/api/reports")
 app.include_router(websocket.router, prefix="/api/ws")
-
-@app.on_event("startup")
-async def startup_event():
-    """Événement de démarrage de l'application."""
-    try:
-        # Initialize database
-        init_db()
-        logger.info("Database initialized successfully")
-
-        # Initialize Redis pool
-        app.state.redis_pool = await init_redis_pool()
-        logger.info("Redis pool initialized successfully")
-
-    except Exception as e:
-        logger.error(f"Error during startup: {str(e)}")
-        raise
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Événement d'arrêt de l'application."""
-    try:
-        if hasattr(app.state, 'redis_pool'):
-            await app.state.redis_pool.close()
-            logger.info("Redis pool closed successfully")
-    except Exception as e:
-        logger.error(f"Error during shutdown: {str(e)}")
 
 @app.get("/health")
 async def health_check():

@@ -1,7 +1,7 @@
 # Testing Strategy
 
 ## Overview
-This document outlines our approach to testing the SODAV Monitor project. We follow a component-based testing strategy, where each major component is tested in isolation to ensure proper functionality and maintainability.
+This document outlines our approach to testing the SODAV Monitor project. We follow a component-based testing strategy, where each major component is tested in isolation to ensure proper functionality and maintainability. Additionally, we use integration tests to verify that different components work together correctly.
 
 ## Testing Principles
 1. **Component Isolation**: Each component is tested independently to minimize dependencies
@@ -10,6 +10,7 @@ This document outlines our approach to testing the SODAV Monitor project. We fol
 4. **Clear Test Structure**: Tests are organized by component and functionality
 5. **Maintainable Tests**: Tests are kept focused and easy to understand
 6. **Performance Benchmarks**: Each critical endpoint has defined performance targets
+7. **Integration Testing**: Components are tested together to verify correct interaction
 
 ## Component Testing Structure
 Each component has its own test directory with the following structure:
@@ -31,6 +32,15 @@ tests/
 │   └── test_analytics.py
 ├── reports/              # Report generation tests
 │   └── test_reports.py
+├── integration/          # Integration tests
+│   ├── api/              # API integration tests
+│   │   └── test_api_integration.py
+│   ├── detection/        # Detection integration tests
+│   │   └── test_detection_integration.py
+│   ├── analytics/        # Analytics integration tests
+│   │   └── test_analytics_integration.py
+│   ├── conftest.py       # Integration test fixtures
+│   └── README.md         # Integration test documentation
 └── conftest.py          # Shared fixtures
 ```
 
@@ -248,8 +258,68 @@ tests/
 ### Results
 - Model tests passing
 - Data integrity maintained
-- Analytics calculations accurate
-- Performance meeting targets
+
+## Integration Testing Strategy
+
+Integration tests verify that different components of the system work together correctly, ensuring that the system functions as expected in real-world scenarios.
+
+### Integration Test Structure
+```
+tests/integration/
+├── api/                     # API integration tests
+│   └── test_api_integration.py
+├── detection/               # Detection system integration tests
+│   └── test_detection_integration.py
+├── analytics/               # Analytics system integration tests
+│   └── test_analytics_integration.py
+├── conftest.py              # Shared fixtures for integration tests
+└── README.md                # Documentation for integration tests
+```
+
+### Key Integration Test Types
+
+1. **API Integration Tests**
+   - Reports workflow testing
+   - Detections workflow testing
+   - Analytics workflow testing
+
+2. **Detection System Integration Tests**
+   - Detection pipeline testing
+   - Hierarchical detection testing
+
+3. **Analytics System Integration Tests**
+   - Stats calculation testing
+   - Analytics data generation testing
+
+### Integration Test Fixtures
+
+Integration tests use fixtures defined in `conftest.py` to set up the test environment:
+
+- `db_session`: A database session for the tests
+- `test_user`: A test user for authentication
+- `auth_headers`: Authentication headers for API requests
+- `test_client`: A test client for making API requests
+
+### Integration Test Best Practices
+
+- Keep tests focused on integration between components
+- Use fixtures to set up the test environment
+- Clean up test data after the test is run
+- Use descriptive test names
+- Add comments to explain the test steps
+- Use assertions to verify the expected behavior
+
+### Integration Test Coverage
+
+Integration tests should cover the following areas:
+
+1. **API Endpoints**: All API endpoints should be tested to ensure they work correctly with the database and other components.
+2. **Detection System**: The detection system should be tested to ensure it works correctly with the database and other components.
+3. **Analytics System**: The analytics system should be tested to ensure it works correctly with the database and other components.
+4. **Authentication**: Authentication should be tested to ensure it works correctly with the API endpoints.
+5. **Error Handling**: Error handling should be tested to ensure the system responds correctly to errors.
+
+For more detailed information about integration testing, see [INTEGRATION_TESTING.md](INTEGRATION_TESTING.md).
 
 ## Performance Testing Results
 

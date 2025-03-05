@@ -1,6 +1,5 @@
 from sqlalchemy import create_engine, event
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from sqlalchemy.pool import QueuePool
 import os
 from dotenv import load_dotenv
@@ -86,18 +85,13 @@ def get_db():
         db.close()
 
 def init_db():
-    """Initialize database tables if they don't exist"""
+    """
+    Initialize the database by creating all tables and adding constraints.
+    """
     try:
-        logger.info("Using development database")
-        logger.info("Database environment: development")
-        
-        # Import all models to ensure they are registered
-        from ..models.models import (
-            User, Report, ReportSubscription, RadioStation,
-            Artist, Track, TrackDetection, DetectionHourly,
-            DetectionDaily, DetectionMonthly, StationStats,
-            TrackDaily, TrackMonthly, ArtistDaily, ArtistMonthly,
-            StationTrackStats, AnalyticsData, ArtistStats, TrackStats
+        from .models import (
+            User, Track, Artist, RadioStation, TrackDetection, Report, ReportSubscription,
+            DetectionHourly, StationTrackStats, AnalyticsData, ArtistStats, TrackStats
         )
         
         # Create all tables without dropping
@@ -105,19 +99,26 @@ def init_db():
         Base.metadata.create_all(bind=engine)
         
         # Add unique constraint to hour column if it doesn't exist
-        with engine.begin() as conn:
-            conn.execute(text("""
-                DO $$
-                BEGIN
-                    IF NOT EXISTS (
-                        SELECT 1
-                        FROM pg_constraint
-                        WHERE conname = 'detection_hourly_hour_key'
-                    ) THEN
-                        ALTER TABLE detection_hourly ADD CONSTRAINT detection_hourly_hour_key UNIQUE (hour);
-                    END IF;
-                END $$;
-            """))
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.tables 
+                            WHERE table_name = 'detection_hourly'
+                        ) AND NOT EXISTS (
+                            SELECT 1
+                            FROM pg_constraint
+                            WHERE conname = 'detection_hourly_hour_key'
+                        ) THEN
+                            ALTER TABLE detection_hourly ADD CONSTRAINT detection_hourly_hour_key UNIQUE (hour);
+                        END IF;
+                    END $$;
+                """))
+            logger.info("Added constraints successfully")
+        except Exception as constraint_error:
+            logger.warning(f"Could not add constraint to detection_hourly: {str(constraint_error)}")
         
         logger.info("Database initialized successfully")
         

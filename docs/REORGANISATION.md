@@ -727,3 +727,414 @@ Les imports ont été mis à jour dans les fichiers suivants pour refléter la n
 2. Implement proper error handling in report generation
 3. Debug station stats queries
 4. Optimize detection history performance 
+
+## Finalisation des Tests d'Intégration (Mars 2024)
+
+Nous avons finalisé la structure des tests d'intégration en ajoutant les fichiers `__init__.py` nécessaires pour tous les packages de tests d'intégration :
+
+- `backend/tests/integration/__init__.py` : Package principal des tests d'intégration
+- `backend/tests/integration/api/__init__.py` : Package des tests d'intégration API
+- `backend/tests/integration/detection/__init__.py` : Package des tests d'intégration du système de détection
+- `backend/tests/integration/analytics/__init__.py` : Package des tests d'intégration du système d'analytique
+
+Cette structure complète permet une meilleure organisation des tests et facilite l'importation des modules nécessaires. Les fichiers `__init__.py` contiennent également une documentation claire sur le rôle de chaque package de tests.
+
+### Prochaines Étapes pour les Tests d'Intégration
+
+1. Développer des tests d'intégration supplémentaires pour couvrir plus de scénarios
+2. Améliorer les fixtures existantes pour faciliter les tests
+3. Ajouter des tests de performance pour les workflows d'intégration
+4. Intégrer les tests d'intégration dans le pipeline CI/CD
+5. Mettre en place des rapports de couverture spécifiques aux tests d'intégration 
+
+## 2024-03-29: Modernisation du Code
+
+### Modifications Apportées
+- Modernisation du code pour être compatible avec les dernières versions des bibliothèques :
+  - SQLAlchemy 2.0 : Mise à jour des imports dans `models/models.py` et `models/database.py`
+  - Pydantic V2 : Remplacement des validateurs et des classes Config dans plusieurs fichiers
+  - FastAPI Lifespan : Transition du système d'événements vers le nouveau système de lifespan dans `main.py`
+  - Redis : Mise à jour de la méthode de fermeture du pool Redis
+
+### Fichiers Modifiés
+- `backend/models/models.py` : Mise à jour de l'import de `declarative_base`
+- `backend/models/database.py` : Mise à jour des imports SQLAlchemy
+- `backend/schemas/base.py` : Mise à jour des validateurs Pydantic
+- `backend/config.py` : Remplacement de la classe Config par model_config
+- `backend/routers/channels.py` : Mise à jour de la configuration Pydantic
+- `backend/routers/detections.py` : Mise à jour des validateurs et de la configuration
+- `backend/main.py` : Implémentation du nouveau système de lifespan FastAPI
+
+### Documentation
+- Création du fichier `docs/MODERNIZATION.md` pour documenter en détail les modifications apportées
+- Documentation des avertissements de dépréciation résolus
+- Instructions pour les futures mises à jour
+
+### Résultats
+- Réduction significative des avertissements de dépréciation
+- Amélioration de la compatibilité avec les versions récentes des bibliothèques
+- Maintien de la fonctionnalité existante (tests d'intégration réussis)
+- Préparation pour les futures mises à jour des bibliothèques
+
+### Prochaines Étapes
+1. Mettre à jour les tests unitaires pour qu'ils fonctionnent avec les nouvelles versions
+2. Continuer à nettoyer les fichiers redondants
+3. Optimiser les performances du code
+4. Améliorer la documentation 
+
+## 2024-03-27
+### Réorganisation de la Structure du Backend
+
+#### Objectifs
+- Améliorer la cohérence de l'architecture
+- Réduire la taille des fichiers volumineux
+- Consolider les fonctionnalités liées à la sécurité
+- Faciliter la maintenance et les tests
+
+#### Changements Effectués
+
+1. **Consolidation du Module de Sécurité**
+   - Déplacement de `core/security.py` vers `utils/auth/security.py`
+   - Mise à jour des imports dans les fichiers dépendants
+   - Centralisation de toutes les fonctionnalités d'authentification dans `utils/auth`
+
+2. **Réorganisation des Routeurs**
+   - Division de `routers/reports.py` (1059 lignes) en modules plus petits:
+     - `routers/reports/core.py`: Fonctionnalités CRUD de base pour les rapports
+     - `routers/reports/generation.py`: Génération de rapports (quotidiens, mensuels, personnalisés)
+     - `routers/reports/subscriptions.py`: Gestion des abonnements aux rapports
+   - Création de `routers/reports/__init__.py` pour exporter un routeur combiné
+   - Mise à jour de `main.py` pour utiliser le nouveau routeur des rapports
+   - Division de `routers/channels.py` (862 lignes) en modules plus petits:
+     - `routers/channels/core.py`: Fonctionnalités CRUD de base pour les stations
+     - `routers/channels/monitoring.py`: Surveillance des stations et détection de musique
+     - `routers/channels/status.py`: Gestion des statuts et historique des statuts
+   - Création de `routers/channels/__init__.py` pour exporter un routeur combiné
+   - Mise à jour de `main.py` pour utiliser le nouveau routeur des canaux
+   - Division de `routers/detections.py` (507 lignes) en modules plus petits:
+     - `routers/detections/core.py`: Fonctionnalités CRUD de base pour les détections
+     - `routers/detections/search.py`: Recherche et filtrage des détections
+     - `routers/detections/processing.py`: Traitement audio et détection de musique
+   - Création de `routers/detections/__init__.py` pour exporter un routeur combiné
+
+3. **Réorganisation de la Configuration**
+   - Déplacement de `config.py` vers `core/config/main.py`
+   - Mise à jour des imports dans les fichiers dépendants
+   - Centralisation de toutes les configurations dans `core/config`
+
+4. **Mise à jour de la Documentation**
+   - Mise à jour de ce document (REORGANISATION.md)
+   - Ajout de commentaires dans les nouveaux fichiers
+
+#### Prochaines Étapes
+- Mettre à jour les tests pour refléter la nouvelle structure
+- Continuer à diviser les fichiers volumineux
+- Améliorer la documentation des modules
+- Standardiser les imports dans tout le projet 
+
+## 2024-03-30
+### Continuation de la Réorganisation du Backend
+
+#### Objectifs
+- Poursuivre l'amélioration de la structure du code
+- Résoudre les problèmes d'authentification dans les tests
+- Standardiser les imports à travers le projet
+- Améliorer la documentation
+
+#### Changements Effectués
+
+1. **Consolidation des Modules d'Authentification**
+   - Harmonisation des fonctions entre `utils/auth/auth.py` et `utils/auth/security.py`
+   - Mise à jour de `utils/auth/__init__.py` pour exporter les fonctions correctes
+   - Résolution des conflits d'imports dans les tests d'authentification
+
+2. **Réorganisation des Routeurs**
+   - Division de `routers/reports.py` (1059 lignes) en modules plus petits:
+     - `routers/reports/core.py`: Fonctionnalités CRUD de base pour les rapports
+     - `routers/reports/generation.py`: Génération de rapports (quotidiens, mensuels, personnalisés)
+     - `routers/reports/subscriptions.py`: Gestion des abonnements aux rapports
+   - Création de `routers/reports/__init__.py` pour exporter un routeur combiné
+   - Mise à jour de `main.py` pour utiliser le nouveau routeur des rapports
+   - Division de `routers/channels.py` (862 lignes) en modules plus petits:
+     - `routers/channels/core.py`: Fonctionnalités CRUD de base pour les stations
+     - `routers/channels/monitoring.py`: Surveillance des stations et détection de musique
+     - `routers/channels/status.py`: Gestion des statuts et historique des statuts
+   - Création de `routers/channels/__init__.py` pour exporter un routeur combiné
+   - Mise à jour de `main.py` pour utiliser le nouveau routeur des canaux
+   - Division de `routers/detections.py` (507 lignes) en modules plus petits:
+     - `routers/detections/core.py`: Fonctionnalités CRUD de base pour les détections
+     - `routers/detections/search.py`: Recherche et filtrage des détections
+     - `routers/detections/processing.py`: Traitement audio et détection de musique
+   - Création de `routers/detections/__init__.py` pour exporter un routeur combiné
+
+3. **Standardisation des Imports**
+   - Adoption d'un style cohérent pour les imports à travers le projet
+   - Utilisation d'imports absolus pour éviter les problèmes de chemin relatif
+   - Organisation des imports par catégorie (standard, tiers, locaux)
+
+4. **Amélioration de la Documentation**
+   - Mise à jour des docstrings dans les modules réorganisés
+   - Ajout de commentaires explicatifs pour les sections complexes
+   - Documentation des choix d'architecture dans les fichiers README
+   - Création de fichiers README.md pour les modules `reports`, `channels` et `detections`
+
+5. **Suppression des Fichiers Redondants**
+   - Suppression de `routers/reports.py` (remplacé par le module `reports`)
+   - Suppression de `routers/channels.py` (remplacé par le module `channels`)
+   - Suppression de `routers/radio.py` (fichier vide et inutilisé)
+   - Suppression de `core/security.py` (déplacé vers `utils/auth/security.py`)
+   - Mise à jour des imports dans `routers/auth.py` pour utiliser le nouveau module de sécurité
+
+6. **Mise à Jour des Tests**
+   - Mise à jour des imports dans les fichiers de test suivants pour utiliser le nouveau module de sécurité:
+     - `tests/conftest.py`
+     - `tests/reports/test_reports.py`
+     - `tests/api/test_detections_api.py`
+     - `tests/api/test_music_detection_api.py`
+     - `tests/api/test_reports_api.py`
+   - Utilisation de la commande `sed` pour remplacer toutes les occurrences de l'ancien module de sécurité
+   - Création d'un nouveau fichier de test `tests/api/test_reports_router.py` pour tester le nouveau routeur des rapports
+
+#### Prochaines Étapes
+1. **Finalisation de la Réorganisation des Routeurs**
+   - Mettre à jour `main.py` pour utiliser le nouveau routeur des détections
+   - Tester les nouveaux modules de routeur
+   - Mettre à jour la documentation API
+
+2. **Optimisation des Performances**
+   - Identifier et résoudre les goulots d'étranglement
+   - Améliorer la gestion des connexions à la base de données
+   - Optimiser les requêtes fréquentes
+
+3. **Amélioration de la Couverture des Tests**
+   - Ajouter des tests pour les nouvelles fonctionnalités
+   - Améliorer la couverture des tests existants
+   - Mettre en place des tests de performance
+
+4. **Mise à Jour de la Documentation Technique**
+   - Créer des diagrammes d'architecture mis à jour
+   - Documenter les flux de données
+   - Mettre à jour les guides de développement 
+
+## 2024-03-31
+### Ajout de Fonctionnalités et Optimisations
+
+#### Objectifs
+- Améliorer les fonctionnalités de détection de musique
+- Faciliter la surveillance de plusieurs stations simultanément
+- Optimiser les performances des opérations en arrière-plan
+
+#### Changements Effectués
+
+1. **Ajout d'un Endpoint pour la Détection sur Toutes les Stations**
+   - Création d'un nouvel endpoint `/api/detections/detect-music-all` dans `routers/detections/processing.py`
+   - Permet de déclencher la détection de musique sur toutes les stations actives en une seule requête
+   - Utilisation de tâches en arrière-plan pour traiter chaque station sans bloquer l'API
+   - Mise à jour de la documentation dans `routers/detections/README.md`
+
+#### Prochaines Étapes
+1. **Tests de Performance**
+   - Évaluer les performances de la détection simultanée sur plusieurs stations
+   - Optimiser la gestion des ressources pour éviter la surcharge du serveur
+
+2. **Interface Utilisateur**
+   - Ajouter un bouton dans l'interface pour déclencher la détection sur toutes les stations
+   - Afficher une barre de progression pour suivre l'avancement des détections
+
+3. **Optimisation des Algorithmes**
+   - Améliorer l'algorithme de détection pour réduire le temps de traitement
+   - Implémenter un système de mise en cache pour éviter les détections redondantes 
+
+## 2024-04-01
+### Amélioration de l'Organisation des Tests
+
+#### Objectifs
+- Améliorer la documentation des tests
+- Standardiser l'organisation des tests
+- Faciliter la maintenance et l'extension des tests
+- Clarifier la structure des tests pour les nouveaux développeurs
+
+#### Changements Effectués
+
+1. **Documentation des Packages de Tests**
+   - Création ou amélioration des fichiers `__init__.py` pour tous les packages de tests avec une documentation détaillée :
+     - `tests/detection/audio_processor/__init__.py`
+     - `tests/detection/__init__.py`
+     - `tests/detection/external/__init__.py`
+     - `tests/api/__init__.py`
+     - `tests/analytics/__init__.py`
+     - `tests/reports/__init__.py`
+     - `tests/utils/__init__.py`
+     - `tests/auth/__init__.py`
+   - Chaque fichier `__init__.py` contient maintenant une description claire du package et de ses fichiers
+
+2. **Documentation des Tests d'Intégration**
+   - Amélioration des fichiers `__init__.py` pour les packages de tests d'intégration :
+     - `tests/integration/__init__.py`
+     - `tests/integration/api/__init__.py`
+     - `tests/integration/detection/__init__.py`
+     - `tests/integration/analytics/__init__.py`
+   - Documentation détaillée des tests d'intégration et de leur organisation
+
+3. **Création d'un Guide de Tests**
+   - Création d'un fichier `README.md` complet pour le dossier `tests` qui :
+     - Documente la structure globale des tests
+     - Explique l'organisation des tests unitaires, d'intégration et de performance
+     - Fournit des instructions pour l'exécution des tests
+     - Décrit les bonnes pratiques pour l'écriture de tests
+
+#### Prochaines Étapes
+1. **Standardisation des Tests**
+   - Appliquer un format cohérent à tous les fichiers de test
+   - Assurer que tous les tests suivent les mêmes conventions de nommage
+   - Standardiser l'utilisation des fixtures
+
+2. **Amélioration de la Couverture de Tests**
+   - Identifier les zones du code avec une couverture de tests insuffisante
+   - Ajouter des tests pour les fonctionnalités non couvertes
+   - Mettre en place un suivi régulier de la couverture de tests
+
+3. **Automatisation des Tests**
+   - Configurer l'intégration continue pour exécuter automatiquement les tests
+   - Mettre en place des rapports de couverture de tests
+   - Automatiser la vérification de la qualité du code 
+
+### 2024-03-30
+#### Réorganisation du Routeur Analytics
+
+##### Structure Précédente
+- Un seul fichier `analytics.py` gérant toutes les fonctionnalités d'analyse
+
+##### Nouvelle Structure
+- Division en modules spécialisés dans `routers/analytics/` :
+  1. `overview.py` : Vue d'ensemble et statistiques globales
+     - Métriques générales du système
+     - Tendances de détection
+     - Statistiques agrégées
+  
+  2. `stations.py` : Analyses spécifiques aux stations
+     - Performance par station
+     - Taux de détection
+     - Statistiques temporelles
+  
+  3. `artists.py` : Analyses relatives aux artistes
+     - Artistes les plus joués
+     - Répartition par station
+     - Tendances temporelles
+  
+  4. `tracks.py` : Analyses des pistes musicales
+     - Pistes les plus jouées
+     - Statistiques de diffusion
+     - Répartition par station
+  
+  5. `export.py` : Fonctionnalités d'exportation des données
+     - Export en différents formats (JSON, CSV, XLSX)
+     - Personnalisation des exports
+     - Gestion des erreurs d'export
+
+  6. `__init__.py` : Combinaison des routeurs en un seul point d'entrée
+     - Agrégation des sous-routeurs
+     - Exposition d'une interface unifiée
+
+##### Améliorations Apportées
+- Meilleure séparation des responsabilités
+- Réduction de la complexité par module
+- Facilitation des tests unitaires
+- Amélioration de la maintenabilité
+- Documentation complète avec README.md
+
+##### Mise à jour du Fichier Principal
+- Modification de `main.py` pour utiliser le nouveau routeur analytics
+- Mise à jour des imports pour refléter la nouvelle structure
+
+#### Réorganisation du Routeur Detections
+
+##### Structure Précédente
+- Un seul fichier `detections.py` (507 lignes) gérant toutes les fonctionnalités de détection
+
+##### Nouvelle Structure
+- Division en modules spécialisés dans `routers/detections/` :
+  1. `core.py` : Opérations CRUD de base pour les détections
+     - Création, lecture, mise à jour et suppression de détections
+     - Gestion des métadonnées de détection
+     - Validation des données de détection
+  
+  2. `search.py` : Recherche et filtrage des détections
+     - Recherche par titre, artiste ou station
+     - Filtrage par date, confiance ou durée
+     - Pagination et tri des résultats
+  
+  3. `processing.py` : Traitement audio et détection de musique
+     - Traitement des fichiers audio
+     - Détection de musique sur les stations
+     - Gestion des tâches en arrière-plan
+     - Détection sur toutes les stations actives
+
+  4. `__init__.py` : Combinaison des routeurs en un seul point d'entrée
+     - Agrégation des sous-routeurs
+     - Exposition d'une interface unifiée
+
+##### Améliorations Apportées
+- Meilleure séparation des responsabilités
+- Réduction de la complexité par module
+- Facilitation des tests unitaires
+- Amélioration de la maintenabilité
+- Documentation complète avec README.md
+
+##### Mise à jour du Fichier Principal
+- Modification de `main.py` pour utiliser le nouveau routeur detections
+- Mise à jour des imports pour refléter la nouvelle structure
+
+## 2024-04-01
+### Amélioration de l'Organisation des Tests
+
+#### Objectifs
+- Améliorer la documentation des tests
+- Standardiser l'organisation des tests
+- Faciliter la maintenance et l'extension des tests
+- Clarifier la structure des tests pour les nouveaux développeurs
+
+#### Changements Effectués
+
+1. **Documentation des Packages de Tests**
+   - Création ou amélioration des fichiers `__init__.py` pour tous les packages de tests avec une documentation détaillée :
+     - `tests/detection/audio_processor/__init__.py`
+     - `tests/detection/__init__.py`
+     - `tests/detection/external/__init__.py`
+     - `tests/api/__init__.py`
+     - `tests/analytics/__init__.py`
+     - `tests/reports/__init__.py`
+     - `tests/utils/__init__.py`
+     - `tests/auth/__init__.py`
+   - Chaque fichier `__init__.py` contient maintenant une description claire du package et de ses fichiers
+
+2. **Documentation des Tests d'Intégration**
+   - Amélioration des fichiers `__init__.py` pour les packages de tests d'intégration :
+     - `tests/integration/__init__.py`
+     - `tests/integration/api/__init__.py`
+     - `tests/integration/detection/__init__.py`
+     - `tests/integration/analytics/__init__.py`
+   - Documentation détaillée des tests d'intégration et de leur organisation
+
+3. **Création d'un Guide de Tests**
+   - Création d'un fichier `README.md` complet pour le dossier `tests` qui :
+     - Documente la structure globale des tests
+     - Explique l'organisation des tests unitaires, d'intégration et de performance
+     - Fournit des instructions pour l'exécution des tests
+     - Décrit les bonnes pratiques pour l'écriture de tests
+
+#### Prochaines Étapes
+1. **Standardisation des Tests**
+   - Appliquer un format cohérent à tous les fichiers de test
+   - Assurer que tous les tests suivent les mêmes conventions de nommage
+   - Standardiser l'utilisation des fixtures
+
+2. **Amélioration de la Couverture de Tests**
+   - Identifier les zones du code avec une couverture de tests insuffisante
+   - Ajouter des tests pour les fonctionnalités non couvertes
+   - Mettre en place un suivi régulier de la couverture de tests
+
+3. **Automatisation des Tests**
+   - Configurer l'intégration continue pour exécuter automatiquement les tests
+   - Mettre en place des rapports de couverture de tests
+   - Automatiser la vérification de la qualité du code 

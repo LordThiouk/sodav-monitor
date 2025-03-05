@@ -1,7 +1,7 @@
 """Base schemas for the SODAV Monitor."""
 
-from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional, Dict, Union
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
+from typing import List, Optional, Dict, Union, Any
 from datetime import datetime, timedelta
 
 class StationBase(BaseModel):
@@ -26,8 +26,7 @@ class StationResponse(StationBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TrackBase(BaseModel):
     title: str
@@ -41,8 +40,15 @@ class TrackResponse(TrackBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+    
+    @model_validator(mode='before')
+    @classmethod
+    def validate_artist(cls, data):
+        if isinstance(data, dict) and 'artist' in data and hasattr(data['artist'], 'name'):
+            # Si artist est un objet avec un attribut name, utiliser le nom
+            data['artist'] = data['artist'].name
+        return data
 
 class StreamBase(BaseModel):
     name: str
@@ -61,11 +67,11 @@ class DetectionCreate(BaseModel):
     fingerprint: Optional[str] = None
     audio_hash: Optional[str] = None
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat(),
-            timedelta: lambda v: int(v.total_seconds())
+    model_config = ConfigDict(
+        json_encoders={
+            timedelta: lambda v: v.total_seconds() if v else None
         }
+    )
 
 class DetectionResponse(BaseModel):
     id: int
@@ -75,8 +81,7 @@ class DetectionResponse(BaseModel):
     confidence: float
     play_duration: Optional[timedelta] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class StreamRequest(BaseModel):
     stream_url: str
@@ -104,8 +109,19 @@ class StationStatusResponse(BaseModel):
     id: int
     name: str
     status: str
-    is_active: bool
-    last_checked: Optional[datetime] = None
+    last_check: Optional[datetime] = None
+    last_successful_check: Optional[datetime] = None
+    error_count: int = 0
+    status_message: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class StationStatusUpdate(BaseModel):
+    status: str
+    message: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ReportBase(BaseModel):
     title: str
@@ -116,7 +132,8 @@ class ReportBase(BaseModel):
     filters: Optional[Dict[str, str]] = None
 
 class ReportCreate(ReportBase):
-    pass
+    report_type: str
+    parameters: Optional[Dict[str, Any]] = None
 
 class ReportUpdate(ReportBase):
     status: Optional[str] = None
@@ -130,9 +147,10 @@ class ReportResponse(ReportBase):
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ReportStatusResponse(BaseModel):
     id: int
@@ -169,5 +187,12 @@ class SubscriptionResponse(SubscriptionBase):
     updated_at: Optional[datetime] = None
     user_id: int
 
-    class Config:
-        from_attributes = True 
+    model_config = ConfigDict(from_attributes=True)
+
+class DetectionsResponse(BaseModel):
+    """Response model for a list of detections with pagination."""
+    total: int
+    items: List[Dict[str, Any]]
+    station: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(from_attributes=True) 

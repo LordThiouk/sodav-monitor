@@ -1,16 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, distinct
+from sqlalchemy import func, desc, and_, distinct
+from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 import logging
-from typing import Dict, List, Optional
+import json
+import pandas as pd
+import numpy as np
 from pydantic import BaseModel
 
 from backend.models.database import get_db
-from ..models.models import Track, TrackDetection, RadioStation, ArtistStats, TrackStats, DetectionHourly, AnalyticsData, Artist, StationStatus, StationStats
+from ..models.models import Track, TrackDetection, RadioStation, ArtistStats, TrackStats, DetectionHourly, AnalyticsData, Artist, StationStatus, StationStats, StationTrackStats
 from ..analytics.stats_manager import StatsManager
 from ..schemas.base import AnalyticsResponse, ChartData, SystemHealth
-from ..core.security import get_current_user
+from ..utils.auth import get_current_user
 from ..core.config import get_settings
 
 router = APIRouter(

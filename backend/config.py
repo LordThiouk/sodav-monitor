@@ -1,9 +1,13 @@
 """Configuration principale du backend SODAV Monitor."""
 
 import os
+from pydantic import validator, ConfigDict
 from pydantic_settings import BaseSettings
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from functools import lru_cache
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     """Configuration globale de l'application."""
@@ -69,23 +73,24 @@ class Settings(BaseSettings):
     PROMETHEUS_PORT: int = 9090
     HEALTH_CHECK_INTERVAL: int = 60  # secondes
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-        extra = "allow"  # Allow extra fields from environment
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="allow"  # Allow extra fields from environment
+    )
 
     def validate_api_keys(self) -> None:
-        """Valide la présence des clés API requises."""
+        """Validate that required API keys are set."""
         if not self.ACOUSTID_API_KEY:
-            raise ValueError("ACOUSTID_API_KEY est requis pour l'identification via AcoustID/Chromaprint")
+            logger.warning("ACOUSTID_API_KEY not set. MusicBrainz detection will be disabled.")
         if not self.AUDD_API_KEY:
-            raise ValueError("AUDD_API_KEY est requis pour l'identification via Audd.io")
+            logger.warning("AUDD_API_KEY not set. Audd detection will be disabled.")
 
 @lru_cache()
 def get_settings() -> Settings:
-    """Retourne une instance mise en cache des paramètres."""
+    """Return cached settings."""
     settings = Settings()
-    settings.validate_api_keys()  # Vérifie les clés API au démarrage
+    settings.validate_api_keys()
     return settings
 
 # Configuration des chemins
