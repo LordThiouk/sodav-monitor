@@ -187,7 +187,7 @@ class AudioProcessor:
         # TODO: Implement memory usage check
         return True
 
-    def process_stream(self, audio_data: np.ndarray) -> Tuple[bool, float]:
+    def detect_music_in_stream(self, audio_data: np.ndarray) -> Tuple[bool, float]:
         """Process an audio segment to detect the presence of music.
         
         Args:

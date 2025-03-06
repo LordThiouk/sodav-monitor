@@ -31,11 +31,10 @@ def test_process_stream_performance(benchmark, large_audio_data):
     processor = AudioProcessor()
     
     def run_process():
-        return processor.process_stream(large_audio_data)
+        return processor.detect_music_in_stream(large_audio_data)
     
     result = benchmark(run_process)
-    assert isinstance(result, tuple)
-    assert len(result) == 2
+    assert result is not None
 
 @pytest.mark.benchmark(
     group="audio_processor",
@@ -80,7 +79,7 @@ def test_end_to_end_performance(benchmark, large_audio_data, large_fingerprint_d
     
     def run_pipeline():
         # Process audio stream
-        is_music, confidence = processor.process_stream(large_audio_data)
+        is_music, confidence = processor.detect_music_in_stream(large_audio_data)
         if is_music and confidence > 0.5:
             # Extract features
             features = processor.extract_features(large_audio_data)

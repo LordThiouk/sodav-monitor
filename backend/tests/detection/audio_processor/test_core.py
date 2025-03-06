@@ -61,25 +61,25 @@ class TestAudioProcessorStreamProcessing:
     def test_process_stream_returns_tuple(self, audio_processor):
         """Test process_stream returns expected tuple."""
         audio_data = np.random.random(44100)  # 1 second of random audio
-        result = audio_processor.process_stream(audio_data)
+        result = audio_processor.detect_music_in_stream(audio_data)
         assert isinstance(result, tuple)
         assert len(result) == 2
         
     def test_confidence_score_range(self, audio_processor):
         """Test confidence score is within valid range."""
         audio_data = np.random.random(44100)
-        _, confidence = audio_processor.process_stream(audio_data)
+        _, confidence = audio_processor.detect_music_in_stream(audio_data)
         assert 0 <= confidence <= 1
         
     def test_empty_audio_data(self, audio_processor):
         """Test handling of empty audio data."""
         with pytest.raises(ValueError):
-            audio_processor.process_stream(np.array([]))
+            audio_processor.detect_music_in_stream(np.array([]))
             
     def test_invalid_audio_data_type(self, audio_processor):
         """Test handling of invalid audio data type."""
         with pytest.raises(TypeError):
-            audio_processor.process_stream([1, 2, 3])  # List instead of numpy array
+            audio_processor.detect_music_in_stream([1, 2, 3])  # List instead of numpy array
 
 class TestAudioProcessorFeatureExtraction:
     """Test feature extraction functionality."""

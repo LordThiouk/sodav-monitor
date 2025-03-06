@@ -86,7 +86,7 @@ class MusicDetector:
             
             # Process audio data
             logger.info(f"Processing audio data from {station.name}")
-            result = await self.audio_processor.process_stream(audio_data, station_id)
+            result = await self.audio_processor.process_stream(audio_data)
             
             if result.get("type") == "speech":
                 logger.info(f"Speech detected on {station.name}")
@@ -220,7 +220,7 @@ class MusicDetector:
             
             # Process audio data
             logger.info("Processing audio file")
-            result = await self.audio_processor.process_stream(audio_array, station_id)
+            result = await self.audio_processor.process_stream(audio_array)
             
             if result.get("type") == "speech":
                 logger.info("Speech detected in audio file")
