@@ -1,6 +1,6 @@
 """Base schemas for the SODAV Monitor."""
 
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, model_serializer
 from typing import List, Optional, Dict, Union, Any
 from datetime import datetime, timedelta
 
@@ -67,11 +67,13 @@ class DetectionCreate(BaseModel):
     fingerprint: Optional[str] = None
     audio_hash: Optional[str] = None
 
-    model_config = ConfigDict(
-        json_encoders={
-            timedelta: lambda v: v.total_seconds() if v else None
-        }
-    )
+    @model_serializer
+    def serialize_model(self) -> Dict[str, Any]:
+        data = self.model_dump()
+        # Handle timedelta serialization
+        if self.play_duration and isinstance(self.play_duration, timedelta):
+            data["play_duration"] = self.play_duration.total_seconds()
+        return data
 
 class DetectionResponse(BaseModel):
     id: int

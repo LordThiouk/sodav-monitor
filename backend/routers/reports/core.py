@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(
-    prefix="/reports",
+    prefix="",
     tags=["reports"],
     dependencies=[Depends(get_current_user)]  # Require authentication for all endpoints
 )

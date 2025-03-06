@@ -13,19 +13,20 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 
 # Local imports
-from backend.core.events import event_manager
-from backend.routers import (
+from core.events import event_manager
+from routers import (
     auth,
     websocket
 )
-from backend.routers.analytics import router as analytics_router
-from backend.routers.reports import router as reports_router
-from backend.routers.channels import router as channels_router
-from backend.routers.detections import router as detections_router
-from .models.database import init_db, get_db
-from .core.config import get_settings
-from .utils.redis_config import init_redis_pool
-from .utils.auth import get_current_user
+from routers.analytics import router as analytics_router
+from routers.reports import router as reports_router
+from routers.channels import router as channels_router
+from routers.detections import router as detections_router
+from models.database import init_db, get_db
+from core.config import get_settings
+from utils.redis_config import init_redis_pool
+from utils.auth import get_current_user
+from utils.radio import fetch_and_save_senegal_stations
 
 # Load environment variables
 load_dotenv()
@@ -40,6 +41,13 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for the application."""
     # Startup
     try:
+        # Validate required API keys
+        settings = get_settings()
+        if not settings.ACOUSTID_API_KEY:
+            logger.warning("ACOUSTID_API_KEY is not set. MusicBrainz recognition will be disabled.")
+        if not settings.AUDD_API_KEY:
+            logger.warning("AUDD_API_KEY is not set. AudD recognition will be disabled.")
+            
         # Initialize database
         init_db()
         logger.info("Database initialized successfully")
@@ -47,6 +55,18 @@ async def lifespan(app: FastAPI):
         # Initialize Redis pool
         app.state.redis_pool = await init_redis_pool()
         logger.info("Redis pool initialized successfully")
+        
+        # Fetch Senegalese radio stations
+        db = next(get_db())
+        try:
+            logger.info("Fetching Senegalese radio stations from Radio Browser API...")
+            stations_count = await fetch_and_save_senegal_stations(db)
+            logger.info(f"Successfully processed {stations_count} Senegalese radio stations")
+        except Exception as e:
+            logger.error(f"Error fetching Senegalese radio stations: {str(e)}")
+        finally:
+            db.close()
+            
     except Exception as e:
         logger.error(f"Error during startup: {str(e)}")
         raise

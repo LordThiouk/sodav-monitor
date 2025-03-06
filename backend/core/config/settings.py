@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     
     # Services externes
-    ACOUSTID_API_KEY: str = "test_acoustid_key"
-    AUDD_API_KEY: str = "test_audd_key"
+    ACOUSTID_API_KEY: str = None
+    AUDD_API_KEY: str = None
     MUSICBRAINZ_APP_NAME: str = "SODAV Monitor"
     MUSICBRAINZ_VERSION: str = "1.0"
     MUSICBRAINZ_CONTACT: str = "contact@sodav.sn"

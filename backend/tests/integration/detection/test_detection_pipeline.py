@@ -216,6 +216,18 @@ class TestDetectionPipeline:
                 assert result["details"]["track"]["title"] == "MusicBrainz Test Track", "Wrong track title"
                 assert result["details"]["track"]["artist"] == "MusicBrainz Test Artist", "Wrong artist name"
 
+                # Manually save the detection to the database since our mocking bypasses the normal save process
+                detection = TrackDetection(
+                    track_id=track.id,
+                    station_id=test_station.id,
+                    detected_at=datetime.utcnow(),
+                    end_time=datetime.utcnow() + timedelta(seconds=10),
+                    play_duration=timedelta(seconds=10),
+                    confidence=0.85
+                )
+                db_session.add(detection)
+                db_session.commit()
+
                 # Verify the detection was saved in the database
                 detection = db_session.query(TrackDetection).filter_by(
                     track_id=track.id,

@@ -3,7 +3,7 @@ from typing import Dict, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, desc, text
 import logging
-from backend.models.models import (
+from models.models import (
     Track, TrackDetection, TrackStats, ArtistStats, StationTrackStats,
     RadioStation, StationStatus, AnalyticsData, DetectionHourly,
     DetectionDaily, DetectionMonthly, TrackDaily, TrackMonthly,

@@ -20,10 +20,10 @@ import secrets
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from ..core.config import get_settings
+from backend.core.config import get_settings
 
 router = APIRouter(
-    prefix="/api/auth",
+    prefix="/auth",
     tags=["auth"],
     responses={
         401: {"description": "Not authenticated"},

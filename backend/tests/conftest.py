@@ -18,6 +18,7 @@ import uuid
 import asyncio
 import pytest_asyncio
 import logging
+import io
 
 from backend.models.database import Base, get_db, TestingSessionLocal, test_engine
 from backend.models.models import (
@@ -224,7 +225,8 @@ def test_client(db_session: Session, test_user: User, auth_headers: Dict[str, st
 @pytest.fixture(scope="function")
 def event_loop():
     """Create an event loop for async tests."""
-    loop = asyncio.new_event_loop()
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
     yield loop
     loop.close()
 
@@ -543,4 +545,70 @@ def test_detection(db_session: Session, test_track: Track, test_station: RadioSt
     db_session.add(detection)
     db_session.commit()
     db_session.refresh(detection)
-    return detection 
+    return detection
+
+@pytest.fixture
+def mock_audio_data() -> bytes:
+    """Create mock audio data for testing."""
+    # Create a simple sine wave as mock audio data
+    sample_rate = 44100
+    duration = 3  # seconds
+    frequency = 440  # Hz (A4 note)
+    t = np.linspace(0, duration, int(sample_rate * duration), False)
+    audio_data = np.sin(2 * np.pi * frequency * t)
+    audio_data = (audio_data * 32767).astype(np.int16)
+    
+    # Convert to bytes
+    buffer = io.BytesIO()
+    np.save(buffer, audio_data)
+    return buffer.getvalue()
+
+@pytest.fixture
+def real_audio_data_path():
+    """Return the path to the real audio data directory."""
+    return os.path.join(os.path.dirname(__file__), "data", "audio")
+
+@pytest.fixture
+def sample_audio_file(real_audio_data_path):
+    """Create a sample audio file for testing if it doesn't exist."""
+    # Create a simple sine wave as sample audio data
+    sample_rate = 44100
+    duration = 5  # seconds
+    frequency = 440  # Hz (A4 note)
+    t = np.linspace(0, duration, int(sample_rate * duration), False)
+    audio_data = np.sin(2 * np.pi * frequency * t)
+    audio_data = (audio_data * 32767).astype(np.int16)
+    
+    # Save to a file
+    file_path = os.path.join(real_audio_data_path, "sample1.mp3")
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
+    # Check if file already exists
+    if not os.path.exists(file_path):
+        try:
+            import soundfile as sf
+            sf.write(file_path.replace(".mp3", ".wav"), audio_data, sample_rate)
+            # Convert to MP3 if possible
+            try:
+                from pydub import AudioSegment
+                AudioSegment.from_wav(file_path.replace(".mp3", ".wav")).export(file_path, format="mp3")
+                os.remove(file_path.replace(".mp3", ".wav"))
+            except (ImportError, FileNotFoundError):
+                # If pydub is not available or ffmpeg is not installed, use the WAV file
+                file_path = file_path.replace(".mp3", ".wav")
+        except ImportError:
+            # If soundfile is not available, create a dummy file
+            with open(file_path, "wb") as f:
+                f.write(b"Dummy audio file")
+    
+    return file_path
+
+@pytest.fixture
+def real_audio_data(sample_audio_file):
+    """Load real audio data for testing."""
+    try:
+        with open(sample_audio_file, "rb") as f:
+            return f.read()
+    except FileNotFoundError:
+        # If the file doesn't exist, return mock audio data
+        return mock_audio_data() 

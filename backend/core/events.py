@@ -5,12 +5,12 @@ import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session, sessionmaker
-from ..models import Base
-from ..models.database import engine
-from ..utils.logging_config import setup_logging
-from ..core.config.redis import init_redis, close_redis
-from ..utils.analytics.stats_updater import StatsUpdater
-from ..utils.streams.websocket import manager
+from backend.models.models import Base
+from backend.models.database import engine
+from backend.utils.logging_config import setup_logging
+from backend.core.config.redis import init_redis, close_redis
+from backend.utils.analytics.stats_updater import StatsUpdater
+from backend.utils.streams.websocket import manager
 
 logger = logging.getLogger(__name__)
 

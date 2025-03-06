@@ -10,11 +10,13 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime
 import logging
+from sqlalchemy import inspect
 
 from backend.models.database import get_db
 from backend.models.models import RadioStation, StationStatus
 from backend.utils.auth import get_current_user
 from backend.schemas.base import StationCreate, StationResponse, StationUpdate
+from backend.utils.radio import fetch_and_save_senegal_stations
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -30,6 +32,7 @@ async def get_stations(
     skip: int = 0,
     limit: int = 100,
     status: Optional[str] = None,
+    country: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -39,6 +42,9 @@ async def get_stations(
     # Apply filters if provided
     if status:
         query = query.filter(RadioStation.status == status)
+    
+    if country:
+        query = query.filter(RadioStation.country == country)
     
     # Apply pagination
     stations = query.order_by(RadioStation.name).offset(skip).limit(limit).all()
@@ -135,4 +141,77 @@ async def delete_station(
     db.delete(db_station)
     db.commit()
     
-    return {"message": "Station deleted successfully"} 
+    return {"message": "Station deleted successfully"}
+
+@router.post("/fetch-senegal-stations")
+async def fetch_senegal_stations(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Manually fetch Senegalese radio stations from Radio Browser API."""
+    try:
+        logger.info("Manually fetching Senegalese radio stations...")
+        stations_count = await fetch_and_save_senegal_stations(db)
+        
+        return {
+            "status": "success",
+            "message": f"Successfully processed {stations_count} Senegalese radio stations",
+            "count": stations_count
+        }
+    except Exception as e:
+        logger.error(f"Error fetching Senegalese radio stations: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch Senegalese radio stations: {str(e)}"
+        )
+
+@router.get("/senegal-stations/health")
+async def senegal_stations_health(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Get health information about Senegalese radio stations."""
+    try:
+        # Check if radio_stations table exists
+        inspector = inspect(db.bind)
+        if not inspector.has_table("radio_stations"):
+            return {
+                "status": "initializing",
+                "message": "Radio stations table is not yet created",
+                "total_stations": 0,
+                "active_stations": 0,
+                "last_updated": None,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        # Count total Senegalese stations
+        total_count = db.query(RadioStation).filter(RadioStation.country == "Senegal").count()
+        
+        # Count active Senegalese stations
+        active_count = db.query(RadioStation).filter(
+            RadioStation.country == "Senegal",
+            RadioStation.is_active == True
+        ).count()
+        
+        # Get last updated station
+        last_updated = db.query(RadioStation).filter(
+            RadioStation.country == "Senegal"
+        ).order_by(RadioStation.updated_at.desc()).first()
+        
+        return {
+            "status": "success",
+            "total_stations": total_count,
+            "active_stations": active_count,
+            "last_updated": last_updated.updated_at.isoformat() if last_updated else None,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting Senegalese stations health: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "total_stations": 0,
+            "active_stations": 0,
+            "last_updated": None,
+            "timestamp": datetime.utcnow().isoformat()
+        } 

@@ -1,7 +1,7 @@
 """Redis configuration module."""
 
 import redis.asyncio as redis
-from ..core.config import get_settings
+from backend.core.config import get_settings
 
 async def init_redis_pool() -> redis.Redis:
     """Initialize Redis connection pool."""
