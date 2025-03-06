@@ -97,6 +97,7 @@ class FeatureExtractor:
         
         # Calculer la durée audio
         play_duration = self.get_audio_duration(audio_data)
+        logger.debug(f"Calculated audio duration: {play_duration:.2f} seconds from {len(audio_data)} samples at {self.sample_rate} Hz")
         
         # Convertir en mono si nécessaire
         if len(audio_data.shape) == 2 and audio_data.shape[1] > 1:
@@ -168,6 +169,42 @@ class FeatureExtractor:
         # Calculer l'empreinte digitale audio (simulée ici)
         fingerprint = self._calculate_fingerprint(audio_mono)
         
+        # Extract mel spectrogram
+        try:
+            mel_spectrogram = librosa.feature.melspectrogram(
+                y=audio_mono,
+                sr=self.sample_rate,
+                n_fft=self.n_fft,
+                hop_length=self.hop_length,
+                n_mels=self.n_mels
+            )
+        except Exception as e:
+            logger.error(f"Error extracting mel spectrogram: {str(e)}")
+            mel_spectrogram = np.zeros((self.n_mels, 10))  # Default value
+            
+        # Extract spectral contrast
+        try:
+            spectral_contrast = librosa.feature.spectral_contrast(
+                y=audio_mono,
+                sr=self.sample_rate,
+                n_fft=self.n_fft,
+                hop_length=self.hop_length
+            )
+        except Exception as e:
+            logger.error(f"Error extracting spectral contrast: {str(e)}")
+            spectral_contrast = np.zeros((7, 10))  # Default value
+            
+        # Prepare features for is_music method
+        music_detection_features = {
+            "mel_spectrogram": mel_spectrogram,
+            "mfcc": mfccs,
+            "spectral_contrast": spectral_contrast,
+            "chroma": chroma
+        }
+        
+        # Determine if it's music
+        is_music_result, music_confidence = self.is_music(music_detection_features)
+        
         # Assembler toutes les caractéristiques
         features = {
             "play_duration": play_duration,
@@ -177,8 +214,8 @@ class FeatureExtractor:
             "tempo": tempo,
             "rhythm_strength": rhythm_strength,
             "fingerprint": fingerprint,
-            "is_music": self.is_music(audio_mono),
-            "confidence": self._calculate_confidence(audio_mono)
+            "is_music": is_music_result,
+            "confidence": music_confidence
         }
         
         logger.debug(f"Extracted features with play_duration: {play_duration:.2f} seconds")
@@ -227,7 +264,18 @@ class FeatureExtractor:
         return float(confidence)
     
     def is_music(self, features: Dict[str, np.ndarray]) -> Tuple[bool, float]:
-        """Determine if the audio segment is music based on extracted features."""
+        """Determine if the audio segment is music based on extracted features.
+        
+        Args:
+            features: Dictionary containing audio features
+            
+        Returns:
+            Tuple of (is_music, confidence)
+            
+        Raises:
+            ValueError: If features is not a dictionary or missing required keys
+            TypeError: If features are not numpy arrays
+        """
         try:
             # Input validation
             if not isinstance(features, dict):
@@ -274,40 +322,15 @@ class FeatureExtractor:
             elif rhythm_strength < 0.2 or harmonic_ratio < 0.2:
                 base_confidence *= 0.7  # One primary feature very weak
                 
-            # Apply penalties for noise-like characteristics
-            if spectral_flux > 0.7:  # Very chaotic
-                base_confidence *= 0.6
-            if timbre_stability < 0.2:  # Very unstable
-                base_confidence *= 0.8
-                
-            # Apply boosts for strong musical features
-            if rhythm_strength > 0.6 and harmonic_ratio > 0.5:
-                base_confidence = min(1.0, base_confidence * 1.2)  # Strong rhythm and harmony
-            if timbre_stability > 0.7 and spectral_flux < 0.3:
-                base_confidence = min(1.0, base_confidence * 1.1)  # Very stable sound
-                
-            # Calculate final confidence
-            confidence = float(np.clip(base_confidence, 0, 1))
+            # Apply threshold and return result
+            is_music = base_confidence >= 0.6
             
-            # Use dynamic threshold based on feature strengths
-            threshold = 0.4  # Base threshold
-            
-            # Raise threshold if noise-like features are strong
-            if spectral_flux > 0.6 or timbre_stability < 0.2:
-                threshold = 0.45
-                
-            # Lower threshold if strong musical features are present
-            if rhythm_strength > 0.5 and harmonic_ratio > 0.4:
-                threshold = 0.35
-            
-            logger.debug(f"confidence={confidence:.2f}")
-            return confidence > threshold, confidence
+            # Return tuple of (is_music, confidence)
+            return (is_music, base_confidence)
             
         except Exception as e:
-            if isinstance(e, (ValueError, TypeError)):
-                raise
             logger.error(f"Error in music detection: {str(e)}")
-            return False, 0.0
+            return (False, 0.0)  # Default to not music with zero confidence
         
     def _calculate_rhythm_strength(self, mel_spectrogram: np.ndarray) -> float:
         """Calculate rhythm strength from mel spectrogram."""

@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # API endpoint for music detection
-API_URL = "http://localhost:8000/detect-music"
+API_URL = "http://localhost:8000/api/detect-music"
 
 def test_music_detection():
     """Test music detection on all radio stations in the database."""
@@ -49,14 +49,8 @@ def test_music_detection():
             logger.info(f"Testing music detection on: {station.name}")
             
             try:
-                # Prepare request data
-                data = {
-                    "station_id": station.id,
-                    "url": station.stream_url
-                }
-                
-                # Call the music detection API
-                response = requests.post(API_URL, json=data)
+                # Call the music detection API with station_id as a query parameter
+                response = requests.post(f"{API_URL}?station_id={station.id}")
                 response.raise_for_status()
                 
                 # Process response

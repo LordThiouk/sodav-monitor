@@ -21,9 +21,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # API endpoints
-BASE_URL = "http://localhost:8000/api"
-LOGIN_URL = f"{BASE_URL}/auth/login"
-DETECT_ALL_URL = f"{BASE_URL}/detect-music-all"
+API_URL = "http://localhost:8000/api"
+AUTH_URL = f"{API_URL}/auth/login"
+DETECT_ALL_URL = f"{API_URL}/detect-music-all"
 
 # Admin credentials (should be stored securely in a real application)
 ADMIN_EMAIL = "admin@sodav.sn"
@@ -37,7 +37,7 @@ def get_auth_token():
             "password": ADMIN_PASSWORD
         }
         
-        response = requests.post(LOGIN_URL, data=login_data)
+        response = requests.post(AUTH_URL, data=login_data)
         response.raise_for_status()
         
         token_data = response.json()
@@ -48,49 +48,56 @@ def get_auth_token():
         return None
 
 def detect_music_all_stations():
-    """Detect music on all active radio stations at once."""
+    """Detect music on all active radio stations."""
     try:
         # Initialize the database
         init_db()
         
-        # Get authentication token
+        # Set up logging
+        logging.basicConfig(level=logging.DEBUG)
+        
+        # Get auth token
         token = get_auth_token()
         if not token:
             logger.error("Failed to get authentication token")
-            return {"status": "error", "message": "Authentication failed"}
+            return
         
-        # Set up headers with authentication token
+        # Set up headers
         headers = {
-            "Authorization": f"Bearer {token}"
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
         }
         
         logger.info("Starting music detection on all active stations...")
         
-        # Call the music detection API for all stations
+        # Make the request
         response = requests.post(DETECT_ALL_URL, headers=headers)
-        response.raise_for_status()
         
-        # Process response
-        result = response.json()
-        
-        # Save results to a file with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"detection_results_all_{timestamp}.json"
-        
-        with open(filename, 'w') as f:
-            json.dump(result, f, indent=4)
-        
-        logger.info(f"Music detection initiated for {result.get('stations_count', 0)} active stations")
-        logger.info(f"Results saved to {filename}")
-        
-        return result
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API request error: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        # Check if the request was successful
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"Music detection initiated for {result.get('stations_count', 0)} active stations")
+            
+            # Save the results to a file with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"detection_results_all_{timestamp}.json"
+            
+            with open(filename, "w") as f:
+                json.dump(result, f, indent=4)
+                
+            logger.info(f"Results saved to {filename}")
+            
+            # Print detailed results
+            logger.debug(f"Detailed results: {json.dumps(result, indent=4)}")
+            
+            return result
+        else:
+            logger.error(f"Failed to detect music: {response.status_code} - {response.text}")
+            return None
+            
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Error detecting music on all stations: {str(e)}")
+        return None
 
 if __name__ == "__main__":
     detect_music_all_stations() 

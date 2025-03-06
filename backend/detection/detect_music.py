@@ -10,6 +10,9 @@ from typing import Dict, Any, Optional, List, Union
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import numpy as np
+import librosa
+import io
+import soundfile as sf
 
 from backend.models.models import RadioStation, Track, Artist, TrackDetection
 from backend.detection.audio_processor.core import AudioProcessor
@@ -75,61 +78,20 @@ class MusicDetector:
             
             # Get audio data from stream
             logger.info(f"Getting audio data from {station.name} ({station.stream_url})")
-            audio_data = await self.stream_handler.get_audio_data(station.stream_url)
+            audio_bytes = await self.stream_handler.get_audio_data(station.stream_url)
             
-            if audio_data is None or len(audio_data) == 0:
+            if audio_bytes is None or len(audio_bytes) == 0:
                 logger.error(f"Failed to get audio data from {station.name}")
                 return {
                     "status": "error",
                     "message": f"Failed to get audio data from {station.name}"
                 }
             
-            # Process audio data
-            logger.info(f"Processing audio data from {station.name}")
-            result = await self.audio_processor.process_stream(audio_data)
-            
-            if result.get("type") == "speech":
-                logger.info(f"Speech detected on {station.name}")
-                return {
-                    "status": "success",
-                    "message": f"Speech detected on {station.name}",
-                    "details": {
-                        "station_id": station_id,
-                        "station_name": station.name,
-                        "type": "speech",
-                        "confidence": result.get("confidence", 0.0)
-                    }
-                }
-            
-            if result.get("type") == "music":
-                logger.info(f"Music detected on {station.name}: {result.get('track', {}).get('title')} by {result.get('track', {}).get('artist')}")
-                return {
-                    "status": "success",
-                    "message": f"Music detected on {station.name}",
-                    "details": {
-                        "station_id": station_id,
-                        "station_name": station.name,
-                        "type": "music",
-                        "source": result.get("source"),
-                        "confidence": result.get("confidence", 0.0),
-                        "track": result.get("track", {})
-                    }
-                }
-            
-            logger.warning(f"Unknown content detected on {station.name}")
-            return {
-                "status": "success",
-                "message": f"Unknown content detected on {station.name}",
-                "details": {
-                    "station_id": station_id,
-                    "station_name": station.name,
-                    "type": "unknown",
-                    "confidence": result.get("confidence", 0.0)
-                }
-            }
+            # Process the audio file
+            return await self.process_audio_file(audio_bytes, station_id)
             
         except Exception as e:
-            logger.error(f"Error detecting music from station {station_id}: {e}")
+            logger.error(f"Error detecting music from station {station_id}: {str(e)}")
             return {
                 "status": "error",
                 "message": f"Error detecting music from station {station_id}: {str(e)}"
@@ -215,49 +177,96 @@ class MusicDetector:
             Dictionary with detection results
         """
         try:
-            # Convert bytes to numpy array
-            audio_array = np.frombuffer(audio_data, dtype=np.float32)
+            import librosa
+            import io
+            import soundfile as sf
+            
+            # Get station name if station_id is provided
+            station_name = None
+            if station_id:
+                station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
+                if station:
+                    station_name = station.name
+            
+            # Try to load the audio data using soundfile first
+            try:
+                with io.BytesIO(audio_data) as audio_file:
+                    # Try to determine the file format
+                    audio_array, sample_rate = sf.read(audio_file)
+                    
+                    # Convert to mono if stereo
+                    if len(audio_array.shape) > 1 and audio_array.shape[1] > 1:
+                        audio_array = np.mean(audio_array, axis=1)
+            except Exception as sf_error:
+                logger.warning(f"SoundFile failed to load audio: {sf_error}. Trying librosa...")
+                try:
+                    # Try librosa as a fallback
+                    audio_array, sample_rate = librosa.load(io.BytesIO(audio_data), sr=None)
+                except Exception as librosa_error:
+                    logger.error(f"Both SoundFile and librosa failed to load audio: {librosa_error}")
+                    return {
+                        "status": "error",
+                        "message": f"Failed to load audio data: {librosa_error}"
+                    }
             
             # Process audio data
-            logger.info("Processing audio file")
+            if station_name:
+                logger.info(f"Processing audio data from {station_name}")
+            else:
+                logger.info("Processing audio file")
+                
             result = await self.audio_processor.process_stream(audio_array)
             
-            if result.get("type") == "speech":
-                logger.info("Speech detected in audio file")
-                return {
-                    "status": "success",
-                    "message": "Speech detected in audio file",
-                    "details": {
-                        "type": "speech",
-                        "confidence": result.get("confidence", 0.0)
-                    }
-                }
-            
-            if result.get("type") == "music":
-                logger.info(f"Music detected in audio file: {result.get('track', {}).get('title')} by {result.get('track', {}).get('artist')}")
-                return {
-                    "status": "success",
-                    "message": "Music detected in audio file",
-                    "details": {
-                        "type": "music",
-                        "source": result.get("source"),
-                        "confidence": result.get("confidence", 0.0),
-                        "track": result.get("track", {})
-                    }
-                }
-            
-            logger.warning("Unknown content detected in audio file")
-            return {
+            # Prepare response with station info if available
+            response = {
                 "status": "success",
-                "message": "Unknown content detected in audio file",
                 "details": {
-                    "type": "unknown",
+                    "type": result.get("type", "unknown"),
                     "confidence": result.get("confidence", 0.0)
                 }
             }
             
+            if station_id:
+                response["details"]["station_id"] = station_id
+            
+            if station_name:
+                response["details"]["station_name"] = station_name
+            
+            # Add type-specific details
+            if result.get("type") == "speech":
+                if station_name:
+                    logger.info(f"Speech detected on {station_name}")
+                    response["message"] = f"Speech detected on {station_name}"
+                else:
+                    logger.info("Speech detected in audio file")
+                    response["message"] = "Speech detected in audio file"
+            
+            elif result.get("type") == "music":
+                track_title = result.get("track", {}).get("title", "Unknown")
+                track_artist = result.get("track", {}).get("artist", "Unknown")
+                
+                if station_name:
+                    logger.info(f"Music detected on {station_name}: {track_title} by {track_artist}")
+                    response["message"] = f"Music detected on {station_name}"
+                else:
+                    logger.info(f"Music detected in audio file: {track_title} by {track_artist}")
+                    response["message"] = "Music detected in audio file"
+                
+                response["details"]["source"] = result.get("source")
+                response["details"]["track"] = result.get("track", {})
+            
+            else:
+                if station_name:
+                    logger.warning(f"Unknown content detected on {station_name}")
+                    response["message"] = f"Unknown content detected on {station_name}"
+                else:
+                    logger.warning("Unknown content detected in audio file")
+                    response["message"] = "Unknown content detected in audio file"
+            
+            return response
+            
         except Exception as e:
-            logger.error(f"Error processing audio file: {e}")
+            logger.error(f"Error processing audio file: {str(e)}")
             return {
                 "status": "error",
                 "message": f"Error processing audio file: {str(e)}"
