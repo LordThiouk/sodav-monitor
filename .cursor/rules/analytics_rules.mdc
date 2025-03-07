@@ -2,6 +2,10 @@
 description: Analytics and Reporting Rules
 globs: *
 ---
+---
+description: Analytics and Reporting Rules
+globs: *
+---
 ### Analytics Guidelines
 
 1. Real-time Updates

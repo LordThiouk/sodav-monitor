@@ -5,13 +5,12 @@ from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
 import json
 from datetime import datetime
+from backend.config import PATHS
 
 def setup_logging(name: str = None):
     """Configure logging with rotating file handler and console output"""
-    # Create logs directory if it doesn't exist
-    log_dir = Path("logs")
-    if not log_dir.exists():
-        log_dir.mkdir(parents=True)
+    # Use LOG_DIR from config
+    log_dir = Path(PATHS["LOG_DIR"])
     
     # Configure logging
     logger = logging.getLogger(name)
@@ -30,8 +29,7 @@ def setup_logging(name: str = None):
     
     # Create module-specific log directory
     module_dir = log_dir / (name.split('.')[0] if name else 'app')
-    if not module_dir.exists():
-        module_dir.mkdir(parents=True)
+    module_dir.mkdir(parents=True, exist_ok=True)
     
     # Create and configure file handler with daily rotation
     log_file = module_dir / f"{datetime.now().strftime('%Y-%m-%d')}.log"

@@ -43,7 +43,12 @@ ENV/
 *.swo
 
 # Logs
-logs/
+/logs/  # Root logs directory (deprecated)
+backend/logs/*.log
+backend/logs/*.json
+!backend/logs/__init__.py
+!backend/logs/log_manager.py
+logs
 *.log
 npm-debug.log*
 yarn-debug.log*

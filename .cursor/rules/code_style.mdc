@@ -2,6 +2,10 @@
 description: Code Style and Organization Rules
 globs: *
 ---
+---
+description: Code Style and Organization Rules
+globs: *
+---
 ### Code Style Guidelines
 
 1. File Naming Conventions

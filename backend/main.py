@@ -5,35 +5,39 @@ from fastapi.staticfiles import StaticFiles
 from typing import Optional, Dict
 import uvicorn
 import os
+import logging
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
-import logging
 import redis.asyncio as redis
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-# Local imports
-from core.events import event_manager
-from routers import (
+# Local imports - using consistent backend prefix
+from backend.logs.log_manager import LogManager
+from backend.core.events import event_manager
+from backend.routers import (
     auth,
     websocket
 )
-from routers.analytics import router as analytics_router
-from routers.reports import router as reports_router
-from routers.channels import router as channels_router
-from routers.detections import router as detections_router
-from models.database import init_db, get_db
-from core.config import get_settings
-from utils.redis_config import init_redis_pool
-from utils.auth import get_current_user
-from utils.radio import fetch_and_save_senegal_stations
+from backend.routers.analytics import router as analytics_router
+from backend.routers.reports import router as reports_router
+from backend.routers.channels import router as channels_router
+from backend.routers.detections import router as detections_router
+from backend.models.database import init_db, get_db
+from backend.core.config import get_settings
+from backend.utils.redis_config import init_redis_pool
+from backend.utils.auth import get_current_user
+from backend.utils.radio import fetch_and_save_senegal_stations
+from backend.detection.audio_processor.stream_handler import StreamHandler
+from backend.detection.audio_processor.feature_extractor import FeatureExtractor
+from backend.scripts.detection.detect_music_all_stations import detect_music_all_stations
 
-# Load environment variables
+# Load environment variables first
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Initialize logging once
+log_manager = LogManager()
+logger = log_manager.get_logger("main")
 
 # Define lifespan context manager
 @asynccontextmanager
@@ -56,14 +60,26 @@ async def lifespan(app: FastAPI):
         app.state.redis_pool = await init_redis_pool()
         logger.info("Redis pool initialized successfully")
         
-        # Fetch Senegalese radio stations
+        # Fetch Senegalese radio stations and start detection
         db = next(get_db())
         try:
             logger.info("Fetching Senegalese radio stations from Radio Browser API...")
             stations_count = await fetch_and_save_senegal_stations(db)
             logger.info(f"Successfully processed {stations_count} Senegalese radio stations")
+            
+            if stations_count > 0:
+                # Lancer la détection de musique sur toutes les stations
+                logger.info("Starting music detection on all stations...")
+                detection_result = await detect_music_all_stations()
+                if detection_result:
+                    logger.info(f"Music detection initiated for {detection_result.get('stations_count', 0)} active stations")
+                else:
+                    logger.warning("Failed to start music detection on stations")
+            else:
+                logger.warning("No stations found, skipping music detection")
+                
         except Exception as e:
-            logger.error(f"Error fetching Senegalese radio stations: {str(e)}")
+            logger.error(f"Error during startup sequence: {str(e)}")
         finally:
             db.close()
             
@@ -76,7 +92,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     try:
         if hasattr(app.state, 'redis_pool'):
-            await app.state.redis_pool.aclose()  # Using aclose() instead of close()
+            await app.state.redis_pool.aclose()
             logger.info("Redis pool closed successfully")
     except Exception as e:
         logger.error(f"Error during shutdown: {str(e)}")

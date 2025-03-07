@@ -24,19 +24,7 @@ $env:ENV = $Environment
 Write-Host "Démarrage de l'application en environnement $Environment..."
 Write-Host "Utilisation du fichier de configuration: $envFile"
 
-# Créer les répertoires nécessaires s'ils n'existent pas
-$directories = @(
-    "backend/logs",
-    "backend/reports",
-    "backend/data"
-)
-
-foreach ($dir in $directories) {
-    if (-not (Test-Path $dir)) {
-        Write-Host "Création du répertoire: $dir"
-        New-Item -Path $dir -ItemType Directory | Out-Null
-    }
-}
+# Note: Les répertoires nécessaires sont créés automatiquement par config.py
 
 # Démarrer l'application
 if ($Environment -eq "development") {

@@ -29,13 +29,13 @@ from backend.models.models import (
 from backend.utils.auth import get_current_user
 from backend.utils.file_manager import get_report_path
 from backend.core.config import get_settings
+from backend.config import PATHS
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Create reports directory if it doesn't exist
-REPORTS_DIR = Path(__file__).parent.parent.parent / "reports"
-REPORTS_DIR.mkdir(exist_ok=True)
+# Use REPORT_DIR from config
+REPORTS_DIR = Path(PATHS["REPORT_DIR"])
 
 # Create router
 router = APIRouter(

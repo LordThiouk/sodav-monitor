@@ -10,6 +10,14 @@ Un système de monitoring automatisé pour les chaînes de radio et de télévis
 - Alternative rentable et évolutive aux solutions existantes
 - Exploitation des technologies cloud, IA et Big Data pour un traitement efficace
 
+## 📝 Logs et Monitoring
+
+Les logs de l'application sont centralisés dans le dossier `backend/logs/` :
+- `sodav.log` : Logs généraux de l'application
+- `error.log` : Logs d'erreurs uniquement
+
+Note : Le dossier `logs` à la racine du projet est déprécié. Tous les logs doivent être stockés dans `backend/logs/`.
+
 ## 🔒 Sécurité
 
 La sécurité est une priorité pour le projet SODAV Monitor. Veuillez suivre ces directives :
@@ -75,6 +83,8 @@ Le projet SODAV Monitor prend en charge plusieurs environnements de déploiement
 Pour plus de détails sur les configurations spécifiques à chaque environnement, consultez les commentaires dans le fichier `.env.example`.
 
 ## 📂 Structure du Projet
+
+Pour plus de détails sur l'organisation du projet et les changements structurels récents, consultez [docs/REORGANISATION.md](docs/REORGANISATION.md).
 
 ```
 /sodav_monitor/

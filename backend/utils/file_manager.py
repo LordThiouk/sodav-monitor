@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+from backend.config import PATHS, logger
 
 def get_report_path(report_type: str, date: Optional[datetime] = None) -> str:
     """
@@ -19,9 +20,8 @@ def get_report_path(report_type: str, date: Optional[datetime] = None) -> str:
     if date is None:
         date = datetime.now()
         
-    # Create reports directory if it doesn't exist
-    reports_dir = Path("reports")
-    reports_dir.mkdir(exist_ok=True)
+    # Use the REPORT_DIR from config
+    reports_dir = Path(PATHS["REPORT_DIR"])
     
     # Create subdirectory for report type
     type_dir = reports_dir / report_type
@@ -43,6 +43,7 @@ def ensure_directory_exists(path: str) -> None:
         path: Path to the directory
     """
     os.makedirs(path, exist_ok=True)
+    logger.debug(f"Directory ensured: {path}")
 
 def clean_old_reports(days: int = 30) -> None:
     """

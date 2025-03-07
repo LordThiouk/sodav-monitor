@@ -123,11 +123,20 @@ PATHS = {
     "LOG_DIR": os.path.join(BACKEND_DIR, "logs"),
     "REPORT_DIR": os.path.join(BACKEND_DIR, "reports"),
     "MIGRATION_DIR": os.path.join(BACKEND_DIR, "models", "migrations"),
+    "STATIC_DIR": os.path.join(BASE_DIR, "static")  # Ajout du dossier static à la racine
 }
 
-# Création des dossiers nécessaires
-for path in PATHS.values():
-    os.makedirs(path, exist_ok=True)
+# Création des dossiers nécessaires avec logging
+logger.info("Création des dossiers nécessaires...")
+for path_name, path in PATHS.items():
+    try:
+        if not os.path.exists(path):
+            os.makedirs(path)
+            logger.info(f"Dossier créé : {path_name} ({path})")
+        else:
+            logger.debug(f"Dossier existant : {path_name} ({path})")
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du dossier {path_name} ({path}): {str(e)}")
 
 # Configuration des logs par défaut
 LOGGING_CONFIG = {

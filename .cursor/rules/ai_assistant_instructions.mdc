@@ -2,6 +2,10 @@
 description: Detailed AI Assistant Instructions and Behavior Guidelines
 globs: *
 ---
+---
+description: Detailed AI Assistant Instructions and Behavior Guidelines
+globs: *
+---
 <customInstructions>
 ### 1. Core AI Assistant Capabilities
 - Expert-level knowledge in:

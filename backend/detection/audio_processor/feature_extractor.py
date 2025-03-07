@@ -8,8 +8,11 @@ from typing import Dict, Any, Optional, Tuple
 import io
 from datetime import datetime
 from backend.utils.logging_config import setup_logging
+from backend.logs.log_manager import LogManager
 
-logger = setup_logging(__name__)
+# Initialize logging
+log_manager = LogManager()
+logger = log_manager.get_logger("detection.audio_processor.feature_extractor")
 
 class FeatureExtractor:
     """Handles audio feature extraction and music detection."""

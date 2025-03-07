@@ -6,6 +6,7 @@ from pathlib import Path
 from backend.models.database import get_database_url, SessionLocal
 from backend.models.models import Report, User, ReportStatus
 from backend.routers.reports import get_summary_data
+from backend.config import PATHS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +19,7 @@ def create_test_report():
         db = SessionLocal()
         
         try:
-            # Create test admin user if not exists
+            # Get test admin user if not exists
             user = db.query(User).filter(User.username == "admin").first()
             if not user:
                 user = User(
@@ -54,8 +55,8 @@ def create_test_report():
             # Get summary data
             data = get_summary_data(start_date, end_date, db)
             
-            # Create reports directory if it doesn't exist
-            report_dir = Path(__file__).parent / "reports"
+            # Use REPORT_DIR from config
+            report_dir = Path(PATHS["REPORT_DIR"]) / "analytics"
             report_dir.mkdir(parents=True, exist_ok=True)
             
             # Save to CSV

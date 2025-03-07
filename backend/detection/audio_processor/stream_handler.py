@@ -5,8 +5,12 @@ import numpy as np
 import asyncio
 from typing import Optional, Dict, Any, Union
 from datetime import datetime
+import requests
+from backend.logs.log_manager import LogManager
 
-logger = logging.getLogger(__name__)
+# Initialize logging
+log_manager = LogManager()
+logger = log_manager.get_logger("detection.audio_processor.stream_handler")
 
 class StreamHandler:
     """Handles audio stream processing and buffering."""
@@ -164,7 +168,6 @@ class StreamHandler:
             raise ValueError("Stream URL cannot be empty")
             
         try:
-            import requests
             import io
             import time
             
