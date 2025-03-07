@@ -9,6 +9,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Déterminer quel fichier .env charger
+env = os.environ.get("ENV", "development")
+env_file = f".env.{env}"
+
+# Vérifier si le fichier existe, sinon utiliser .env
+if not os.path.exists(env_file) and os.path.exists(".env"):
+    env_file = ".env"
+    logger.info(f"Fichier {env_file} non trouvé, utilisation de .env")
+else:
+    logger.info(f"Utilisation du fichier de configuration: {env_file}")
+
 class Settings(BaseSettings):
     """Configuration globale de l'application."""
     
@@ -17,9 +28,10 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
     DEBUG: bool = False
+    ENV: str = "development"  # development ou production
 
     # Configuration de la base de données
-    DATABASE_URL: str = "postgresql://sodav:sodav123@localhost:5432/sodav_dev"
+    DATABASE_URL: Optional[str] = None
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
     
@@ -30,7 +42,7 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: Optional[str] = None
 
     # Configuration de sécurité
-    SECRET_KEY: str = "your-secret-key-here"
+    SECRET_KEY: Optional[str] = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     ALGORITHM: str = "HS256"
 
@@ -74,7 +86,7 @@ class Settings(BaseSettings):
     HEALTH_CHECK_INTERVAL: int = 60  # secondes
 
     model_config = ConfigDict(
-        env_file=".env",
+        env_file=env_file,
         case_sensitive=True,
         extra="allow"  # Allow extra fields from environment
     )
@@ -85,6 +97,13 @@ class Settings(BaseSettings):
             logger.warning("ACOUSTID_API_KEY not set. MusicBrainz detection will be disabled.")
         if not self.AUDD_API_KEY:
             logger.warning("AUDD_API_KEY not set. Audd detection will be disabled.")
+        if not self.SECRET_KEY:
+            logger.error("SECRET_KEY not set. This is a security risk. Please set a strong SECRET_KEY in your .env file.")
+        if not self.DATABASE_URL:
+            logger.error("DATABASE_URL not set. Database connection will fail. Please set DATABASE_URL in your .env file.")
+        
+        # Log l'environnement actuel
+        logger.info(f"Application running in {self.ENV} environment")
 
 @lru_cache()
 def get_settings() -> Settings:
@@ -95,7 +114,7 @@ def get_settings() -> Settings:
 
 # Configuration des chemins
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BACKEND_DIR = os.path.join(BASE_DIR, "backend")
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))  # Chemin direct vers le dossier backend actuel
 
 PATHS = {
     "BASE_DIR": BASE_DIR,

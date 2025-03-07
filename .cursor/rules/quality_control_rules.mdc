@@ -2,6 +2,10 @@
 description: Quality Control and Best Practices Rules
 globs: *
 ---
+---
+description: Quality Control and Best Practices Rules
+globs: *
+---
 <customInstructions>
 ### 1. Code Review Standards
 - Check code against style guide

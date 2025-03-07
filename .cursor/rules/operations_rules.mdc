@@ -2,6 +2,10 @@
 description: Operational Standards and Requirements
 globs: *
 ---
+---
+description: Operational Standards and Requirements
+globs: *
+---
 ### Operations Guidelines
 
 1. Server Monitoring

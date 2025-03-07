@@ -21,17 +21,22 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # API endpoints
-API_URL = "http://localhost:8000/api"
+API_URL = os.environ.get("API_URL", "http://localhost:8000/api")
 AUTH_URL = f"{API_URL}/auth/login"
 DETECT_ALL_URL = f"{API_URL}/detect-music-all"
 
-# Admin credentials (should be stored securely in a real application)
-ADMIN_EMAIL = "admin@sodav.sn"
-ADMIN_PASSWORD = "admin123"
+# Admin credentials from environment variables
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
 def get_auth_token():
     """Get authentication token by logging in."""
     try:
+        # Check if credentials are provided
+        if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+            logger.error("Admin credentials not provided. Please set ADMIN_EMAIL and ADMIN_PASSWORD environment variables.")
+            return None
+            
         login_data = {
             "username": ADMIN_EMAIL,
             "password": ADMIN_PASSWORD
@@ -100,4 +105,9 @@ def detect_music_all_stations():
         return None
 
 if __name__ == "__main__":
+    # Check if environment variables are set
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        logger.error("Admin credentials not provided. Please set ADMIN_EMAIL and ADMIN_PASSWORD environment variables.")
+        sys.exit(1)
+        
     detect_music_all_stations() 

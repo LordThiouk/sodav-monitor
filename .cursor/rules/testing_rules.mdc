@@ -2,6 +2,10 @@
 description: Testing Standards and Requirements
 globs: *
 ---
+---
+description: Testing Standards and Requirements
+globs: *
+---
 ### Testing Guidelines
 
 1. Test Organization

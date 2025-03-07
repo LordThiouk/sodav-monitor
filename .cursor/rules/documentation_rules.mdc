@@ -2,6 +2,10 @@
 description: Documentation Standards and Requirements
 globs: *
 ---
+---
+description: Documentation Standards and Requirements
+globs: *
+---
 ### Documentation Guidelines
 
 1. Project Structure Documentation

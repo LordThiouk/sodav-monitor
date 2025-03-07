@@ -2,6 +2,10 @@
 description: Master Instructions for AI Assistant
 globs: *
 ---
+---
+description: Master Instructions for AI Assistant
+globs: *
+---
 <customInstructions>
 ### 1. Project Understanding
 - Monitor radio streams in real-time
@@ -75,7 +79,7 @@ Follow this structure:
 ### 6. General Operation Rules
 - Monitor server logs continuously
 - API endpoints must return valid responses (status 200)
-- Handle errors with clear messages
+- Handle errors with clear messages, log stored in backend
 - Validate database migrations before deployment
 - Real-time detection recording with:
   - Detection time (detected_at)

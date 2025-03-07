@@ -7,6 +7,7 @@ import os
 import sys
 import logging
 from datetime import datetime
+import getpass
 
 # Add the parent directory to the path so we can import from backend
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -57,15 +58,32 @@ def create_admin_user(username: str, email: str, password: str):
         raise
 
 if __name__ == "__main__":
-    # Default admin credentials
-    default_username = "admin"
-    default_email = "admin@sodav.sn"
-    default_password = "admin123"
+    # Get admin credentials from environment variables or prompt user
+    default_username = os.environ.get("ADMIN_USERNAME", "admin")
+    default_email = os.environ.get("ADMIN_EMAIL", "admin@sodav.sn")
+    
+    # Use environment variable for password if available, otherwise prompt
+    if "ADMIN_PASSWORD" in os.environ:
+        default_password = os.environ["ADMIN_PASSWORD"]
+    else:
+        print("No ADMIN_PASSWORD environment variable found.")
+        default_password = getpass.getpass("Enter admin password: ")
+        
+        # Confirm password
+        confirm_password = getpass.getpass("Confirm admin password: ")
+        if default_password != confirm_password:
+            logger.error("Passwords do not match. Exiting.")
+            sys.exit(1)
     
     # Allow overriding from command line
     if len(sys.argv) > 3:
         default_username = sys.argv[1]
         default_email = sys.argv[2]
         default_password = sys.argv[3]
+        logger.warning("Using command line arguments for credentials is not secure. Consider using environment variables instead.")
     
+    if not default_password or default_password.strip() == "":
+        logger.error("Password cannot be empty. Exiting.")
+        sys.exit(1)
+        
     create_admin_user(default_username, default_email, default_password) 

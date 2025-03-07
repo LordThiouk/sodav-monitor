@@ -1,54 +1,122 @@
-# SODAV Monitor Scripts
+# Scripts Utilitaires pour SODAV Monitor
 
-This directory contains utility scripts for the SODAV Monitor application.
+Ce répertoire contient tous les scripts utilitaires pour le projet SODAV Monitor, organisés par catégorie.
 
-## Available Scripts
+## Structure des Dossiers
 
-### 1. Create Admin User
-`create_admin_user.py` - Creates an admin user in the database.
-
-**Usage:**
-```bash
-python create_admin_user.py [username] [email] [password]
+```
+backend/scripts/
+├── startup/                # Scripts de démarrage de l'application
+│   ├── start_env.ps1       # Script PowerShell pour démarrer l'application
+│   └── start_env.sh        # Script Bash pour démarrer l'application
+│
+├── database/               # Scripts liés à la base de données
+│   ├── fix_db_schema.py    # Correction du schéma de la base de données
+│   └── update_db_schema.py # Mise à jour du schéma de la base de données
+│
+├── migrations/             # Scripts liés aux migrations de la base de données
+│   ├── run_migration.py    # Exécution des migrations
+│   ├── check_migration.py  # Vérification des migrations
+│   ├── check_alembic_version.py # Vérification de la version d'Alembic
+│   ├── update_alembic_revision.py # Mise à jour de la révision Alembic
+│   └── run_updated_at_tests.py # Tests sur les champs updated_at
+│
+├── tests/                  # Scripts liés aux tests
+│   ├── run_all_tests.sh    # Exécution de tous les tests
+│   ├── run_tests.py        # Utilitaire Python pour exécuter les tests
+│   ├── run_integration_tests.sh # Exécution des tests d'intégration
+│   └── fix_integration_tests.sh # Correction des tests d'intégration
+│
+├── performance/            # Scripts liés aux tests de performance
+│   ├── generate_report.py  # Génération de rapports de performance
+│   └── run_station_monitoring_tests.py # Tests de performance du monitoring des stations
+│
+├── maintenance/            # Scripts de maintenance du code
+│   ├── reorganize.py       # Réorganisation des fichiers
+│   ├── reorganize_backend.py # Réorganisation spécifique au backend
+│   ├── update_imports.py   # Mise à jour des imports
+│   └── update_fastapi_lifespan.py # Mise à jour du cycle de vie FastAPI
+│
+├── detection/              # Scripts liés à la détection musicale
+│   ├── detect_music_all_stations.py # Détection sur toutes les stations
+│   ├── test_music_detection.py      # Test de la détection musicale
+│   └── check_detection_results.py   # Vérification des résultats de détection
+│
+├── data/                   # Scripts liés aux données
+│   ├── seed_test_data.py          # Génération de données de test
+│   ├── create_test_audio.py       # Création d'audio de test
+│   ├── fetch_senegal_stations.py  # Récupération des stations sénégalaises
+│   └── clean_db.py                # Nettoyage de la base de données
+│
+└── admin/                  # Scripts d'administration
+    └── create_admin_user.py       # Création d'utilisateurs administrateurs
 ```
 
-If no arguments are provided, it will create a default admin user with:
-- Username: admin
-- Email: admin@sodav.sn
-- Password: admin123
+## Utilisation
 
-### 2. Fetch Senegalese Radio Stations
-`fetch_senegal_stations.py` - Fetches radio stations from Senegal and adds them to the database.
+### Scripts de Démarrage
 
-**Usage:**
+Pour démarrer l'application dans différents environnements :
+
 ```bash
-python fetch_senegal_stations.py
+# Windows (PowerShell)
+.\backend\scripts\startup\start_env.ps1 development
+.\backend\scripts\startup\start_env.ps1 production
+
+# Linux/Mac (Bash)
+./backend/scripts/startup/start_env.sh development
+./backend/scripts/startup/start_env.sh production
 ```
 
-### 3. Test Music Detection
-`test_music_detection.py` - Tests the music detection functionality on all radio stations in the database.
+### Scripts de Test
 
-**Usage:**
+Pour exécuter les tests :
+
 ```bash
-python test_music_detection.py
+# Tous les tests
+python -m backend.scripts.tests.run_tests
+
+# Tests d'intégration
+./backend/scripts/tests/run_integration_tests.sh
 ```
 
-## Running the Scripts
+### Scripts de Base de Données
 
-Make sure the backend server is running before executing these scripts. To run a script:
+Pour gérer la base de données :
 
-1. Navigate to the scripts directory:
 ```bash
-cd backend/scripts
+# Mise à jour du schéma
+python -m backend.scripts.database.update_db_schema
+
+# Correction du schéma
+python -m backend.scripts.database.fix_db_schema
+
+# Exécution des migrations
+python -m backend.scripts.migrations.run_migration
 ```
 
-2. Execute the desired script:
+### Scripts de Performance
+
+Pour exécuter les tests de performance :
+
 ```bash
-python script_name.py
+# Tests de performance du monitoring des stations
+python -m backend.scripts.performance.run_station_monitoring_tests
+
+# Génération de rapports de performance
+python -m backend.scripts.performance.generate_report
 ```
 
-## Notes
+### Scripts d'Administration
 
-- These scripts should be run from the `backend/scripts` directory to ensure proper path resolution.
-- The scripts will automatically initialize the database if needed.
-- Results from the music detection test will be saved to a JSON file in the current directory. 
+Pour créer un utilisateur administrateur :
+
+```bash
+python -m backend.scripts.admin.create_admin_user --username admin --email admin@sodav.sn --password secure_password
+```
+
+## Remarques
+
+- Tous les scripts sont conçus pour être exécutés depuis la racine du projet.
+- Les scripts de démarrage créent automatiquement les répertoires nécessaires s'ils n'existent pas.
+- Pour plus d'informations sur chaque script, consultez la documentation en haut de chaque fichier. 

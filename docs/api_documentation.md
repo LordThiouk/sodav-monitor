@@ -269,7 +269,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ### Lancer la détection sur toutes les stations actives
 
-**Endpoint**: `POST /channels/detect-music`
+**Endpoint**: `POST /detect-music-all`
 
 **Description**: Déclenche le processus de détection de musique sur toutes les stations radio actives.
 

@@ -2,6 +2,12 @@
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
+.env.staging
+
+# Railway configuration with sensitive data
+railway.json
 
 # Python
 __pycache__/

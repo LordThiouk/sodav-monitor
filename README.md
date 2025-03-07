@@ -10,39 +10,116 @@ Un système de monitoring automatisé pour les chaînes de radio et de télévis
 - Alternative rentable et évolutive aux solutions existantes
 - Exploitation des technologies cloud, IA et Big Data pour un traitement efficace
 
+## 🔒 Sécurité
+
+La sécurité est une priorité pour le projet SODAV Monitor. Veuillez suivre ces directives :
+
+- **Variables d'environnement** : Toutes les données sensibles (mots de passe, clés API, etc.) doivent être stockées dans des variables d'environnement via un fichier `.env` qui n'est jamais commité.
+- **Configuration** : Utilisez le fichier `.env.example` comme modèle pour créer votre propre fichier `.env`.
+- **Railway** : Pour le déploiement sur Railway, utilisez `railway.json.example` comme modèle et configurez les secrets via la plateforme Railway.
+- **Scripts** : Pour les scripts nécessitant des identifiants, utilisez les variables d'environnement `ADMIN_EMAIL` et `ADMIN_PASSWORD`.
+
+Pour plus d'informations sur les bonnes pratiques de sécurité, consultez [docs/SECURITY_GUIDELINES.md](docs/SECURITY_GUIDELINES.md).
+
+## 🌍 Gestion des Environnements
+
+Le projet SODAV Monitor prend en charge plusieurs environnements de déploiement :
+
+### Configuration des Environnements
+
+1. **Fichiers de Configuration**
+   - `.env.development` : Configuration pour l'environnement de développement
+   - `.env.production` : Configuration pour l'environnement de production
+   - `.env.example` : Modèle pour créer vos propres fichiers de configuration
+
+2. **Création des Fichiers de Configuration**
+   ```bash
+   # Pour le développement
+   cp .env.example .env.development
+   # Éditez .env.development avec vos configurations de développement
+   
+   # Pour la production
+   cp .env.example .env.production
+   # Éditez .env.production avec vos configurations de production
+   ```
+
+3. **Démarrage de l'Application**
+   ```bash
+   # Pour Windows (PowerShell)
+   # Pour le développement
+   .\backend\scripts\startup\start_env.ps1 development
+   
+   # Pour la production
+   .\backend\scripts\startup\start_env.ps1 production
+   
+   # Pour Linux/Mac (Bash)
+   # Pour le développement
+   ./backend/scripts/startup/start_env.sh development
+   
+   # Pour la production
+   ./backend/scripts/startup/start_env.sh production
+   ```
+
+4. **Organisation des Fichiers**
+   - **Logs** : Les logs sont stockés dans `backend/logs/`
+   - **Rapports** : Les rapports générés sont stockés dans `backend/reports/`
+   - **Données** : Les données de l'application sont stockées dans `backend/data/`
+   - **Scripts** : Les scripts utilitaires sont dans `backend/scripts/` (organisés par catégorie)
+
+5. **Variables Spécifiques à l'Environnement**
+   - Base de données : Utilisez des bases de données différentes pour le développement et la production
+   - Redis : Configurez des instances Redis séparées pour chaque environnement
+   - Clés API : Utilisez des clés API distinctes pour le développement et la production
+   - Logs : Utilisez un niveau de log plus détaillé (DEBUG) en développement
+
+Pour plus de détails sur les configurations spécifiques à chaque environnement, consultez les commentaires dans le fichier `.env.example`.
+
 ## 📂 Structure du Projet
 
 ```
 /sodav_monitor/
 │
-├── backend/
-│   ├── detection/              # Logique de détection musicale
-│   │   ├── audio_fingerprint.py
-│   │   ├── audio_processor.py
-│   │   ├── detect_music.py
-│   │   ├── fingerprint.py
-│   │   └── music_recognition.py
+├── backend/                   # Backend principal
+│   ├── detection/             # Logique de détection musicale
+│   │   ├── audio_processor/   # Traitement audio
+│   │   └── detect_music.py
 │   │
 │   ├── processing/            # Traitement des données
-│   │   └── radio_manager.py
 │   │
-│   ├── reports/              # Gestion des rapports
+│   ├── analytics/             # Analyse des données
 │   │
-│   ├── logs/                 # Gestion des logs
-│   │
-│   ├── analytics/            # Données analytiques
-│   │
-│   ├── models/              # Modèles de la base de données
+│   ├── models/                # Modèles de la base de données
 │   │   ├── models.py
 │   │   └── database.py
 │   │
-│   ├── utils/               # Fonctions utilitaires
-│   │   ├── config.py
+│   ├── utils/                 # Fonctions utilitaires
+│   │   ├── auth.py
 │   │   └── redis_config.py
 │   │
-│   └── tests/               # Tests unitaires
+│   ├── scripts/               # Scripts utilitaires (organisés par catégorie)
+│   │   ├── startup/           # Scripts de démarrage
+│   │   ├── admin/             # Scripts d'administration
+│   │   ├── data/              # Scripts de gestion des données
+│   │   ├── detection/         # Scripts de détection musicale
+│   │   ├── tests/             # Scripts de tests
+│   │   ├── database/          # Scripts de base de données
+│   │   ├── migrations/        # Scripts de migrations de la base de données
+│   │   ├── performance/       # Scripts de tests de performance
+│   │   ├── maintenance/       # Scripts de maintenance
+│   │   └── README.md          # Documentation des scripts
+│   │
+│   ├── tests/                 # Tests unitaires
+│   │
+│   ├── logs/                  # Stockage des logs (créé automatiquement)
+│   │
+│   ├── reports/               # Stockage des rapports (créé automatiquement)
+│   │
+│   ├── data/                  # Stockage des données (créé automatiquement)
+│   │
+│   ├── config.py              # Configuration principale
+│   └── main.py                # Point d'entrée de l'application
 │
-├── frontend/               # Interface utilisateur React/Next.js
+├── frontend/                  # Interface utilisateur React/Next.js
 │   ├── src/
 │   │   ├── components/
 │   │   ├── pages/
@@ -52,16 +129,18 @@ Un système de monitoring automatisé pour les chaînes de radio et de télévis
 │   │
 │   └── public/
 │
-├── docker/                # Configuration Docker
+├── docker/                    # Configuration Docker
 │   ├── Dockerfile
 │   ├── nginx.conf
 │   └── default.conf
 │
-├── scripts/              # Scripts utilitaires
-│   └── reorganize.py
+├── docs/                      # Documentation
+│   ├── SECURITY_GUIDELINES.md
+│   ├── TESTING_STRATEGY.md
+│   └── REORGANISATION.md      # Documentation des changements structurels
 │
-├── requirements.txt      # Dépendances Python
-└── .env.example         # Template des variables d'environnement
+├── requirements.txt           # Dépendances Python
+└── .env.example               # Template des variables d'environnement
 ```
 
 ## 🚀 Installation
@@ -86,14 +165,15 @@ pip install -r requirements.txt
 
 4. Configurer les variables d'environnement :
 ```bash
-cp .env.example .env
-# Éditer .env avec vos configurations
+cp .env.example .env.development
+# Éditer .env.development avec vos configurations
 ```
 
 5. Lancer l'application :
 ```bash
 # En développement
-python backend/main.py
+.\backend\scripts\startup\start_env.ps1 development  # Windows
+./backend/scripts/startup/start_env.sh development   # Linux/Mac
 
 # Avec Docker
 docker-compose up
@@ -173,14 +253,15 @@ python -m pytest backend/tests/integration/ -v
 
 Nous avons ajouté des scripts pour faciliter l'exécution des tests et la génération de rapports de couverture :
 
-- `scripts/run_integration_tests.sh` : Exécute tous les tests d'intégration et génère un rapport de couverture
-- `scripts/run_all_tests.sh` : Exécute tous les tests (unitaires et d'intégration) et génère un rapport de couverture combiné
-
-Pour exécuter ces scripts :
-
 ```bash
-./scripts/run_integration_tests.sh
-./scripts/run_all_tests.sh
+# Exécuter tous les tests
+python -m backend.scripts.tests.run_tests
+
+# Exécuter les tests d'intégration
+./backend/scripts/tests/run_integration_tests.sh
+
+# Exécuter tous les tests avec rapport de couverture
+./backend/scripts/tests/run_all_tests.sh
 ```
 
 ### Documentation des Tests

@@ -22,16 +22,16 @@
       "API_PORT": "8000",
       "NODE_ENV": "production",
       "STARTUP_GRACE_PERIOD": "true",
-      "REACT_APP_API_URL": "https://sodav-monitor-production.up.railway.app",
-      "REACT_APP_WS_URL": "wss://sodav-monitor-production.up.railway.app",
+      "REACT_APP_API_URL": "https://your-app-url.railway.app",
+      "REACT_APP_WS_URL": "wss://your-app-url.railway.app",
       "HEALTHCHECK_TIMEOUT": "300",
       "HEALTHCHECK_INTERVAL": "120",
       "HEALTHCHECK_START_PERIOD": "600",
       "HEALTHCHECK_RETRIES": "10",
-      "REDIS_URL": "redis://default:etnietpRknUwURAumSPXMVVgFwurrddy@hopper.proxy.rlwy.net:11709",
-      "REDIS_HOST": "hopper.proxy.rlwy.net",
-      "REDIS_PORT": "11709",
-      "REDIS_PASSWORD": "etnietpRknUwURAumSPXMVVgFwurrddy",
+      "REDIS_URL": "${REDIS_URL}",
+      "REDIS_HOST": "${REDIS_HOST}",
+      "REDIS_PORT": "${REDIS_PORT}",
+      "REDIS_PASSWORD": "${REDIS_PASSWORD}",
       "REDIS_DB": "0"
     }
   }

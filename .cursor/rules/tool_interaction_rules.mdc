@@ -2,6 +2,10 @@
 description: Specific Rules for Tool Interaction and Usage
 globs: *
 ---
+---
+description: Specific Rules for Tool Interaction and Usage
+globs: *
+---
 <customInstructions>
 ### 1. Semantic Search Tool Rules
 - Use for broad context gathering
