@@ -192,7 +192,6 @@ class MusicDetector:
         """
         try:
             import librosa
-            import io
             import soundfile as sf
             
             # Get station name if station_id is provided
@@ -354,4 +353,53 @@ class MusicDetector:
             return {
                 "status": "error",
                 "message": f"Error processing audio file: {str(e)}"
-            } 
+            }
+    
+    async def process_audio_data(self, station_id: int, audio_data: bytes, station_name: str = None) -> Dict[str, Any]:
+        """
+        Process audio data from a station.
+        
+        Args:
+            station_id: ID of the station
+            audio_data: Raw audio data as bytes
+            station_name: Name of the station (optional)
+            
+        Returns:
+            Dictionary with detection results
+        """
+        try:
+            # Get station name if not provided
+            if not station_name:
+                station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
+                if station:
+                    station_name = station.name
+                else:
+                    station_name = f"Station {station_id}"
+            
+            log_with_category(logger, "DETECTION", "info", f"Processing audio data from {station_name}")
+            
+            # Create station data
+            station_data = {
+                "raw_audio": audio_data,
+                "station_id": station_id,
+                "station_name": station_name,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Process station data
+            result = await self.track_manager.process_station_data(station_data)
+            
+            # Log result
+            if result.get("success"):
+                detection = result.get("detection", {})
+                log_with_category(logger, "DETECTION", "info", f"Track detected from {station_name}: {detection.get('title', 'Unknown')} by {detection.get('artist', 'Unknown')}")
+            else:
+                log_with_category(logger, "DETECTION", "info", f"No track detected from {station_name}: {result.get('error', 'Unknown error')}")
+            
+            return result
+        
+        except Exception as e:
+            log_with_category(logger, "DETECTION", "error", f"Error processing audio data: {str(e)}")
+            import traceback
+            log_with_category(logger, "DETECTION", "error", f"Traceback: {traceback.format_exc()}")
+            return {"success": False, "error": str(e)} 
