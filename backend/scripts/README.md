@@ -1,6 +1,82 @@
-# Scripts Utilitaires pour SODAV Monitor
+# Scripts du Backend
 
-Ce répertoire contient tous les scripts utilitaires pour le projet SODAV Monitor, organisés par catégorie.
+Ce dossier contient divers scripts utilitaires pour le backend du projet SODAV Monitor.
+
+## Organisation des scripts
+
+Les scripts sont organisés dans les sous-dossiers suivants :
+
+- `admin/` - Scripts pour les tâches administratives
+- `database/` - Scripts pour la gestion de la base de données
+- `detection/` - Scripts pour la détection musicale
+- `maintenance/` - Scripts pour la maintenance du système
+- `migrations/` - Scripts pour les migrations de la base de données
+- `performance/` - Scripts pour les tests de performance
+- `startup/` - Scripts pour le démarrage du système
+- `tests/` - Scripts pour les tests unitaires et d'intégration
+
+## Scripts de test des services externes
+
+Les scripts suivants sont utilisés pour tester les services externes de détection musicale :
+
+### Tests MusicBrainz
+
+- `test_musicbrainz_simple.py` - Test simple de l'API MusicBrainz
+- `test_musicbrainz_metadata.py` - Test de la recherche par métadonnées avec MusicBrainz
+
+### Tests AcoustID
+
+- `test_acoustid_simple.py` - Test simple de l'API AcoustID
+- `test_acoustid_format.py` - Test des formats audio avec AcoustID
+- `test_acoustid_fpcalc.py` - Test de l'outil fpcalc pour AcoustID
+
+### Tests AudD
+
+- `test_audd_simple.py` - Test simple de l'API AudD
+- `test_audd_url.py` - Test de l'API AudD avec des URLs
+- `test_audd_url_simple.py` - Test simple de l'API AudD avec des URLs
+
+### Tests combinés
+
+- `test_api_keys.py` - Test des clés API pour tous les services externes
+- `test_external_services.py` - Test de tous les services externes
+- `test_detection_hierarchy.py` - Test du processus de détection hiérarchique complet
+
+## Comment exécuter les scripts
+
+Pour exécuter un script, utilisez la commande suivante depuis la racine du projet :
+
+```bash
+python backend/scripts/nom_du_script.py
+```
+
+Par exemple, pour tester le processus de détection hiérarchique :
+
+```bash
+python backend/scripts/test_detection_hierarchy.py
+```
+
+## Organisation recommandée des scripts
+
+Pour une meilleure organisation, nous recommandons de déplacer les scripts de test des services externes dans le sous-dossier `detection/` :
+
+```bash
+mkdir -p backend/scripts/detection/external_services
+mv backend/scripts/test_*_simple.py backend/scripts/detection/external_services/
+mv backend/scripts/test_*_url*.py backend/scripts/detection/external_services/
+mv backend/scripts/test_*_format.py backend/scripts/detection/external_services/
+mv backend/scripts/test_*_fpcalc.py backend/scripts/detection/external_services/
+mv backend/scripts/test_api_keys.py backend/scripts/detection/external_services/
+mv backend/scripts/test_external_services.py backend/scripts/detection/external_services/
+mv backend/scripts/test_detection_hierarchy.py backend/scripts/detection/
+```
+
+Après cette réorganisation, les scripts peuvent être exécutés comme suit :
+
+```bash
+python backend/scripts/detection/external_services/test_musicbrainz_simple.py
+python backend/scripts/detection/test_detection_hierarchy.py
+```
 
 ## Structure des Dossiers
 

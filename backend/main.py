@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 import redis.asyncio as redis
 from datetime import datetime
 from contextlib import asynccontextmanager
+import asyncio
 
 # Local imports - using consistent backend prefix
 from backend.logs.log_manager import LogManager
@@ -24,13 +25,16 @@ from backend.routers.reports import router as reports_router
 from backend.routers.channels import router as channels_router
 from backend.routers.detections import router as detections_router
 from backend.models.database import init_db, get_db
-from backend.core.config import get_settings
+from backend.core.config import get_settings, PATHS
 from backend.utils.redis_config import init_redis_pool
 from backend.utils.auth import get_current_user
 from backend.utils.radio import fetch_and_save_senegal_stations
 from backend.detection.audio_processor.stream_handler import StreamHandler
 from backend.detection.audio_processor.feature_extractor import FeatureExtractor
 from backend.scripts.detection.detect_music_all_stations import detect_music_all_stations
+from backend.detection.detect_music import MusicDetector
+from backend.routers.channels.monitoring import detect_station_music
+from backend.models.models import RadioStation, StationStatus
 
 # Load environment variables first
 load_dotenv()
@@ -70,11 +74,23 @@ async def lifespan(app: FastAPI):
             if stations_count > 0:
                 # Lancer la détection de musique sur toutes les stations
                 logger.info("Starting music detection on all stations...")
-                detection_result = await detect_music_all_stations()
-                if detection_result:
-                    logger.info(f"Music detection initiated for {detection_result.get('stations_count', 0)} active stations")
+                
+                # Obtenir toutes les stations actives
+                active_stations = db.query(RadioStation).filter(
+                    RadioStation.status == StationStatus.ACTIVE
+                ).all()
+                
+                if active_stations:
+                    logger.info(f"Found {len(active_stations)} active stations for music detection")
+                    
+                    # Lancer la détection sur chaque station
+                    for station in active_stations:
+                        # Créer une tâche asyncio pour chaque station
+                        asyncio.create_task(detect_station_music(station.id))
+                        
+                    logger.info(f"Music detection initiated for {len(active_stations)} active stations")
                 else:
-                    logger.warning("Failed to start music detection on stations")
+                    logger.warning("No active stations found for music detection")
             else:
                 logger.warning("No stations found, skipping music detection")
                 
@@ -118,7 +134,7 @@ app.add_middleware(
 )
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=PATHS["STATIC_DIR"]), name="static")
 
 # Include routers in specific order
 app.include_router(auth.router, prefix="/api")

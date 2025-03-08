@@ -4,6 +4,100 @@ Ce document retrace les principales modifications apportées à la structure du 
 
 ## Dernières Modifications
 
+### 08/03/2025 - Amélioration de la Réutilisation des Empreintes Digitales
+
+#### 1. Modification de l'AudioProcessor
+
+- **Problème identifié** : L'AudioProcessor ne permettait pas de passer des caractéristiques audio pré-calculées, ce qui limitait la réutilisation des empreintes digitales.
+- **Solution** :
+  - Ajout d'un paramètre optionnel `features` à la méthode `process_stream` de l'AudioProcessor
+  - Modification du code pour utiliser les caractéristiques fournies si elles existent
+  - Amélioration de la détection locale pour rechercher d'abord une correspondance exacte de l'empreinte digitale
+
+#### 2. Création de Tests Spécifiques
+
+- **Problème identifié** : Manque de tests pour valider la fonctionnalité de réutilisation des empreintes digitales.
+- **Solution** :
+  - Création du script `backend/scripts/detection/test_fingerprint_reuse.py` pour tester la réutilisation des empreintes
+  - Création du script `backend/scripts/detection/test_local_detection.py` pour tester la détection locale
+  - Mise à jour du script `backend/scripts/detection/test_detection_hierarchy.py` pour inclure la réutilisation des empreintes
+
+#### 3. Mise à jour de la Documentation
+
+- **Problème identifié** : Documentation insuffisante sur la fonctionnalité de réutilisation des empreintes digitales.
+- **Solution** :
+  - Création du document `docs/fingerprint_reuse.md` pour expliquer en détail la fonctionnalité
+  - Mise à jour du document `docs/external_services.md` pour inclure les informations sur la réutilisation des empreintes
+  - Mise à jour du document `docs/migrations/track_detection_enhancements.md` pour documenter les modifications du code
+
+### 08/03/2025 - Intégration de fpcalc dans le Projet
+
+#### 1. Ajout de l'Outil fpcalc
+
+- **Problème identifié** : L'outil fpcalc, nécessaire pour la génération d'empreintes digitales audio pour AcoustID, n'était pas intégré au projet, ce qui rendait la détection musicale dépendante d'une installation externe.
+- **Solution** :
+  - Intégration de l'exécutable fpcalc directement dans le dossier `backend/bin/` du projet
+  - Modification du code pour utiliser automatiquement cette version locale
+  - Création d'un fichier README.md dans le dossier bin pour documenter l'outil
+  - Mise à jour de la documentation dans `docs/external_services.md` pour expliquer l'installation et l'utilisation de fpcalc
+
+#### 2. Amélioration de la Détection AcoustID
+
+- **Problème identifié** : La détection via AcoustID était désactivée en raison de problèmes avec l'outil fpcalc.
+- **Solution** :
+  - Activation de la détection AcoustID avec l'outil fpcalc intégré
+  - Amélioration de la gestion des erreurs pour basculer vers la recherche par métadonnées en cas d'échec
+  - Test complet du processus de détection hiérarchique pour valider les modifications
+
+#### 3. Mise à jour des Scripts de Test
+
+- **Problème identifié** : Les scripts de test pour les services externes n'étaient pas à jour avec la nouvelle organisation du projet.
+- **Solution** :
+  - Mise à jour des chemins dans la documentation pour refléter la nouvelle organisation des scripts
+  - Test des scripts pour s'assurer qu'ils fonctionnent correctement avec la nouvelle configuration
+
+### 08/03/2025 - Réorganisation de la Documentation et des Scripts de Test
+
+#### 1. Centralisation de la Documentation
+
+- **Problème identifié** : La documentation était dispersée entre le dossier `docs` à la racine et `backend/docs`, créant une confusion sur l'emplacement des documents.
+- **Solution** :
+  - Centralisation de toute la documentation dans le dossier `docs` à la racine du projet
+  - Déplacement du fichier `backend/docs/external_services.md` vers `docs/external_services.md`
+  - Création d'un fichier `backend/docs/README.md` pour indiquer que la documentation a été déplacée
+  - Mise à jour des liens dans les fichiers de documentation pour refléter la nouvelle structure
+
+#### 2. Réorganisation des Scripts de Test des Services Externes
+
+- **Problème identifié** : Les scripts de test des services externes étaient tous dans le dossier `backend/scripts`, rendant difficile la navigation et la maintenance.
+- **Solution** :
+  - Création d'une structure hiérarchique pour les scripts de test :
+    - `backend/scripts/detection/` : Scripts liés à la détection musicale
+    - `backend/scripts/detection/external_services/` : Scripts de test des services externes
+  - Déplacement des scripts de test des services externes vers le dossier approprié :
+    - Scripts MusicBrainz : `test_musicbrainz_simple.py`, `test_musicbrainz_metadata.py`
+    - Scripts AcoustID : `test_acoustid_simple.py`, `test_acoustid_format.py`, `test_acoustid_fpcalc.py`
+    - Scripts AudD : `test_audd_simple.py`, `test_audd_url.py`, `test_audd_url_simple.py`
+    - Scripts combinés : `test_api_keys.py`, `test_external_services.py`
+  - Déplacement du script `test_detection_hierarchy.py` vers `backend/scripts/detection/`
+  - Création de fichiers README.md dans chaque dossier pour expliquer l'organisation des scripts
+
+#### 3. Correction des Problèmes d'Importation
+
+- **Problème identifié** : Les scripts déplacés avaient des problèmes d'importation en raison des changements de chemin.
+- **Solution** :
+  - Mise à jour des chemins d'importation dans les scripts déplacés
+  - Ajout de code pour ajouter les répertoires appropriés au chemin d'importation Python
+  - Test des scripts pour s'assurer qu'ils fonctionnent correctement après la réorganisation
+
+#### 4. Mise à jour des Logs
+
+- **Problème identifié** : La documentation des logs ne reflétait pas la structure actuelle des dossiers de logs.
+- **Solution** :
+  - Mise à jour du fichier `backend/logs/README.md` pour refléter la structure actuelle des dossiers de logs
+  - Ajout d'informations sur les catégories de logs disponibles et leur utilisation
+  - Ajout d'instructions pour l'ajout de nouvelles catégories de logs
+
 ### 07/03/2025 - Élimination des Redondances et Réorganisation des Scripts
 
 #### 1. Élimination de la Redondance `backend/backend`

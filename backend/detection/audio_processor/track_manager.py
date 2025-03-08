@@ -1,28 +1,40 @@
 """Module for managing track detection and storage."""
 
 import logging
+import os
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from backend.models.models import Track, TrackDetection, RadioStation, StationTrackStats, Artist
-from backend.utils.logging_config import setup_logging
+from backend.utils.logging_config import setup_logging, log_with_category
 from backend.utils.analytics.stats_updater import StatsUpdater
 import numpy as np
-from backend.detection.audio_processor.external_services import MusicBrainzService, AuddService, ExternalServiceHandler
-import os
+from backend.detection.audio_processor.external_services import MusicBrainzService, AuddService, ExternalServiceHandler, AcoustIDService
 import io
 from pydub import AudioSegment
+import hashlib
+import json
 
 logger = setup_logging(__name__)
 
 class TrackManager:
     """Gestionnaire des pistes audio."""
     
-    def __init__(self, db_session: Session):
+    def __init__(self, db_session: Session, feature_extractor=None):
         """Initialise le gestionnaire de pistes."""
         self.db_session = db_session
         self.logger = logging.getLogger(__name__)
         self.current_tracks = {}
+        
+        # If feature_extractor is not provided, create a new one
+        if feature_extractor is None:
+            from .feature_extractor import FeatureExtractor
+            self.feature_extractor = FeatureExtractor()
+        
+        # Ensure we have a database connection
+        if self.db_session is None:
+            from backend.models.database import get_db
+            self.db_session = get_db()
     
     async def process_track(self, features: Dict[str, Any], station_id: Optional[int] = None) -> Dict[str, Any]:
         """Traite une piste détectée."""
@@ -197,14 +209,17 @@ class TrackManager:
             
             if stats:
                 stats.play_count += 1
-                stats.total_play_time += play_duration.total_seconds()
+                # Convertir la durée existante en secondes, ajouter la nouvelle durée, puis reconvertir en timedelta
+                current_seconds = stats.total_play_time.total_seconds() if stats.total_play_time else 0
+                new_seconds = play_duration.total_seconds()
+                stats.total_play_time = timedelta(seconds=current_seconds + new_seconds)
                 stats.last_played = datetime.utcnow()
             else:
                 stats = StationTrackStats(
                     station_id=station_id,
                     track_id=track_id,
                     play_count=1,
-                    total_play_time=play_duration.total_seconds(),
+                    total_play_time=play_duration,  # Utiliser directement timedelta
                     last_played=datetime.utcnow()
                 )
                 self.db_session.add(stats)
@@ -258,162 +273,526 @@ class TrackManager:
             
     # Implémentation des méthodes manquantes
     
-    async def find_local_match(self, features: np.ndarray) -> Optional[Dict[str, Any]]:
-        """
-        Recherche une correspondance dans la base de données locale.
-        
-        Args:
-            features: Caractéristiques audio extraites
-            
-        Returns:
-            Dictionnaire contenant les informations de la piste correspondante ou None si aucune correspondance
-        """
+    async def find_local_match(self, features: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Recherche une correspondance locale dans la base de données."""
         try:
-            # Extraire l'empreinte digitale des caractéristiques
+            logger.info("[TRACK_MANAGER] Attempting to find local match")
+            
+            # Extraire l'empreinte audio
             fingerprint = self._extract_fingerprint(features)
+            if not fingerprint:
+                logger.warning("[TRACK_MANAGER] Failed to extract fingerprint for local match")
+                return None
+            
+            logger.info("[TRACK_MANAGER] Fingerprint extracted, searching in database")
             
             # Rechercher dans la base de données
-            track = self.db_session.query(Track).filter(
+            tracks = self.db_session.query(Track).filter(
+                Track.fingerprint.isnot(None)
+            ).all()
+            
+            logger.info(f"[TRACK_MANAGER] Found {len(tracks)} tracks with fingerprints in database")
+            
+            if not tracks:
+                logger.info("[TRACK_MANAGER] No tracks with fingerprints found in database")
+                return None
+            
+            # Calculer la similarité avec chaque piste
+            best_match = None
+            best_score = 0.0
+            
+            # D'abord, essayer une correspondance exacte
+            exact_match = self.db_session.query(Track).filter(
                 Track.fingerprint == fingerprint
             ).first()
             
-            if not track:
+            if exact_match:
+                # Récupérer le nom de l'artiste via la relation
+                artist_name = exact_match.artist.name if exact_match.artist else "Unknown Artist"
+                logger.info(f"[TRACK_MANAGER] Exact fingerprint match found: {exact_match.title} by {artist_name}")
+                return {
+                    "title": exact_match.title,
+                    "artist": artist_name,
+                    "album": exact_match.album,
+                    "id": exact_match.id,
+                    "isrc": exact_match.isrc,
+                    "label": exact_match.label,
+                    "release_date": exact_match.release_date,
+                    "fingerprint": exact_match.fingerprint[:20] + "..." if exact_match.fingerprint else None,
+                    "confidence": 1.0,
+                    "source": "local"
+                }
+            
+            # Si pas de correspondance exacte, utiliser la similarité
+            for track in tracks:
+                if track.fingerprint:
+                    similarity = self._calculate_similarity(
+                        {"fingerprint": fingerprint}, 
+                        {"fingerprint": track.fingerprint}
+                    )
+                    logger.debug(f"[TRACK_MANAGER] Similarity with track {track.id} ({track.title}): {similarity}")
+                    
+                    if similarity > best_score and similarity > 0.7:  # Seuil de similarité
+                        best_score = similarity
+                        best_match = track
+            
+            if best_match:
+                # Récupérer le nom de l'artiste via la relation
+                artist_name = best_match.artist.name if best_match.artist else "Unknown Artist"
+                logger.info(f"[TRACK_MANAGER] Local match found: {best_match.title} by {artist_name} (score: {best_score})")
+                return {
+                    "title": best_match.title,
+                    "artist": artist_name,
+                    "album": best_match.album,
+                    "id": best_match.id,
+                    "isrc": best_match.isrc,
+                    "label": best_match.label,
+                    "release_date": best_match.release_date,
+                    "fingerprint": best_match.fingerprint[:20] + "..." if best_match.fingerprint else None,
+                    "confidence": best_score,
+                    "source": "local"
+                }
+            else:
+                logger.info("[TRACK_MANAGER] No local match found with sufficient confidence")
                 return None
                 
-            return {
-                "track": track,
-                "confidence": 0.95,  # Haute confiance pour les correspondances locales
-                "source": "local"
-            }
-            
         except Exception as e:
-            self.logger.error(f"Erreur lors de la recherche locale: {str(e)}")
+            logger.error(f"[TRACK_MANAGER] Error finding local match: {str(e)}")
             return None
-            
-    async def find_musicbrainz_match(self, features: np.ndarray) -> Optional[Dict[str, Any]]:
+    
+    async def find_acoustid_match(self, audio_features, station_id=None):
         """
-        Recherche une correspondance via l'API MusicBrainz.
+        Recherche une correspondance en utilisant le service AcoustID.
         
         Args:
-            features: Caractéristiques audio extraites
+            audio_features: Caractéristiques audio extraites
+            station_id: ID de la station (optionnel)
             
         Returns:
-            Dictionnaire contenant les informations de la piste correspondante ou None si aucune correspondance
+            Dict contenant les informations de la piste ou None si aucune correspondance
         """
         try:
-            # Convertir les caractéristiques en données audio
-            audio_data = self._convert_features_to_audio(features)
-            if not audio_data:
+            log_with_category(logger, "TRACK_MANAGER", "info", "Attempting to find AcoustID match")
+            
+            # Vérifier si les caractéristiques audio sont valides
+            if not audio_features:
+                log_with_category(logger, "TRACK_MANAGER", "warning", "No audio features provided for AcoustID match")
                 return None
             
-            # Utiliser le gestionnaire de services externes
-            external_handler = ExternalServiceHandler(self.db_session)
+            # Vérifier si nous avons des données audio brutes
+            audio_data = None
+            if "raw_audio" in audio_features and audio_features["raw_audio"] is not None:
+                log_with_category(logger, "TRACK_MANAGER", "info", f"Using raw audio data from features ({len(audio_features['raw_audio'])} bytes)")
+                audio_data = audio_features["raw_audio"]
+            else:
+                # Convertir les caractéristiques en audio
+                log_with_category(logger, "TRACK_MANAGER", "info", "No raw audio found, converting features to audio")
+                audio_data = self._convert_features_to_audio(audio_features)
+                if not audio_data:
+                    log_with_category(logger, "TRACK_MANAGER", "warning", "Failed to convert features to audio for AcoustID match")
+                    return None
             
-            # Appeler le service MusicBrainz
-            result = await external_handler.recognize_with_musicbrainz(audio_data)
+            log_with_category(logger, "TRACK_MANAGER", "info", f"Features converted to audio, sending to AcoustID")
             
+            # Obtenir le service AcoustID
+            acoustid_api_key = os.environ.get("ACOUSTID_API_KEY")
+            if not acoustid_api_key:
+                log_with_category(logger, "TRACK_MANAGER", "error", "AcoustID API key not found in environment variables")
+                return None
+            
+            # Créer le service AcoustID
+            acoustid_service = AcoustIDService(acoustid_api_key)
+            
+            # Détecter la piste avec AcoustID
+            log_with_category(logger, "TRACK_MANAGER", "info", f"Sending audio data to AcoustID for detection: {len(audio_data)} bytes")
+            result = await acoustid_service.detect_track(audio_data)
+            
+            # Vérifier si une correspondance a été trouvée
             if not result:
+                log_with_category(logger, "TRACK_MANAGER", "info", "No match found with AcoustID")
                 return None
             
-            # Créer ou récupérer l'artiste
-            artist = self.db_session.query(Artist).filter(
-                Artist.name == result.get('artist')
-            ).first()
+            # Extraire les informations de la piste
+            log_with_category(logger, "TRACK_MANAGER", "info", f"AcoustID match found: {json.dumps(result)}")
             
-            if not artist:
-                artist = Artist(
-                    name=result.get('artist'),
-                    external_ids={'musicbrainz': result.get('artist_id', '')}
-                )
-                self.db_session.add(artist)
-                self.db_session.flush()
+            # Extraire les informations de base
+            title = result.get("title", "Unknown Track")
+            artist = result.get("artist", "Unknown Artist")
+            album = result.get("album")
+            confidence = result.get("confidence", 0.0)
             
-            # Créer ou récupérer la piste
-            track = self._get_or_create_track({
-                'title': result.get('title'),
-                'artist_id': artist.id,
-                'duration': result.get('duration', 0),
-                'source': 'musicbrainz',
-                'external_id': result.get('recording_id', '')
-            })
+            # Extraire les informations supplémentaires
+            isrc = result.get("isrc")
+            label = result.get("label")
+            release_date = result.get("release_date")
             
-            if not track:
-                return None
-            
-            return {
-                "track": track,
-                "confidence": result.get('confidence', 0.7),
-                "source": "musicbrainz"
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Erreur lors de la recherche MusicBrainz: {str(e)}")
-            return None
-            
-    async def find_audd_match(self, features: np.ndarray) -> Optional[Dict[str, Any]]:
-        """
-        Recherche une correspondance via l'API AudD.
-        
-        Args:
-            features: Caractéristiques audio extraites
-            
-        Returns:
-            Dictionnaire contenant les informations de la piste correspondante ou None si aucune correspondance
-        """
-        try:
-            # Convertir les caractéristiques en données audio
-            audio_data = self._convert_features_to_audio(features)
-            if not audio_data:
-                return None
-            
-            # Utiliser le gestionnaire de services externes
-            external_handler = ExternalServiceHandler(
-                self.db_session, 
-                audd_api_key=os.getenv('AUDD_API_KEY')
+            log_with_category(logger, "TRACK_MANAGER", "info", 
+                f"AcoustID match details - Title: {title}, Artist: {artist}, Album: {album}, "
+                f"ISRC: {isrc}, Label: {label}, Release date: {release_date}, Confidence: {confidence}"
             )
             
-            # Appeler le service AudD
-            result = await external_handler.recognize_with_audd(audio_data)
-            
-            if not result:
+            # Créer ou récupérer l'artiste
+            artist_obj = await self._get_or_create_artist(artist)
+            if not artist_obj:
+                log_with_category(logger, "TRACK_MANAGER", "error", f"Failed to get or create artist: {artist}")
                 return None
             
-            # Créer ou récupérer l'artiste
-            artist = self.db_session.query(Artist).filter(
-                Artist.name == result.get('artist')
-            ).first()
-            
-            if not artist:
-                artist = Artist(
-                    name=result.get('artist'),
-                    external_ids={'audd': result.get('artist_id', '')}
-                )
-                self.db_session.add(artist)
-                self.db_session.flush()
+            log_with_category(logger, "TRACK_MANAGER", "info", f"Artist found/created: {artist_obj.name} (ID: {artist_obj.id})")
             
             # Créer ou récupérer la piste
-            track = self._get_or_create_track({
-                'title': result.get('title'),
-                'artist_id': artist.id,
-                'duration': result.get('duration', 0),
-                'source': 'audd',
-                'external_id': result.get('song_id', '')
-            })
-            
+            track = await self._get_or_create_track(title, artist_obj.id, album, isrc, label, release_date)
             if not track:
+                log_with_category(logger, "TRACK_MANAGER", "error", f"Failed to get or create track: {title}")
                 return None
             
-            return {
-                "track": track,
-                "confidence": result.get('confidence', 0.8),
-                "source": "audd"
-            }
+            log_with_category(logger, "TRACK_MANAGER", "info", f"Track found/created: {track.title} (ID: {track.id})")
             
+            # Générer et enregistrer l'empreinte digitale si elle n'existe pas déjà
+            if not track.fingerprint:
+                fingerprint = self._extract_fingerprint(audio_features)
+                if fingerprint:
+                    log_with_category(logger, "TRACK_MANAGER", "info", f"Generating and saving fingerprint for track: {track.title}")
+                    track.fingerprint = fingerprint
+                    self.db_session.commit()
+                    log_with_category(logger, "TRACK_MANAGER", "info", f"Fingerprint saved for track: {track.title}")
+            
+            # Créer la détection
+            detection_id = await self.save_detection(station_id, audio_features, {
+                "title": title,
+                "artist": artist,
+                "album": album,
+                "confidence": confidence,
+                "source": "acoustid",
+                "isrc": isrc,
+                "label": label,
+                "release_date": release_date
+            })
+            
+            if not detection_id:
+                log_with_category(logger, "TRACK_MANAGER", "error", "Failed to save detection")
+                return None
+            
+            log_with_category(logger, "TRACK_MANAGER", "info", f"Detection saved with ID: {detection_id}")
+            
+            # Retourner les informations de la piste
+            return {
+                "track_id": track.id,
+                "title": title,
+                "artist": artist,
+                "album": album,
+                "confidence": confidence,
+                "detection_id": detection_id,
+                "source": "acoustid"
+            }
         except Exception as e:
-            self.logger.error(f"Erreur lors de la recherche AudD: {str(e)}")
+            log_with_category(logger, "TRACK_MANAGER", "error", f"Error finding AcoustID match: {e}")
+            import traceback
+            log_with_category(logger, "TRACK_MANAGER", "error", f"Traceback: {traceback.format_exc()}")
+            return None
+    
+    async def find_musicbrainz_match(self, metadata, station_id=None):
+        """Find a match using MusicBrainz metadata search."""
+        self.logger.info("Attempting to find MusicBrainz match using metadata")
+        
+        try:
+            # Check if we have artist and title in metadata
+            artist_name = metadata.get("artist")
+            title = metadata.get("title")
+            
+            if not artist_name or not title:
+                self.logger.warning("No artist or title in metadata for MusicBrainz search")
+                return None
+            
+            # Initialize AcoustID service (which includes MusicBrainz functionality)
+            api_key = os.environ.get("ACOUSTID_API_KEY")
+            if not api_key:
+                self.logger.warning("AcoustID API key not found for MusicBrainz search")
+                return None
+            
+            acoustid_service = AcoustIDService(api_key)
+            
+            # Search by metadata
+            result = await acoustid_service.search_by_metadata(artist_name, title)
+            
+            if not result:
+                self.logger.warning("No MusicBrainz match found")
+                return None
+            
+            album = result.get("album")
+            
+            # Capture additional information
+            isrc = result.get("isrc")
+            label = result.get("label")
+            release_date = result.get("release_date")
+            
+            # Log the additional information
+            self.logger.info(f"Track details - ISRC: {isrc}, Label: {label}, Release date: {release_date}")
+            
+            # Check if artist exists
+            artist = self.db_session.query(Artist).filter(Artist.name == artist_name).first()
+            if not artist:
+                self.logger.info(f"Created new artist: {artist_name}")
+                artist = Artist(name=artist_name)
+                
+                # Add label information if available
+                if label:
+                    artist.label = label
+                
+                self.db_session.add(artist)
+                self.db_session.flush()
+            elif label and not artist.label:
+                # Update artist label if it was previously unknown
+                artist.label = label
+                self.db_session.flush()
+            
+            # Check if track exists
+            track = self.db_session.query(Track).filter(
+                Track.title == title,
+                Track.artist_id == artist.id
+            ).first()
+            
+            # Calculate exact play duration
+            play_duration = metadata.get("play_duration", 0)
+            self.logger.info(f"Exact play duration: {play_duration} seconds")
+            
+            # Convert duration to timedelta
+            duration = timedelta(seconds=play_duration)
+            
+            # Generate fingerprint if not already available
+            fingerprint = metadata.get("fingerprint")
+            if not fingerprint:
+                # Try to create a simple fingerprint from metadata
+                fingerprint = hashlib.md5(f"{title}:{artist_name}:{album or ''}".encode()).hexdigest()
+                self.logger.info(f"Generated metadata-based fingerprint: {fingerprint[:20]}...")
+            
+            if not track:
+                # Create new track
+                track = Track(
+                    title=title,
+                    artist_id=artist.id,
+                    isrc=isrc,
+                    album=album,
+                    duration=duration,
+                    fingerprint=fingerprint,
+                    label=label,
+                    release_date=release_date
+                )
+                self.db_session.add(track)
+                self.db_session.flush()
+                self.logger.info(f"Created new track: {title} by {artist_name} (ISRC: {isrc})")
+            else:
+                # Update track with new information if available
+                if isrc and not track.isrc:
+                    track.isrc = isrc
+                if label and not track.label:
+                    track.label = label
+                if release_date and not track.release_date:
+                    track.release_date = release_date
+                if fingerprint and not track.fingerprint:
+                    track.fingerprint = fingerprint
+                if album and not track.album:
+                    track.album = album
+                
+                track.updated_at = datetime.utcnow()
+                self.db_session.flush()
+                self.logger.info(f"Updated existing track: {title} by {artist_name} (ISRC: {isrc})")
+            
+            # Record play time if station_id is provided
+            if station_id:
+                self._record_play_time(station_id, track.id, play_duration)
+            
+            # Return result with enhanced information
+            return {
+                "track": {
+                    "title": title,
+                    "artist": artist_name,
+                    "album": album,
+                    "id": result.get("id", ""),
+                    "isrc": isrc,
+                    "label": label,
+                    "release_date": release_date,
+                    "fingerprint": fingerprint[:20] + "..." if fingerprint else None  # Truncated for logging
+                },
+                "confidence": 0.9,  # High confidence for metadata match
+                "source": "musicbrainz",
+                "play_duration": play_duration
+            }
+        except Exception as e:
+            self.logger.error(f"Error finding MusicBrainz match: {e}")
+            return None
+    
+    async def find_audd_match(self, audio_features, station_id=None):
+        """Find a match using AudD service."""
+        self.logger.info("Attempting to find AudD match")
+        
+        try:
+            # Convert audio features to audio data
+            audio_data = self._convert_features_to_audio(audio_features)
+            if not audio_data:
+                self.logger.warning("Failed to convert features to audio for AudD match")
+                return None
+            
+            # Check if API key is available
+            api_key = os.environ.get("AUDD_API_KEY")
+            if not api_key:
+                self.logger.warning("AudD API key not found")
+                return None
+            
+            # Initialize AudD service
+            audd_service = AuddService(api_key)
+            
+            # Send audio to AudD
+            self.logger.info("Features converted to audio, sending to AudD")
+            result = await audd_service.detect_track_with_retry(audio_data)
+            
+            if not result or not result.get("track"):
+                self.logger.warning("No track information in AudD result")
+                return None
+            
+            track_info = result["track"]
+            title = track_info.get("title")
+            artist_name = track_info.get("artist")
+            album = track_info.get("album")
+            
+            # Capture additional information
+            isrc = track_info.get("isrc")
+            label = track_info.get("label")
+            release_date = track_info.get("release_date")
+            
+            # Log the additional information
+            self.logger.info(f"Track details - ISRC: {isrc}, Label: {label}, Release date: {release_date}")
+            
+            if not title or not artist_name:
+                self.logger.warning("Missing title or artist in AudD result")
+                return None
+            
+            # Check if artist exists
+            artist = self.db_session.query(Artist).filter(Artist.name == artist_name).first()
+            if not artist:
+                self.logger.info(f"Created new artist: {artist_name}")
+                artist = Artist(name=artist_name)
+                
+                # Add label information if available
+                if label:
+                    artist.label = label
+                
+                self.db_session.add(artist)
+                self.db_session.flush()
+            elif label and not artist.label:
+                # Update artist label if it was previously unknown
+                artist.label = label
+                self.db_session.flush()
+            
+            # Check if track exists
+            track = self.db_session.query(Track).filter(
+                Track.title == title,
+                Track.artist_id == artist.id
+            ).first()
+            
+            # Calculate exact play duration
+            play_duration = audio_features.get("play_duration", 0)
+            self.logger.info(f"Exact play duration: {play_duration} seconds")
+            
+            # Convert duration to timedelta
+            duration = timedelta(seconds=play_duration)
+            
+            # Generate fingerprint if not already available
+            fingerprint = audio_features.get("fingerprint")
+            if not fingerprint:
+                fingerprint = self._extract_fingerprint(audio_features)
+                self.logger.info(f"Generated new fingerprint: {fingerprint[:20]}...")
+            
+            if not track:
+                # Create new track
+                track = Track(
+                    title=title,
+                    artist_id=artist.id,
+                    isrc=isrc,
+                    album=album,
+                    duration=duration,
+                    fingerprint=fingerprint,
+                    label=label,
+                    release_date=release_date
+                )
+                self.db_session.add(track)
+                self.db_session.flush()
+                self.logger.info(f"Created new track: {title} by {artist_name} (ISRC: {isrc})")
+            else:
+                # Update track with new information if available
+                if isrc and not track.isrc:
+                    track.isrc = isrc
+                if label and not track.label:
+                    track.label = label
+                if release_date and not track.release_date:
+                    track.release_date = release_date
+                if fingerprint and not track.fingerprint:
+                    track.fingerprint = fingerprint
+                
+                track.updated_at = datetime.utcnow()
+                self.db_session.flush()
+                self.logger.info(f"Updated existing track: {title} by {artist_name} (ISRC: {isrc})")
+            
+            # Record play time if station_id is provided
+            if station_id:
+                self._record_play_time(station_id, track.id, play_duration)
+            
+            # Return result with enhanced information
+            return {
+                "track": {
+                    "title": title,
+                    "artist": artist_name,
+                    "album": album,
+                    "id": track_info.get("id", ""),
+                    "isrc": isrc,
+                    "label": label,
+                    "release_date": release_date,
+                    "fingerprint": fingerprint[:20] + "..." if fingerprint else None  # Truncated for logging
+                },
+                "confidence": 0.8,
+                "source": "audd",
+                "play_duration": play_duration
+            }
+        except Exception as e:
+            self.logger.error(f"Error finding AudD match: {e}")
             return None
             
-    def _extract_fingerprint(self, features: np.ndarray) -> str:
+    def _record_play_time(self, station_id: int, track_id: int, play_duration: float):
+        """
+        Record the exact play time of a track on a station.
+        
+        Args:
+            station_id: ID of the radio station
+            track_id: ID of the track
+            play_duration: Duration of play in seconds
+        """
+        try:
+            # Get the station
+            station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
+            if not station:
+                self.logger.warning(f"Station with ID {station_id} not found")
+                return
+            
+            # Create a new track detection record
+            detection = TrackDetection(
+                track_id=track_id,
+                station_id=station_id,
+                detected_at=datetime.utcnow(),
+                play_duration=timedelta(seconds=play_duration),
+                confidence=0.8,
+                detection_method="audd"
+            )
+            self.db_session.add(detection)
+            
+            # Update station track stats
+            self._update_station_track_stats(station_id, track_id, timedelta(seconds=play_duration))
+            
+            self.db_session.commit()
+            self.logger.info(f"Recorded play time for track ID {track_id} on station ID {station_id}: {play_duration} seconds")
+        except Exception as e:
+            self.logger.error(f"Error recording play time: {e}")
+            self.db_session.rollback()
+
+    def _extract_fingerprint(self, features: Dict[str, Any]) -> Optional[str]:
         """
         Extrait une empreinte digitale à partir des caractéristiques audio.
         
@@ -421,16 +800,48 @@ class TrackManager:
             features: Caractéristiques audio extraites
             
         Returns:
-            Empreinte digitale sous forme de chaîne de caractères
+            Empreinte digitale sous forme de chaîne de caractères ou None si l'extraction échoue
         """
-        # Simuler l'extraction d'empreinte (à implémenter avec un algorithme réel)
-        # Dans une implémentation réelle, on utiliserait un algorithme comme Chromaprint
-        
-        # Pour l'instant, retourner une chaîne aléatoire
-        import hashlib
-        return hashlib.md5(features.tobytes()).hexdigest()
+        try:
+            # Simuler l'extraction d'empreinte (à implémenter avec un algorithme réel)
+            # Dans une implémentation réelle, on utiliserait un algorithme comme Chromaprint
+            
+            # Vérifier si l'empreinte est déjà calculée
+            if "fingerprint" in features and features["fingerprint"]:
+                return features["fingerprint"]
+                
+            # Extraire les caractéristiques pertinentes pour l'empreinte
+            import json
+            import hashlib
+            
+            # Utiliser les caractéristiques MFCC et chroma si disponibles
+            fingerprint_data = {}
+            if "mfcc_mean" in features:
+                fingerprint_data["mfcc"] = features["mfcc_mean"]
+            if "chroma_mean" in features:
+                fingerprint_data["chroma"] = features["chroma_mean"]
+            if "spectral_centroid_mean" in features:
+                fingerprint_data["spectral"] = features["spectral_centroid_mean"]
+                
+            # Si aucune caractéristique pertinente n'est disponible, utiliser une valeur aléatoire
+            if not fingerprint_data:
+                import random
+                fingerprint_data["random"] = random.random()
+                
+            # Convertir en chaîne JSON et calculer le hash MD5
+            fingerprint_str = json.dumps(fingerprint_data, sort_keys=True)
+            return hashlib.md5(fingerprint_str.encode('utf-8')).hexdigest()
+            
+        except Exception as e:
+            logger.error(f"[TRACK_MANAGER] Error extracting fingerprint: {str(e)}")
+            
+            # En cas d'erreur, générer une empreinte aléatoire
+            import random
+            import hashlib
+            random_data = str(random.random()).encode('utf-8')
+            return hashlib.md5(random_data).hexdigest()
 
-    def _convert_features_to_audio(self, features: np.ndarray) -> Optional[bytes]:
+    def _convert_features_to_audio(self, features: Dict[str, Any]) -> Optional[bytes]:
         """
         Convertit les caractéristiques audio en données audio brutes.
         
@@ -441,13 +852,67 @@ class TrackManager:
             Données audio brutes ou None en cas d'erreur
         """
         try:
-            # Cette méthode est une simplification - dans un cas réel,
-            # les caractéristiques seraient déjà extraites de données audio
-            # et il faudrait stocker les données audio originales
+            # Vérifier si les caractéristiques contiennent déjà des données audio brutes
+            if "raw_audio" in features and features["raw_audio"] is not None:
+                log_with_category(logger, "TRACK_MANAGER", "info", f"Using raw audio data from features ({len(features['raw_audio'])} bytes)")
+                return features["raw_audio"]
             
-            # Pour l'instant, on simule un signal audio simple
+            # Si nous avons un fingerprint, essayons de l'utiliser directement
+            if "fingerprint" in features and features["fingerprint"] is not None:
+                log_with_category(logger, "TRACK_MANAGER", "info", f"Using fingerprint from features")
+                # Nous pourrions retourner directement le fingerprint, mais AcoustID s'attend à des données audio
+                # Nous allons donc générer un signal audio plus représentatif
+                
+                # Utiliser une durée plus longue pour améliorer la détection
+                sample_rate = 44100
+                duration = min(30, features.get("play_duration", 30))  # Utiliser la durée réelle, max 30 secondes
+                
+                log_with_category(logger, "TRACK_MANAGER", "info", f"Generating audio representation with duration: {duration} seconds")
+                
+                # Créer un signal plus complexe basé sur les caractéristiques
+                t = np.linspace(0, duration, int(sample_rate * duration), False)
+                
+                # Utiliser les caractéristiques spectrales si disponibles
+                if "spectral_centroid_mean" in features and features["spectral_centroid_mean"] is not None:
+                    # Utiliser le centroïde spectral comme fréquence de base
+                    base_freq = max(220, min(880, features["spectral_centroid_mean"] * 10))
+                else:
+                    base_freq = 440  # La4 par défaut
+                
+                # Créer un signal plus riche avec plusieurs harmoniques
+                signal = np.sin(2 * np.pi * base_freq * t)  # Fondamentale
+                
+                # Ajouter des harmoniques si nous avons des informations chromatiques
+                if "chroma_mean" in features and features["chroma_mean"] is not None:
+                    chroma = features["chroma_mean"]
+                    for i, strength in enumerate(chroma):
+                        if strength > 0.1:  # Seuil pour inclure cette note
+                            # Ajouter cette note avec son amplitude relative
+                            freq = base_freq * (2 ** (i/12))  # Échelle chromatique
+                            signal += strength * np.sin(2 * np.pi * freq * t)
+                
+                # Normaliser
+                signal = signal * 32767 / np.max(np.abs(signal))
+                signal = signal.astype(np.int16)
+                
+                # Convertir en bytes
+                audio_segment = AudioSegment(
+                    signal.tobytes(),
+                    frame_rate=sample_rate,
+                    sample_width=2,
+                    channels=1
+                )
+                
+                buffer = io.BytesIO()
+                audio_segment.export(buffer, format="mp3", bitrate="192k")
+                
+                log_with_category(logger, "TRACK_MANAGER", "info", f"Generated audio data: {buffer.getbuffer().nbytes} bytes")
+                return buffer.getvalue()
+            
+            # Si nous n'avons ni données audio brutes ni fingerprint, générer un signal simple
+            log_with_category(logger, "TRACK_MANAGER", "warning", "No raw audio or fingerprint available, generating simple signal")
             sample_rate = 44100
-            duration = 5  # secondes
+            duration = 10  # secondes (augmenté de 5 à 10 secondes)
             
             # Créer un signal sinusoïdal simple
             t = np.linspace(0, duration, int(sample_rate * duration), False)
@@ -466,10 +931,136 @@ class TrackManager:
             )
             
             buffer = io.BytesIO()
-            audio_segment.export(buffer, format="wav")
+            audio_segment.export(buffer, format="mp3", bitrate="192k")
             
             return buffer.getvalue()
             
         except Exception as e:
-            self.logger.error(f"Erreur lors de la conversion des caractéristiques en audio: {str(e)}")
+            log_with_category(logger, "TRACK_MANAGER", "error", f"Erreur lors de la conversion des caractéristiques en audio: {str(e)}")
+            import traceback
+            log_with_category(logger, "TRACK_MANAGER", "error", f"Traceback: {traceback.format_exc()}")
+            return None
+
+    async def _get_or_create_artist(self, artist_name: str) -> Optional[Artist]:
+        """
+        Récupère ou crée un artiste dans la base de données.
+        
+        Args:
+            artist_name: Nom de l'artiste
+            
+        Returns:
+            Objet Artist ou None en cas d'erreur
+        """
+        try:
+            if not artist_name or artist_name == "Unknown Artist":
+                log_with_category(logger, "TRACK_MANAGER", "warning", "Invalid artist name, using 'Unknown Artist'")
+                artist_name = "Unknown Artist"
+            
+            # Rechercher l'artiste dans la base de données
+            artist = self.db_session.query(Artist).filter(Artist.name == artist_name).first()
+            
+            if artist:
+                log_with_category(logger, "TRACK_MANAGER", "info", f"Artist found in database: {artist_name} (ID: {artist.id})")
+                return artist
+            
+            # Créer un nouvel artiste
+            log_with_category(logger, "TRACK_MANAGER", "info", f"Creating new artist: {artist_name}")
+            artist = Artist(
+                name=artist_name,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            
+            self.db_session.add(artist)
+            self.db_session.flush()
+            
+            log_with_category(logger, "TRACK_MANAGER", "info", f"New artist created: {artist_name} (ID: {artist.id})")
+            return artist
+        except Exception as e:
+            log_with_category(logger, "TRACK_MANAGER", "error", f"Error creating artist: {e}")
+            return None
+
+    async def _get_or_create_track(self, title: str, artist_id: int, album: Optional[str] = None, 
+                              isrc: Optional[str] = None, label: Optional[str] = None, 
+                              release_date: Optional[str] = None) -> Optional[Track]:
+        """
+        Récupère ou crée une piste dans la base de données.
+        
+        Args:
+            title: Titre de la piste
+            artist_id: ID de l'artiste
+            album: Nom de l'album (optionnel)
+            isrc: Code ISRC (optionnel)
+            label: Label (optionnel)
+            release_date: Date de sortie (optionnel)
+            
+        Returns:
+            Objet Track ou None en cas d'erreur
+        """
+        try:
+            if not title or title == "Unknown Track":
+                log_with_category(logger, "TRACK_MANAGER", "warning", "Invalid track title, using 'Unknown Track'")
+                title = "Unknown Track"
+            
+            # Rechercher la piste dans la base de données
+            query = self.db_session.query(Track).filter(
+                Track.title == title,
+                Track.artist_id == artist_id
+            )
+            
+            # Ajouter l'ISRC à la recherche s'il est disponible
+            if isrc:
+                query = query.filter(Track.isrc == isrc)
+            
+            track = query.first()
+            
+            if track:
+                log_with_category(logger, "TRACK_MANAGER", "info", f"Track found in database: {title} (ID: {track.id})")
+                
+                # Mettre à jour les informations manquantes
+                updated = False
+                
+                if isrc and not track.isrc:
+                    track.isrc = isrc
+                    updated = True
+                
+                if label and not track.label:
+                    track.label = label
+                    updated = True
+                
+                if album and not track.album:
+                    track.album = album
+                    updated = True
+                
+                if release_date and not track.release_date:
+                    track.release_date = release_date
+                    updated = True
+                
+                if updated:
+                    track.updated_at = datetime.utcnow()
+                    self.db_session.flush()
+                    log_with_category(logger, "TRACK_MANAGER", "info", f"Track updated: {title} (ID: {track.id})")
+                
+                return track
+            
+            # Créer une nouvelle piste
+            log_with_category(logger, "TRACK_MANAGER", "info", f"Creating new track: {title}")
+            track = Track(
+                title=title,
+                artist_id=artist_id,
+                album=album,
+                isrc=isrc,
+                label=label,
+                release_date=release_date,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            
+            self.db_session.add(track)
+            self.db_session.flush()
+            
+            log_with_category(logger, "TRACK_MANAGER", "info", f"New track created: {title} (ID: {track.id})")
+            return track
+        except Exception as e:
+            log_with_category(logger, "TRACK_MANAGER", "error", f"Error creating track: {e}")
             return None 
