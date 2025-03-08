@@ -360,132 +360,47 @@ class TrackManager:
             logger.error(f"[TRACK_MANAGER] Error finding local match: {str(e)}")
             return None
     
-    async def find_acoustid_match(self, audio_features, station_id=None):
+    async def find_acoustid_match(self, audio_features: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Recherche une correspondance en utilisant le service AcoustID.
+        Find a match using AcoustID service.
         
         Args:
-            audio_features: Caractéristiques audio extraites
-            station_id: ID de la station (optionnel)
+            audio_features: Audio features dictionary
             
         Returns:
-            Dict contenant les informations de la piste ou None si aucune correspondance
+            Dictionary with track information or None if not found
         """
         try:
-            log_with_category(logger, "TRACK_MANAGER", "info", "Attempting to find AcoustID match")
-            
-            # Vérifier si les caractéristiques audio sont valides
-            if not audio_features:
-                log_with_category(logger, "TRACK_MANAGER", "warning", "No audio features provided for AcoustID match")
+            # Check if raw audio is available in features
+            if "raw_audio" not in audio_features or not audio_features["raw_audio"]:
+                log_with_category(logger, "TRACK_MANAGER", "info", "No raw audio data in features, cannot use AcoustID")
                 return None
+                
+            # Get raw audio data
+            raw_audio = audio_features["raw_audio"]
+            log_with_category(logger, "TRACK_MANAGER", "info", f"Using raw audio data from features ({len(raw_audio)} bytes)")
             
-            # Vérifier si nous avons des données audio brutes
-            audio_data = None
-            if "raw_audio" in audio_features and audio_features["raw_audio"] is not None:
-                log_with_category(logger, "TRACK_MANAGER", "info", f"Using raw audio data from features ({len(audio_features['raw_audio'])} bytes)")
-                audio_data = audio_features["raw_audio"]
-            else:
-                # Convertir les caractéristiques en audio
-                log_with_category(logger, "TRACK_MANAGER", "info", "No raw audio found, converting features to audio")
-                audio_data = self._convert_features_to_audio(audio_features)
-                if not audio_data:
-                    log_with_category(logger, "TRACK_MANAGER", "warning", "Failed to convert features to audio for AcoustID match")
-                    return None
+            # Initialize AcoustID service
+            acoustid_service = AcoustIDService()
+            log_with_category(logger, "TRACK_MANAGER", "info", f"AcoustID API key: {acoustid_service.api_key[:3]}...{acoustid_service.api_key[-3:]}")
             
-            log_with_category(logger, "TRACK_MANAGER", "info", f"Features converted to audio, sending to AcoustID")
+            # Send audio data to AcoustID
+            log_with_category(logger, "TRACK_MANAGER", "info", "Sending audio data to AcoustID for detection")
+            result = await acoustid_service.detect_track_with_retry(raw_audio, max_retries=2)
             
-            # Obtenir le service AcoustID
-            acoustid_api_key = os.environ.get("ACOUSTID_API_KEY")
-            if not acoustid_api_key:
-                log_with_category(logger, "TRACK_MANAGER", "error", "AcoustID API key not found in environment variables")
-                return None
-            
-            # Créer le service AcoustID
-            acoustid_service = AcoustIDService(acoustid_api_key)
-            
-            # Détecter la piste avec AcoustID
-            log_with_category(logger, "TRACK_MANAGER", "info", f"Sending audio data to AcoustID for detection: {len(audio_data)} bytes")
-            result = await acoustid_service.detect_track(audio_data)
-            
-            # Vérifier si une correspondance a été trouvée
             if not result:
-                log_with_category(logger, "TRACK_MANAGER", "info", "No match found with AcoustID")
+                log_with_category(logger, "TRACK_MANAGER", "info", "No track detected by AcoustID")
                 return None
+                
+            log_with_category(logger, "TRACK_MANAGER", "info", f"AcoustID detected track: {result.get('title', 'Unknown')} by {result.get('artist', 'Unknown')}")
             
-            # Extraire les informations de la piste
-            log_with_category(logger, "TRACK_MANAGER", "info", f"AcoustID match found: {json.dumps(result)}")
+            # Add detection method to result
+            result["detection_method"] = "acoustid"
             
-            # Extraire les informations de base
-            title = result.get("title", "Unknown Track")
-            artist = result.get("artist", "Unknown Artist")
-            album = result.get("album")
-            confidence = result.get("confidence", 0.0)
+            return result
             
-            # Extraire les informations supplémentaires
-            isrc = result.get("isrc")
-            label = result.get("label")
-            release_date = result.get("release_date")
-            
-            log_with_category(logger, "TRACK_MANAGER", "info", 
-                f"AcoustID match details - Title: {title}, Artist: {artist}, Album: {album}, "
-                f"ISRC: {isrc}, Label: {label}, Release date: {release_date}, Confidence: {confidence}"
-            )
-            
-            # Créer ou récupérer l'artiste
-            artist_obj = await self._get_or_create_artist(artist)
-            if not artist_obj:
-                log_with_category(logger, "TRACK_MANAGER", "error", f"Failed to get or create artist: {artist}")
-                return None
-            
-            log_with_category(logger, "TRACK_MANAGER", "info", f"Artist found/created: {artist_obj.name} (ID: {artist_obj.id})")
-            
-            # Créer ou récupérer la piste
-            track = await self._get_or_create_track(title, artist_obj.id, album, isrc, label, release_date)
-            if not track:
-                log_with_category(logger, "TRACK_MANAGER", "error", f"Failed to get or create track: {title}")
-                return None
-            
-            log_with_category(logger, "TRACK_MANAGER", "info", f"Track found/created: {track.title} (ID: {track.id})")
-            
-            # Générer et enregistrer l'empreinte digitale si elle n'existe pas déjà
-            if not track.fingerprint:
-                fingerprint = self._extract_fingerprint(audio_features)
-                if fingerprint:
-                    log_with_category(logger, "TRACK_MANAGER", "info", f"Generating and saving fingerprint for track: {track.title}")
-                    track.fingerprint = fingerprint
-                    self.db_session.commit()
-                    log_with_category(logger, "TRACK_MANAGER", "info", f"Fingerprint saved for track: {track.title}")
-            
-            # Créer la détection
-            detection_id = await self.save_detection(station_id, audio_features, {
-                "title": title,
-                "artist": artist,
-                "album": album,
-                "confidence": confidence,
-                "source": "acoustid",
-                "isrc": isrc,
-                "label": label,
-                "release_date": release_date
-            })
-            
-            if not detection_id:
-                log_with_category(logger, "TRACK_MANAGER", "error", "Failed to save detection")
-                return None
-            
-            log_with_category(logger, "TRACK_MANAGER", "info", f"Detection saved with ID: {detection_id}")
-            
-            # Retourner les informations de la piste
-            return {
-                "track_id": track.id,
-                "title": title,
-                "artist": artist,
-                "album": album,
-                "confidence": confidence,
-                "detection_id": detection_id,
-                "source": "acoustid"
-            }
         except Exception as e:
-            log_with_category(logger, "TRACK_MANAGER", "error", f"Error finding AcoustID match: {e}")
+            log_with_category(logger, "TRACK_MANAGER", "error", f"Error finding AcoustID match: {str(e)}")
             import traceback
             log_with_category(logger, "TRACK_MANAGER", "error", f"Traceback: {traceback.format_exc()}")
             return None
@@ -1063,4 +978,101 @@ class TrackManager:
             return track
         except Exception as e:
             log_with_category(logger, "TRACK_MANAGER", "error", f"Error creating track: {e}")
-            return None 
+            return None
+
+    async def process_station_data(self, station_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process audio data from a station and detect tracks.
+        
+        Args:
+            station_data: Dictionary containing station data with at least:
+                - raw_audio: Raw audio data as bytes
+                - station_id: ID of the station
+                - station_name: Name of the station
+                - timestamp: Timestamp of the recording
+                
+        Returns:
+            Dictionary with detection results
+        """
+        station_id = station_data.get("station_id")
+        station_name = station_data.get("station_name", "Unknown Station")
+        
+        log_with_category(logger, "TRACK_MANAGER", "info", f"Processing audio data from station {station_name} (ID: {station_id})")
+        
+        # Check if we have raw audio data
+        if "raw_audio" not in station_data or not station_data["raw_audio"]:
+            log_with_category(logger, "TRACK_MANAGER", "error", f"No raw audio data in station data for {station_name}")
+            return {"success": False, "error": "No raw audio data in station data"}
+        
+        # Try to find a local match first
+        log_with_category(logger, "TRACK_MANAGER", "info", f"Attempting to find local match for station {station_name}")
+        
+        # Extract features from raw audio
+        audio_features = {
+            "raw_audio": station_data["raw_audio"],
+            "station_id": station_id,
+            "station_name": station_name,
+            "timestamp": station_data.get("timestamp")
+        }
+        
+        # Try to find a local match
+        local_match = await self.find_local_match(audio_features)
+        if local_match:
+            log_with_category(logger, "TRACK_MANAGER", "info", f"Local match found for station {station_name}: {local_match.get('title')} by {local_match.get('artist')}")
+            
+            # Add station data to the result
+            local_match["station_id"] = station_id
+            local_match["station_name"] = station_name
+            local_match["timestamp"] = station_data.get("timestamp")
+            
+            # Start track detection
+            track = self._get_or_create_track(local_match)
+            if track:
+                detection_result = self._start_track_detection(track, station_id, local_match)
+                return {
+                    "success": True,
+                    "detection": detection_result,
+                    "source": "local"
+                }
+            else:
+                log_with_category(logger, "TRACK_MANAGER", "error", f"Failed to get or create track for local match for station {station_name}")
+                return {"success": False, "error": "Failed to get or create track for local match"}
+        
+        # If no local match, try AcoustID
+        log_with_category(logger, "TRACK_MANAGER", "info", f"No local match found for station {station_name}, trying AcoustID")
+        
+        # Initialize external service handler if not already initialized
+        if not hasattr(self, "external_service_handler"):
+            from .external_services import ExternalServiceHandler
+            self.external_service_handler = ExternalServiceHandler(self.db_session)
+            
+            # Ensure acoustid_service is initialized
+            if not hasattr(self.external_service_handler, "acoustid_service") or self.external_service_handler.acoustid_service is None:
+                from .external_services import AcoustIDService
+                self.external_service_handler.acoustid_service = AcoustIDService()
+                log_with_category(logger, "TRACK_MANAGER", "info", f"AcoustID service initialized manually for station {station_name}")
+        
+        # Try to recognize with AcoustID
+        acoustid_match = await self.external_service_handler.recognize_with_acoustid_from_station(station_data)
+        if acoustid_match:
+            log_with_category(logger, "TRACK_MANAGER", "info", f"AcoustID match found for station {station_name}: {acoustid_match.get('title')} by {acoustid_match.get('artist')}")
+            
+            # Start track detection
+            track = self._get_or_create_track(acoustid_match)
+            if track:
+                detection_result = self._start_track_detection(track, station_id, acoustid_match)
+                return {
+                    "success": True,
+                    "detection": detection_result,
+                    "source": "acoustid"
+                }
+            else:
+                log_with_category(logger, "TRACK_MANAGER", "error", f"Failed to get or create track for AcoustID match for station {station_name}")
+                return {"success": False, "error": "Failed to get or create track for AcoustID match"}
+        
+        # If no AcoustID match, try other services (Audd, etc.)
+        # ...
+        
+        # No match found
+        log_with_category(logger, "TRACK_MANAGER", "info", f"No match found for station {station_name}")
+        return {"success": False, "error": "No match found"} 
