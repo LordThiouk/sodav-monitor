@@ -197,6 +197,34 @@ async def get_monitoring_stats(
         ]
     }
 
+@router.post("/detect-music-all", include_in_schema=True)
+async def detect_music_all_stations_public(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """Detect music playing on all active radio stations without authentication."""
+    # Get all active stations
+    stations = db.query(RadioStation).filter(
+        RadioStation.status == StationStatus.ACTIVE
+    ).all()
+    
+    if not stations:
+        return {
+            "status": "success",
+            "message": "No active stations found",
+            "stations_count": 0
+        }
+    
+    # Detect music on each station in the background
+    for station in stations:
+        background_tasks.add_task(detect_station_music, station.id)
+    
+    return {
+        "status": "success",
+        "message": f"Music detection initiated for {len(stations)} active stations",
+        "stations_count": len(stations)
+    }
+
 # Helper functions
 
 async def check_station_status(station_id: int):
@@ -263,28 +291,11 @@ async def detect_station_music(station_id: int):
             logger.error(f"Station {station_id} not found")
             return
         
-        # Get the radio manager from the app state
-        from fastapi import FastAPI
-        from starlette.applications import Starlette
-        
-        # Get the app instance
-        app = None
-        for app_instance in Starlette._applications:
-            if isinstance(app_instance, FastAPI):
-                app = app_instance
-                break
-        
-        if app and hasattr(app.state, 'radio_manager'):
-            radio_manager = app.state.radio_manager
-            # Call the radio manager's detect_music method
-            result = await radio_manager.detect_music(station_id)
-            logger.info(f"Music detection for station {station.name}: {result}")
-        else:
-            # Fallback to the original implementation
-            from backend.detection.detect_music import MusicDetector
-            detector = MusicDetector(db)
-            result = await detector.detect_music_from_station(station_id)
-            logger.info(f"Music detection for station {station.name}: {result}")
+        # Utiliser directement le détecteur de musique
+        from backend.detection.detect_music import MusicDetector
+        detector = MusicDetector(db)
+        result = await detector.detect_music_from_station(station_id)
+        logger.info(f"Music detection for station {station.name}: {result}")
         
     except Exception as e:
         logger.error(f"Error detecting music for station {station_id}: {str(e)}")

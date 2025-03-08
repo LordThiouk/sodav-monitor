@@ -299,34 +299,52 @@ class FeatureExtractor:
             timbre_stability = self._calculate_timbre_stability(features["mfcc"])
             
             # Log feature scores for debugging
-            logger.debug(
+            logger.info(
                 f"Music detection: rhythm={rhythm_strength:.2f}, harmonic={harmonic_ratio:.2f}, "
                 f"flux={spectral_flux:.2f}, chroma={chroma_variance:.2f}, timbre={timbre_stability:.2f}"
             )
             
+            # Ajustement: si l'harmonie est très élevée mais le rythme est faible, 
+            # nous augmentons artificiellement le rythme pour compenser
+            if harmonic_ratio > 0.8 and rhythm_strength < 0.2:
+                adjusted_rhythm = 0.3 + (harmonic_ratio - 0.8) * 0.5
+                logger.info(f"Adjusting rhythm strength from {rhythm_strength:.2f} to {adjusted_rhythm:.2f} due to high harmonic ratio")
+                rhythm_strength = adjusted_rhythm
+            
             # Calculate primary and secondary scores
             primary_score = (
-                0.5 * rhythm_strength +     # Rhythm is most important
+                0.5 * rhythm_strength +     # Rhythm is important
                 0.5 * harmonic_ratio        # Harmonic content equally important
             )
             
             secondary_score = (
-                0.4 * (1.0 - spectral_flux) +  # Low flux indicates stability
+                0.3 * (1.0 - spectral_flux) +  # Low flux indicates stability
                 0.4 * timbre_stability +       # Stable timbre helps
-                0.2 * chroma_variance          # Pitch variation helps
+                0.3 * chroma_variance          # Pitch variation helps
             )
             
             # Combine scores with emphasis on primary features
             base_confidence = 0.7 * primary_score + 0.3 * secondary_score
             
             # Apply penalties for weak primary features
-            if rhythm_strength < 0.3 and harmonic_ratio < 0.3:
-                base_confidence *= 0.5  # Both primary features weak
-            elif rhythm_strength < 0.2 or harmonic_ratio < 0.2:
-                base_confidence *= 0.7  # One primary feature very weak
+            if rhythm_strength < 0.2 and harmonic_ratio < 0.2:  # Reduced thresholds
+                base_confidence *= 0.6  # Both primary features weak
+                logger.info(f"Applied penalty: both primary features weak (rhythm={rhythm_strength:.2f}, harmonic={harmonic_ratio:.2f})")
+            elif rhythm_strength < 0.1 or harmonic_ratio < 0.1:  # Reduced thresholds
+                base_confidence *= 0.8  # One primary feature very weak
+                logger.info(f"Applied penalty: one primary feature very weak (rhythm={rhythm_strength:.2f}, harmonic={harmonic_ratio:.2f})")
+            
+            # Ajustement: si l'harmonie est très élevée, nous augmentons le score final
+            if harmonic_ratio > 0.8:
+                harmonic_bonus = 0.1 + (harmonic_ratio - 0.8) * 0.5
+                adjusted_confidence = base_confidence + harmonic_bonus
+                logger.info(f"Applied harmonic bonus: {harmonic_bonus:.2f}, adjusting confidence from {base_confidence:.2f} to {adjusted_confidence:.2f}")
+                base_confidence = adjusted_confidence
                 
             # Apply threshold and return result
-            is_music = base_confidence >= 0.6
+            is_music = base_confidence >= 0.4  # Reduced threshold from 0.5 to 0.4
+            
+            logger.info(f"Final music detection: is_music={is_music}, confidence={base_confidence:.2f}")
             
             # Return tuple of (is_music, confidence)
             return (is_music, base_confidence)
@@ -339,6 +357,7 @@ class FeatureExtractor:
         """Calculate rhythm strength from mel spectrogram."""
         try:
             if mel_spectrogram.shape[0] < 128:
+                logger.warning(f"Mel spectrogram too small: {mel_spectrogram.shape}")
                 return 0.0
                 
             # Split into frequency bands
@@ -347,325 +366,355 @@ class FeatureExtractor:
             mid = mel_spectrogram[60:90]      # 600-900 Hz
             high = mel_spectrogram[90:]       # >900 Hz
             
+            # Log band shapes for debugging
+            logger.debug(f"Band shapes: bass={bass.shape}, low_mid={low_mid.shape}, mid={mid.shape}, high={high.shape}")
+            
             # Calculate onset envelope for each band
             def get_onset_envelope(band):
                 # Calculate power spectrogram
-                power = np.sum(band**2, axis=0)
-                # Normalize
-                power = power / (np.max(power) + 1e-6)
+                power = librosa.power_to_db(band, ref=np.max)
                 # Calculate onset envelope
-                onset_env = np.diff(power, prepend=power[0])
-                # Half-wave rectification
-                onset_env = np.maximum(onset_env, 0)
-                # Normalize
-                if np.any(onset_env):
-                    onset_env = onset_env / (np.max(onset_env) + 1e-6)
+                onset_env = np.diff(power, axis=1)
+                onset_env = np.maximum(0, onset_env)  # Keep only positive changes
                 return onset_env
-            
-            # Get onset envelopes
-            bass_onsets = get_onset_envelope(bass)
-            low_mid_onsets = get_onset_envelope(low_mid)
-            mid_onsets = get_onset_envelope(mid)
-            high_onsets = get_onset_envelope(high)
-            
-            # Calculate onset statistics for each band
+                
+            try:
+                bass_onsets = get_onset_envelope(bass)
+                low_mid_onsets = get_onset_envelope(low_mid)
+                mid_onsets = get_onset_envelope(mid)
+                high_onsets = get_onset_envelope(high)
+                
+                # Log onset shapes for debugging
+                logger.debug(f"Onset shapes: bass={bass_onsets.shape}, low_mid={low_mid_onsets.shape}, mid={mid_onsets.shape}, high={high_onsets.shape}")
+                
+            except Exception as e:
+                logger.error(f"Error calculating onset envelopes: {str(e)}")
+                return 0.0
+                
+            # Calculate statistics for each band
             def get_onset_stats(onsets):
-                if len(onsets) < 2:
-                    return 0.0, 0.0, 0.0
+                if onsets.size == 0:
+                    return {
+                        "mean": 0.0,
+                        "std": 0.0,
+                        "max": 0.0,
+                        "energy": 0.0
+                    }
                     
-                # Find peaks with adaptive thresholding
-                mean_onset = np.mean(onsets)
-                std_onset = np.std(onsets)
-                delta = max(0.2, mean_onset + 0.5 * std_onset)  # Increased threshold
+                # Calculate statistics
+                mean = np.mean(onsets)
+                std = np.std(onsets)
+                max_val = np.max(onsets)
+                energy = np.sum(onsets ** 2)
                 
-                peaks = librosa.util.peak_pick(
-                    onsets,
-                    pre_max=3,
-                    post_max=3,
-                    pre_avg=3,
-                    post_avg=3,
-                    delta=delta,
-                    wait=3  # Increased wait time
-                )
+                return {
+                    "mean": float(mean),
+                    "std": float(std),
+                    "max": float(max_val),
+                    "energy": float(energy)
+                }
                 
-                if len(peaks) < 2:
-                    return 0.0, 0.0, 0.0
-                    
-                # Calculate peak statistics
-                peak_heights = onsets[peaks]
-                intervals = np.diff(peaks)
-                
-                # Calculate regularity (inverse of coefficient of variation)
-                regularity = 1.0 - np.std(intervals) / (np.mean(intervals) + 1e-6)
-                # Calculate density (peaks per frame)
-                density = len(peaks) / len(onsets)
-                # Calculate strength (mean peak height)
-                strength = np.mean(peak_heights)
-                
-                return regularity, density, strength
-            
-            # Get stats for each band
             bass_stats = get_onset_stats(bass_onsets)
             low_mid_stats = get_onset_stats(low_mid_onsets)
             mid_stats = get_onset_stats(mid_onsets)
             high_stats = get_onset_stats(high_onsets)
             
+            # Log statistics for debugging
+            logger.debug(f"Bass stats: {bass_stats}")
+            logger.debug(f"Low-mid stats: {low_mid_stats}")
+            logger.debug(f"Mid stats: {mid_stats}")
+            logger.debug(f"High stats: {high_stats}")
+            
             # Calculate band scores
             def get_band_score(stats, weight):
-                regularity, density, strength = stats
+                # Normalize energy
+                energy = min(1.0, stats["energy"] / 1000.0)
+                # Calculate score based on energy and variability
+                score = weight * (0.7 * energy + 0.3 * (stats["std"] / (stats["mean"] + 1e-5)))
+                return score
                 
-                # Penalize irregular rhythms more severely
-                if regularity < 0.4:  # Increased threshold
-                    return 0.0
-                    
-                # More strict density requirements
-                if density < 0.1 or density > 0.4:  # Narrower range
-                    return 0.0
-                    
-                # Calculate score with emphasis on regularity
-                score = (
-                    0.5 * regularity +  # More weight on regularity
-                    0.3 * (1.0 - abs(0.25 - density) * 4) +  # Optimal density around 0.25
-                    0.2 * strength  # Less weight on strength
-                )
-                
-                return score * weight
+            # Weights for each band (bass is most important for rhythm)
+            bass_weight = 0.5
+            low_mid_weight = 0.3
+            mid_weight = 0.15
+            high_weight = 0.05
             
-            # Calculate weighted scores with more weight on bass
-            bass_score = get_band_score(bass_stats, 0.5)  # More weight on bass
-            low_mid_score = get_band_score(low_mid_stats, 0.3)
-            mid_score = get_band_score(mid_stats, 0.1)
-            high_score = get_band_score(high_stats, 0.1)
+            bass_score = get_band_score(bass_stats, bass_weight)
+            low_mid_score = get_band_score(low_mid_stats, low_mid_weight)
+            mid_score = get_band_score(mid_stats, mid_weight)
+            high_score = get_band_score(high_stats, high_weight)
             
-            # Combine scores
-            total_score = bass_score + low_mid_score + mid_score + high_score
+            # Log band scores for debugging
+            logger.debug(f"Band scores: bass={bass_score:.4f}, low_mid={low_mid_score:.4f}, mid={mid_score:.4f}, high={high_score:.4f}")
             
-            # Calculate tempo-based score
+            # Calculate tempo
             def estimate_tempo(onsets):
-                if len(onsets) < 2:
+                if onsets.size == 0:
                     return 0.0
                     
+                # Sum onsets across frequency bands
+                onset_sum = np.sum(onsets, axis=0)
+                
                 # Calculate autocorrelation
-                corr = np.correlate(onsets, onsets, mode='full')
-                corr = corr[len(corr)//2:]
+                corr = np.correlate(onset_sum, onset_sum, mode='full')
+                corr = corr[corr.size//2:]
                 
                 # Find peaks in autocorrelation
-                peaks = librosa.util.peak_pick(
-                    corr,
-                    pre_max=3,
-                    post_max=3,
-                    pre_avg=3,
-                    post_avg=3,
-                    delta=0.2,  # Increased threshold
-                    wait=3  # Increased wait time
-                )
+                # Correction de l'appel à peak_pick qui a changé dans la version de librosa
+                try:
+                    # Utiliser localmax qui est plus stable entre les versions
+                    from librosa.util import localmax
+                    # Créer un masque pour les maxima locaux
+                    peaks_mask = localmax(corr)
+                    # Appliquer un seuil
+                    threshold = 0.5 * np.max(corr)
+                    peaks_mask = peaks_mask & (corr > threshold)
+                    # Obtenir les indices des pics
+                    peaks = np.where(peaks_mask)[0]
+                except Exception as e:
+                    logger.error(f"Error in peak detection: {str(e)}")
+                    return 0.0
                 
-                if len(peaks) < 2:
+                if len(peaks) == 0:
                     return 0.0
                     
                 # Calculate tempo from peak intervals
                 intervals = np.diff(peaks)
-                tempo = 60.0 * self.sample_rate / (np.mean(intervals) * self.hop_length)
+                if intervals.size == 0:
+                    return 0.0
+                    
+                # Convert to BPM
+                tempo = 60.0 / (np.median(intervals) * 0.01)  # Assuming 100ms hop size
+                return min(300.0, max(40.0, tempo))  # Limit to reasonable range
                 
-                # Score based on reasonable tempo range (60-180 BPM)
-                tempo_score = np.exp(-0.5 * ((tempo - 120) / 40)**2)  # Narrower range
-                
-                return tempo_score
+            # Combine onsets for tempo estimation
+            combined_onsets = np.vstack([bass_onsets, low_mid_onsets, mid_onsets, high_onsets])
+            tempo = estimate_tempo(combined_onsets)
             
-            # Calculate tempo score from bass onsets (most reliable for tempo)
-            tempo_score = estimate_tempo(bass_onsets)
-            
-            # Combine with tempo score
-            final_score = 0.7 * total_score + 0.3 * tempo_score
-            
-            # Calculate entropy for onset patterns
+            # Calculate entropy (measure of randomness)
             def get_entropy(onsets):
-                hist, _ = np.histogram(onsets, bins=20, density=True)
-                entropy = -np.sum(hist * np.log2(hist + 1e-10))
-                return entropy / np.log2(len(hist))
-            
+                if onsets.size == 0:
+                    return 0.0
+                    
+                # Flatten and normalize
+                flat = onsets.flatten()
+                if np.sum(flat) == 0:
+                    return 0.0
+                    
+                # Normalize to probability distribution
+                prob = flat / np.sum(flat)
+                # Remove zeros
+                prob = prob[prob > 0]
+                # Calculate entropy
+                entropy = -np.sum(prob * np.log2(prob))
+                # Normalize to [0, 1]
+                max_entropy = np.log2(len(prob))
+                if max_entropy == 0:
+                    return 0.0
+                    
+                return entropy / max_entropy
+                
             # Calculate entropy for each band
             bass_entropy = get_entropy(bass_onsets)
             low_mid_entropy = get_entropy(low_mid_onsets)
             mid_entropy = get_entropy(mid_onsets)
             high_entropy = get_entropy(high_onsets)
             
-            # Calculate weighted entropy (more weight on bass)
-            avg_entropy = (
-                0.5 * bass_entropy +
-                0.3 * low_mid_entropy +
-                0.1 * mid_entropy +
-                0.1 * high_entropy
-            )
+            # Average entropy (lower is better for music)
+            avg_entropy = (bass_entropy + low_mid_entropy + mid_entropy + high_entropy) / 4.0
+            entropy_score = 1.0 - avg_entropy  # Invert so higher is better
             
-            # Apply stronger entropy penalty
-            if avg_entropy > 0.8:
-                final_score *= 0.2  # Stronger penalty
-            elif avg_entropy > 0.6:
-                final_score *= 0.4  # Stronger penalty
+            # Log entropy scores for debugging
+            logger.debug(f"Entropy scores: bass={bass_entropy:.4f}, low_mid={low_mid_entropy:.4f}, mid={mid_entropy:.4f}, high={high_entropy:.4f}, avg={avg_entropy:.4f}")
             
-            # Additional penalties for noise-like characteristics
-            if np.mean([s[1] for s in [bass_stats, low_mid_stats, mid_stats, high_stats]]) > 0.5:
-                final_score *= 0.3  # Penalize very dense onsets
+            # Combine scores
+            band_score = bass_score + low_mid_score + mid_score + high_score
+            
+            # Adjust for tempo (bonus for music-like tempo)
+            tempo_factor = 1.0
+            if 60 <= tempo <= 200:  # Most music is in this range
+                tempo_factor = 1.2
                 
-            if np.mean([s[0] for s in [bass_stats, low_mid_stats, mid_stats, high_stats]]) < 0.3:
-                final_score *= 0.3  # Penalize very irregular onsets
+            # Final rhythm strength score
+            rhythm_strength = min(1.0, band_score * tempo_factor * (0.8 + 0.2 * entropy_score))
             
-            return float(np.clip(final_score, 0, 1))
+            logger.info(f"Rhythm strength calculation: band_score={band_score:.4f}, tempo={tempo:.1f}, tempo_factor={tempo_factor:.1f}, entropy_score={entropy_score:.4f}, final={rhythm_strength:.4f}")
+            
+            return rhythm_strength
             
         except Exception as e:
-            logger.error(f"Error in rhythm strength calculation: {str(e)}")
+            logger.error(f"Error calculating rhythm strength: {str(e)}")
             return 0.0
         
     def _calculate_harmonic_ratio(self, mel_spectrogram: np.ndarray) -> float:
         """Calculate harmonic ratio from mel spectrogram."""
         try:
             if mel_spectrogram.shape[0] < 128:
+                logger.warning(f"Mel spectrogram too small for harmonic ratio: {mel_spectrogram.shape}")
                 return 0.0
                 
             # Split into frequency bands
-            bass = mel_spectrogram[:30]      # 0-300 Hz
-            low_mid = mel_spectrogram[30:60]  # 300-600 Hz
-            mid = mel_spectrogram[60:90]      # 600-900 Hz
-            high = mel_spectrogram[90:]       # >900 Hz
+            low = mel_spectrogram[:40]       # 0-400 Hz
+            mid_low = mel_spectrogram[40:80]  # 400-800 Hz
+            mid_high = mel_spectrogram[80:100]  # 800-1000 Hz
+            high = mel_spectrogram[100:]      # >1000 Hz
             
-            # Calculate band statistics
+            # Log band shapes for debugging
+            logger.debug(f"Harmonic band shapes: low={low.shape}, mid_low={mid_low.shape}, mid_high={mid_high.shape}, high={high.shape}")
+            
+            # Calculate statistics for each band
             def get_band_stats(band):
                 # Normalize band
-                band_norm = librosa.util.normalize(band, axis=1)
-                
-                # Calculate spectral peaks
-                peaks = []
-                peak_heights = []
-                for freq_bin in range(band_norm.shape[0]):
-                    bin_peaks = librosa.util.peak_pick(
-                        band_norm[freq_bin],
-                        pre_max=3,
-                        post_max=3,
-                        pre_avg=3,
-                        post_avg=3,
-                        delta=0.2,
-                        wait=2
-                    )
-                    if len(bin_peaks) > 0:
-                        peaks.append(bin_peaks)
-                        peak_heights.append(band_norm[freq_bin, bin_peaks])
-                
-                if not peaks:
-                    return 0.0, 0.0, 0.0
-                    
-                # Calculate peak statistics
-                avg_peaks = np.mean([len(p) for p in peaks])
-                avg_height = np.mean([np.mean(h) for h in peak_heights])
-                
-                # Calculate peak regularity
-                peak_distances = []
-                for p in peaks:
-                    if len(p) >= 2:
-                        distances = np.diff(p)
-                        peak_distances.extend(distances)
-                        
-                if peak_distances:
-                    regularity = 1.0 - np.std(peak_distances) / (np.mean(peak_distances) + 1e-6)
+                if np.max(band) > 0:
+                    band_norm = band / np.max(band)
                 else:
-                    regularity = 0.0
+                    band_norm = band
+                    
+                # Calculate statistics
+                mean = np.mean(band_norm)
+                std = np.std(band_norm)
+                max_val = np.max(band_norm)
+                energy = np.sum(band_norm ** 2)
                 
-                return regularity, avg_peaks / band_norm.shape[1], avg_height
-            
-            # Get stats for each band
-            bass_stats = get_band_stats(bass)
-            low_mid_stats = get_band_stats(low_mid)
-            mid_stats = get_band_stats(mid)
+                # Calculate spectral flatness (Wiener entropy)
+                if np.all(band_norm == 0):
+                    flatness = 0.0
+                else:
+                    # Add small constant to avoid log(0)
+                    band_pos = band_norm + 1e-10
+                    # Geometric mean / arithmetic mean
+                    flatness = np.exp(np.mean(np.log(band_pos))) / np.mean(band_pos)
+                    
+                return {
+                    "mean": float(mean),
+                    "std": float(std),
+                    "max": float(max_val),
+                    "energy": float(energy),
+                    "flatness": float(flatness)
+                }
+                
+            low_stats = get_band_stats(low)
+            mid_low_stats = get_band_stats(mid_low)
+            mid_high_stats = get_band_stats(mid_high)
             high_stats = get_band_stats(high)
+            
+            # Log statistics for debugging
+            logger.debug(f"Low band stats: {low_stats}")
+            logger.debug(f"Mid-low band stats: {mid_low_stats}")
+            logger.debug(f"Mid-high band stats: {mid_high_stats}")
+            logger.debug(f"High band stats: {high_stats}")
             
             # Calculate band scores
             def get_band_score(stats, weight):
-                regularity, density, height = stats
+                # Harmonic sounds have low flatness
+                harmonic_factor = 1.0 - stats["flatness"]
+                # Energy factor
+                energy_factor = min(1.0, stats["energy"] / 10.0)
+                # Variability factor
+                var_factor = stats["std"] / (stats["mean"] + 1e-5)
                 
-                # Penalize irregular peaks
-                if regularity < 0.2:
-                    return 0.0
-                    
-                # Penalize too sparse or too dense peaks
-                if density < 0.05 or density > 0.5:
-                    return 0.0
-                    
-                # Calculate score
-                score = (
-                    0.4 * regularity +
-                    0.3 * (1.0 - abs(0.2 - density) * 4) +  # Optimal density around 0.2
-                    0.3 * height
-                )
+                # Combine factors
+                score = weight * (0.5 * harmonic_factor + 0.3 * energy_factor + 0.2 * var_factor)
+                return score
                 
-                return score * weight
+            # Weights for each band (mid ranges are most important for harmony)
+            low_weight = 0.2
+            mid_low_weight = 0.4
+            mid_high_weight = 0.3
+            high_weight = 0.1
             
-            # Calculate weighted scores
-            bass_score = get_band_score(bass_stats, 0.4)
-            low_mid_score = get_band_score(low_mid_stats, 0.3)
-            mid_score = get_band_score(mid_stats, 0.2)
-            high_score = get_band_score(high_stats, 0.1)
+            low_score = get_band_score(low_stats, low_weight)
+            mid_low_score = get_band_score(mid_low_stats, mid_low_weight)
+            mid_high_score = get_band_score(mid_high_stats, mid_high_weight)
+            high_score = get_band_score(high_stats, high_weight)
             
-            # Combine scores
-            total_score = bass_score + low_mid_score + mid_score + high_score
-            
-            # Calculate harmonic relationships
-            def get_harmonic_score(band1, band2):
-                if band1.shape[1] != band2.shape[1]:
-                    return 0.0
-                    
-                # Calculate correlation between bands
-                corr = np.zeros((band1.shape[0], band2.shape[0]))
-                for i in range(band1.shape[0]):
-                    for j in range(band2.shape[0]):
-                        c = np.corrcoef(band1[i], band2[j])[0, 1]
-                        corr[i, j] = 0.0 if np.isnan(c) else abs(c)
-                
-                # Find maximum correlation for each frequency
-                max_corr = np.max(corr, axis=1)
-                return np.mean(max_corr)
+            # Log band scores for debugging
+            logger.debug(f"Harmonic band scores: low={low_score:.4f}, mid_low={mid_low_score:.4f}, mid_high={mid_high_score:.4f}, high={high_score:.4f}")
             
             # Calculate harmonic relationships between bands
-            harmonic_scores = [
-                get_harmonic_score(bass, low_mid),
-                get_harmonic_score(low_mid, mid),
-                get_harmonic_score(mid, high)
-            ]
+            def get_harmonic_score(band1, band2):
+                if band1.size == 0 or band2.size == 0:
+                    return 0.0
+                    
+                # Normalize bands
+                if np.max(band1) > 0:
+                    band1_norm = band1 / np.max(band1)
+                else:
+                    band1_norm = band1
+                    
+                if np.max(band2) > 0:
+                    band2_norm = band2 / np.max(band2)
+                else:
+                    band2_norm = band2
+                    
+                # Calculate correlation
+                corr = np.corrcoef(np.mean(band1_norm, axis=0), np.mean(band2_norm, axis=0))[0, 1]
+                # Handle NaN
+                if np.isnan(corr):
+                    corr = 0.0
+                    
+                # Scale to [0, 1]
+                corr = (corr + 1.0) / 2.0
+                
+                return corr
+                
+            # Calculate harmonic relationships
+            low_mid_low_score = get_harmonic_score(low, mid_low)
+            mid_low_mid_high_score = get_harmonic_score(mid_low, mid_high)
+            mid_high_high_score = get_harmonic_score(mid_high, high)
             
-            # Calculate harmonic score
-            harmonic_score = np.mean(harmonic_scores)
+            # Log harmonic relationship scores
+            logger.debug(f"Harmonic relationships: low-mid_low={low_mid_low_score:.4f}, mid_low-mid_high={mid_low_mid_high_score:.4f}, mid_high-high={mid_high_high_score:.4f}")
             
-            # Combine with total score
-            final_score = 0.7 * total_score + 0.3 * harmonic_score
-            
-            # Calculate spectral entropy
+            # Calculate entropy (measure of randomness)
             def get_entropy(band):
                 # Calculate power spectrum
-                power = np.mean(band**2, axis=1)
-                # Normalize
-                power = power / (np.sum(power) + 1e-6)
+                power = librosa.power_to_db(band, ref=np.max)
+                
+                # Flatten and normalize
+                flat = power.flatten()
+                if np.sum(flat) == 0:
+                    return 0.0
+                    
+                # Normalize to probability distribution
+                prob = flat / np.sum(flat)
+                # Remove zeros
+                prob = prob[prob > 0]
                 # Calculate entropy
-                entropy = -np.sum(power * np.log2(power + 1e-10))
-                return entropy / np.log2(len(power))
-            
+                entropy = -np.sum(prob * np.log2(prob))
+                # Normalize to [0, 1]
+                max_entropy = np.log2(len(prob))
+                if max_entropy == 0:
+                    return 0.0
+                    
+                return entropy / max_entropy
+                
             # Calculate entropy for each band
-            entropies = [
-                get_entropy(bass),
-                get_entropy(low_mid),
-                get_entropy(mid),
-                get_entropy(high)
-            ]
+            low_entropy = get_entropy(low)
+            mid_low_entropy = get_entropy(mid_low)
+            mid_high_entropy = get_entropy(mid_high)
+            high_entropy = get_entropy(high)
             
-            # Apply entropy penalty
-            avg_entropy = np.mean(entropies)
-            if avg_entropy > 0.9:
-                final_score *= 0.3
-            elif avg_entropy > 0.7:
-                final_score *= 0.6
+            # Average entropy (lower is better for harmonic content)
+            avg_entropy = (low_entropy + mid_low_entropy + mid_high_entropy + high_entropy) / 4.0
+            entropy_score = 1.0 - avg_entropy  # Invert so higher is better
             
-            return float(np.clip(final_score, 0, 1))
+            # Log entropy scores
+            logger.debug(f"Harmonic entropy scores: low={low_entropy:.4f}, mid_low={mid_low_entropy:.4f}, mid_high={mid_high_entropy:.4f}, high={high_entropy:.4f}, avg={avg_entropy:.4f}")
+            
+            # Combine scores
+            band_score = low_score + mid_low_score + mid_high_score + high_score
+            relationship_score = (low_mid_low_score + mid_low_mid_high_score + mid_high_high_score) / 3.0
+            
+            # Final harmonic ratio score
+            harmonic_ratio = min(1.0, 0.5 * band_score + 0.3 * relationship_score + 0.2 * entropy_score)
+            
+            logger.info(f"Harmonic ratio calculation: band_score={band_score:.4f}, relationship_score={relationship_score:.4f}, entropy_score={entropy_score:.4f}, final={harmonic_ratio:.4f}")
+            
+            return harmonic_ratio
             
         except Exception as e:
-            logger.error(f"Error in harmonic ratio calculation: {str(e)}")
+            logger.error(f"Error calculating harmonic ratio: {str(e)}")
             return 0.0
         
     def _calculate_spectral_flux(self, mel_spectrogram: np.ndarray) -> float:

@@ -169,6 +169,8 @@ class Track(Base):
     duration = Column(Interval)
     fingerprint = Column(String, unique=True)
     fingerprint_raw = Column(LargeBinary)
+    release_date = Column(String, nullable=True)  # Ajout du champ release_date
+    genre = Column(String, nullable=True)  # Ajout du champ genre pour plus de complétude
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -190,6 +192,7 @@ class TrackDetection(Base):
     fingerprint = Column(String)
     audio_hash = Column(String, index=True)
     _is_valid = Column("is_valid", Boolean, default=True)  # Added is_valid column
+    detection_method = Column(String, nullable=True)  # Ajout du champ detection_method
     
     station = relationship("RadioStation", back_populates="detections")
     track = relationship("Track", back_populates="detections")
@@ -351,7 +354,7 @@ class StationHealth(Base):
     __tablename__ = 'station_health'
 
     id = Column(Integer, primary_key=True)
-    station_id = Column(Integer, ForeignKey('radio_stations.id'), index=True)
+    station_id = Column(Integer, ForeignKey('radio_stations.id', ondelete="CASCADE"))
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     status = Column(String)  # 'healthy', 'unhealthy', 'error'
     error_message = Column(Text, nullable=True)

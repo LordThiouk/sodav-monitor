@@ -1,156 +1,149 @@
-"""Audio stream handling and buffering functionality."""
+"""Module for handling audio streams."""
 
 import logging
-import numpy as np
 import asyncio
-from typing import Optional, Dict, Any, Union
-from datetime import datetime
+import numpy as np
 import requests
-from backend.logs.log_manager import LogManager
+import wave
+from typing import Dict, Any, Optional, List, Tuple
+import time
+import math
+import random
+from backend.utils.logging_config import setup_logging, log_with_category
 
-# Initialize logging
-log_manager = LogManager()
-logger = log_manager.get_logger("detection.audio_processor.stream_handler")
+# Configure logging
+logger = setup_logging(__name__)
 
 class StreamHandler:
-    """Handles audio stream processing and buffering."""
+    """Handler for audio streams."""
     
     def __init__(self, buffer_size: int = 4096, channels: int = 2):
         """Initialize the stream handler.
         
         Args:
-            buffer_size: Size of the audio buffer in samples
+            buffer_size: Size of the audio buffer
             channels: Number of audio channels (1 for mono, 2 for stereo)
             
         Raises:
-            ValueError: If buffer_size <= 0 or channels not in [1, 2]
+            ValueError: If buffer_size is less than or equal to 0
+            ValueError: If channels is not 1 or 2
         """
         if buffer_size <= 0:
             raise ValueError("Buffer size must be greater than 0")
+            
         if channels not in [1, 2]:
-            raise ValueError("Channels must be 1 (mono) or 2 for stereo")
+            raise ValueError("Channels must be 1 (mono) or 2 (stereo)")
             
         self.buffer_size = buffer_size
         self.channels = channels
-        self.buffer = np.zeros((buffer_size, channels))
-        self.buffer_position = 0
-        self.last_process_time = datetime.now()
+        self.buffer = np.zeros((buffer_size, channels), dtype=np.float32)
+        self.buffer_index = 0
+        self.is_streaming = False
         
-        logger.info(f"StreamHandler initialized: buffer_size={buffer_size}, channels={channels}")
-        
+        log_with_category(logger, "STREAM", "info", f"StreamHandler initialized: buffer_size={buffer_size}, channels={channels}")
+    
     async def process_chunk(self, chunk: np.ndarray) -> Optional[np.ndarray]:
-        """Process an incoming audio chunk.
+        """Process an audio chunk.
         
         Args:
-            chunk: Audio data chunk as numpy array
+            chunk: Audio chunk as numpy array
             
         Returns:
-            Processed audio data or None if buffer not full
-            
-        Raises:
-            ValueError: If chunk shape doesn't match configuration
-            TypeError: If chunk is not a numpy array
+            Processed audio chunk or None if buffer is not full
         """
-        if not isinstance(chunk, np.ndarray):
-            raise TypeError("Audio chunk must be a numpy array")
+        if not self.is_streaming:
+            log_with_category(logger, "STREAM", "warning", "Stream is not active")
+            return None
             
-        # Handle mono to stereo conversion
-        if len(chunk.shape) == 1:
-            chunk = np.column_stack((chunk, chunk))
-        
-        expected_shape = (None, self.channels)
-        if len(chunk.shape) != 2 or chunk.shape[1] != self.channels:
-            raise ValueError(f"Chunk shape {chunk.shape} doesn't match expected shape {expected_shape}")
+        if chunk.size == 0:
+            log_with_category(logger, "STREAM", "warning", "Empty chunk received")
+            return None
             
-        # Check for NaN values
-        if np.any(np.isnan(chunk)):
-            raise ValueError("Audio chunk contains NaN values")
+        # Ensure chunk is 2D
+        if chunk.ndim == 1:
+            chunk = chunk.reshape(-1, 1)
             
-        # Add chunk to buffer
-        space_left = self.buffer_size - self.buffer_position
-        chunk_size = min(len(chunk), space_left)
-        
-        # Copy data to buffer
-        self.buffer[self.buffer_position:self.buffer_position + chunk_size] = chunk[:chunk_size]
-        self.buffer_position += chunk_size
-        
-        result = None
-        # Check if buffer is full
-        if self.buffer_position >= self.buffer_size:
-            result = self.buffer.copy()
-            
-            # Handle remaining samples if any
-            remaining_samples = chunk[chunk_size:]
-            if len(remaining_samples) > 0:
-                # Move remaining samples to start of buffer
-                self.buffer[:len(remaining_samples)] = remaining_samples
-                self.buffer_position = len(remaining_samples)
+        # Ensure chunk has the right number of channels
+        if chunk.shape[1] != self.channels:
+            if chunk.shape[1] == 1 and self.channels == 2:
+                # Convert mono to stereo
+                chunk = np.column_stack((chunk, chunk))
+            elif chunk.shape[1] == 2 and self.channels == 1:
+                # Convert stereo to mono
+                chunk = np.mean(chunk, axis=1, keepdims=True)
             else:
-                # Keep accumulating from the start
-                self.buffer_position = 0
+                log_with_category(logger, "STREAM", "error", f"Chunk has {chunk.shape[1]} channels, expected {self.channels}")
+                return None
                 
-        return result
+        # Add chunk to buffer
+        chunk_size = min(chunk.shape[0], self.buffer_size - self.buffer_index)
+        self.buffer[self.buffer_index:self.buffer_index + chunk_size] = chunk[:chunk_size]
+        self.buffer_index += chunk_size
         
+        # If buffer is full, process it
+        if self.buffer_index >= self.buffer_size:
+            log_with_category(logger, "STREAM", "debug", "Buffer is full, processing")
+            result = np.copy(self.buffer)
+            self._reset_buffer()
+            return result
+            
+        return None
+    
     def _reset_buffer(self):
-        """Reset the buffer to initial state."""
-        self.buffer.fill(0)
-        self.buffer_position = 0
-        
+        """Reset the audio buffer."""
+        self.buffer = np.zeros((self.buffer_size, self.channels), dtype=np.float32)
+        self.buffer_index = 0
+    
     async def start_stream(self) -> bool:
-        """Start the audio stream processing.
+        """Start streaming.
         
         Returns:
-            True if stream started successfully
+            True if streaming started successfully
         """
-        try:
-            self._reset_buffer()
-            logger.info("Stream processing started")
-            return True
-        except Exception as e:
-            logger.error(f"Error starting stream: {str(e)}")
+        if self.is_streaming:
+            log_with_category(logger, "STREAM", "warning", "Stream is already active")
             return False
             
+        self.is_streaming = True
+        self._reset_buffer()
+        log_with_category(logger, "STREAM", "info", "Stream started")
+        return True
+    
     async def stop_stream(self) -> bool:
-        """Stop the audio stream processing.
+        """Stop streaming.
         
         Returns:
-            True if stream stopped successfully
+            True if streaming stopped successfully
         """
-        try:
-            self._reset_buffer()
-            logger.info("Stream processing stopped")
-            return True
-        except Exception as e:
-            logger.error(f"Error stopping stream: {str(e)}")
+        if not self.is_streaming:
+            log_with_category(logger, "STREAM", "warning", "Stream is not active")
             return False
             
+        self.is_streaming = False
+        log_with_category(logger, "STREAM", "info", "Stream stopped")
+        return True
+    
     async def cleanup(self):
         """Clean up resources."""
-        try:
-            self._reset_buffer()
-            logger.info("Stream handler cleaned up")
-        except Exception as e:
-            logger.error(f"Error during cleanup: {str(e)}")
+        if self.is_streaming:
+            await self.stop_stream()
             
+        self._reset_buffer()
+        log_with_category(logger, "STREAM", "info", "Stream handler cleaned up")
+    
     def get_buffer_status(self) -> Dict[str, Any]:
-        """Get current buffer status.
+        """Get the status of the buffer.
         
         Returns:
-            Dictionary with buffer statistics
+            Dictionary with buffer status
         """
-        current_time = datetime.now()
-        processing_delay = (current_time - self.last_process_time).total_seconds() * 1000
-        self.last_process_time = current_time
-        
         return {
             "buffer_size": self.buffer_size,
-            "current_position": self.buffer_position,
-            "fill_percentage": (self.buffer_position / self.buffer_size) * 100,
-            "channels": self.channels,
-            "last_process_time": self.last_process_time.isoformat(),
-            "processing_delay_ms": processing_delay
+            "buffer_index": self.buffer_index,
+            "is_streaming": self.is_streaming,
+            "fill_percentage": (self.buffer_index / self.buffer_size) * 100
         }
-
+    
     async def get_audio_data(self, stream_url: str) -> bytes:
         """Get audio data from a stream URL.
         
@@ -171,6 +164,8 @@ class StreamHandler:
             import io
             import time
             
+            log_with_category(logger, "STREAM", "info", f"Attempting to get audio data from {stream_url}")
+            
             # Set headers to mimic a browser request
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -181,119 +176,132 @@ class StreamHandler:
             }
             
             # Make a GET request with a timeout
-            response = requests.get(stream_url, headers=headers, stream=True, timeout=10)
+            # Increased timeout from 10 to 20 seconds
+            log_with_category(logger, "STREAM", "info", f"Sending HTTP request to {stream_url}")
+            response = requests.get(stream_url, headers=headers, stream=True, timeout=20)
             
             # Check if the request was successful
             if response.status_code != 200:
-                raise RuntimeError(f"Failed to access stream: HTTP {response.status_code}")
+                log_with_category(logger, "STREAM", "warning", f"Failed to access stream {stream_url}, status code: {response.status_code}")
+                log_with_category(logger, "STREAM", "info", "Generating synthetic audio data as fallback")
+                return self._generate_synthetic_audio()
             
-            # Read a chunk of the audio stream (limit to 10 seconds)
-            chunk_size = 1024 * 10  # 10KB chunks
-            max_size = 1024 * 1024  # 1MB max (approximately 10 seconds of audio)
+            log_with_category(logger, "STREAM", "info", f"Successfully connected to {stream_url}, reading data")
             
+            # Read audio data in chunks
             audio_data = io.BytesIO()
+            chunk_size = 10 * 1024  # 10KB chunks
+            max_size = 1 * 1024 * 1024  # 1MB max (about 10 seconds of audio)
             total_size = 0
             
             for chunk in response.iter_content(chunk_size=chunk_size):
-                if chunk:  # filter out keep-alive new chunks
+                if chunk:
                     audio_data.write(chunk)
                     total_size += len(chunk)
                     if total_size >= max_size:
                         break
             
-            # If we couldn't get any data, return a synthetic audio sample
+            # Check if we got any data
             if total_size == 0:
-                logger.warning(f"No audio data received from {stream_url}, generating synthetic audio")
+                log_with_category(logger, "STREAM", "warning", f"No data received from {stream_url}")
+                log_with_category(logger, "STREAM", "info", "Generating synthetic audio data as fallback")
                 return self._generate_synthetic_audio()
             
-            # Reset the pointer to the beginning of the BytesIO object
-            audio_data.seek(0)
+            log_with_category(logger, "STREAM", "info", f"Successfully read {total_size} bytes from {stream_url}")
             
-            # Try to determine the format and convert if necessary
+            # Try to determine the audio format
+            audio_data.seek(0)
+            audio_bytes = audio_data.getvalue()
+            
+            # Try to determine the audio format using pydub
+            log_with_category(logger, "STREAM", "info", f"Attempting to determine audio format from {stream_url}")
             try:
-                import pydub
                 from pydub import AudioSegment
                 
-                # Try to load as MP3 first (most common for streams)
+                # Try loading as MP3
                 try:
-                    audio_segment = AudioSegment.from_mp3(audio_data)
-                except:
-                    # Reset the pointer and try as WAV
-                    audio_data.seek(0)
+                    audio = AudioSegment.from_mp3(io.BytesIO(audio_bytes))
+                    log_with_category(logger, "STREAM", "info", f"Successfully loaded as MP3 from {stream_url}")
+                except Exception as mp3_error:
+                    # Try loading as WAV
                     try:
-                        audio_segment = AudioSegment.from_wav(audio_data)
-                    except:
-                        # Reset the pointer and try as OGG
-                        audio_data.seek(0)
+                        audio = AudioSegment.from_wav(io.BytesIO(audio_bytes))
+                        log_with_category(logger, "STREAM", "info", f"Successfully loaded as WAV from {stream_url}")
+                    except Exception as wav_error:
+                        # Try loading as OGG
                         try:
-                            audio_segment = AudioSegment.from_ogg(audio_data)
-                        except:
-                            # If all else fails, try raw PCM
-                            audio_data.seek(0)
+                            audio = AudioSegment.from_ogg(io.BytesIO(audio_bytes))
+                            log_with_category(logger, "STREAM", "info", f"Successfully loaded as OGG from {stream_url}")
+                        except Exception as ogg_error:
+                            # Try loading as raw PCM
                             try:
-                                audio_segment = AudioSegment.from_raw(audio_data, sample_width=2, frame_rate=44100, channels=2)
-                            except:
-                                # If we can't determine the format, return synthetic audio
-                                logger.warning(f"Could not determine audio format from {stream_url}, generating synthetic audio")
+                                audio = AudioSegment.from_raw(io.BytesIO(audio_bytes), sample_width=2, frame_rate=44100, channels=2)
+                                log_with_category(logger, "STREAM", "info", f"Successfully loaded as raw PCM from {stream_url}")
+                            except Exception as raw_error:
+                                log_with_category(logger, "STREAM", "warning", f"Failed to determine audio format from {stream_url}: {raw_error}")
+                                log_with_category(logger, "STREAM", "info", "Generating synthetic audio data as fallback")
                                 return self._generate_synthetic_audio()
                 
-                # Convert to WAV format for easier processing
-                wav_data = io.BytesIO()
-                audio_segment.export(wav_data, format="wav")
-                wav_data.seek(0)
+                # Convert to WAV format for processing
+                log_with_category(logger, "STREAM", "info", f"Converting audio to WAV format from {stream_url}")
+                wav_io = io.BytesIO()
+                audio.export(wav_io, format="wav")
+                wav_io.seek(0)
+                audio_bytes = wav_io.getvalue()
                 
-                return wav_data.read()
+                log_with_category(logger, "STREAM", "info", f"Successfully processed audio data from {stream_url}")
+                return audio_bytes
                 
             except ImportError:
-                logger.warning("pydub not installed, returning raw audio data")
-                audio_data.seek(0)
-                return audio_data.getvalue()
+                log_with_category(logger, "STREAM", "warning", "pydub not installed, returning raw audio data")
+                return audio_bytes
             
         except Exception as e:
-            logger.error(f"Error getting audio data from stream {stream_url}: {str(e)}")
-            # Return synthetic audio in case of error
+            log_with_category(logger, "STREAM", "error", f"Error getting audio data from stream {stream_url}: {str(e)}")
+            log_with_category(logger, "STREAM", "info", "Generating synthetic audio data due to error")
             return self._generate_synthetic_audio()
-            
+    
     def _generate_synthetic_audio(self) -> bytes:
-        """Generate synthetic audio data for testing or fallback purposes."""
-        import numpy as np
-        import wave
-        import io
+        """Generate synthetic audio data.
         
-        # Parameters for the synthetic audio
-        duration = 5.0  # 5 seconds
+        Returns:
+            Synthetic audio data as bytes
+        """
+        log_with_category(logger, "STREAM", "info", "Generating synthetic audio data")
+        
+        # Generate a 5-second synthetic audio sample
         sample_rate = 44100
-        num_samples = int(duration * sample_rate)
+        duration = 5  # seconds
         
-        # Generate a sine wave with harmonics (to simulate music)
-        t = np.linspace(0, duration, num_samples, endpoint=False)
-        frequency = 440.0  # A4 note
+        # Generate a sine wave with harmonics to simulate music
+        t = np.linspace(0, duration, int(sample_rate * duration), False)
         
-        # Create a signal with multiple harmonics
-        signal = 0.5 * np.sin(2 * np.pi * frequency * t)
-        signal += 0.3 * np.sin(2 * np.pi * 2 * frequency * t)  # First harmonic
-        signal += 0.15 * np.sin(2 * np.pi * 3 * frequency * t)  # Second harmonic
+        # Base frequency (A4 = 440Hz)
+        freq = 440
+        
+        # Generate a more complex waveform with harmonics
+        signal = 0.3 * np.sin(2 * np.pi * freq * t)  # Fundamental
+        signal += 0.2 * np.sin(2 * np.pi * freq * 2 * t)  # 1st harmonic
+        signal += 0.1 * np.sin(2 * np.pi * freq * 3 * t)  # 2nd harmonic
+        signal += 0.05 * np.sin(2 * np.pi * freq * 4 * t)  # 3rd harmonic
         
         # Add some noise
-        noise = np.random.normal(0, 0.01, len(signal))
+        noise = 0.05 * np.random.normal(0, 1, len(t))
         signal += noise
         
-        # Normalize
+        # Normalize to -1.0 to 1.0
         signal = signal / np.max(np.abs(signal))
         
         # Convert to 16-bit PCM
         signal = (signal * 32767).astype(np.int16)
         
-        # Create a BytesIO object to hold the WAV data
-        wav_buffer = io.BytesIO()
-        
         # Create a WAV file in memory
-        with wave.open(wav_buffer, 'wb') as wav_file:
+        buffer = io.BytesIO()
+        with wave.open(buffer, 'wb') as wav_file:
             wav_file.setnchannels(1)  # Mono
             wav_file.setsampwidth(2)  # 16-bit
             wav_file.setframerate(sample_rate)
             wav_file.writeframes(signal.tobytes())
         
-        # Get the WAV data
-        wav_buffer.seek(0)
-        return wav_buffer.read() 
+        log_with_category(logger, "STREAM", "info", "Synthetic audio data generated successfully")
+        return buffer.getvalue() 

@@ -6,6 +6,57 @@ from pathlib import Path
 import json
 from datetime import datetime
 from backend.config import PATHS
+from typing import Dict, Any, Optional
+
+# Définir les catégories de logs
+LOG_CATEGORIES = [
+    "DETECTION",
+    "AUDIO_PROCESSOR",
+    "STREAM",
+    "TRACK_MANAGER",
+    "MUSICBRAINZ",
+    "AUDD",
+    "ACOUSTID",
+    "GENERAL"
+]
+
+class CategoryFilter(logging.Filter):
+    """Filtre pour sélectionner les logs d'une catégorie spécifique."""
+    
+    def __init__(self, category):
+        super().__init__()
+        self.category = f"[{category}]"
+    
+    def filter(self, record):
+        if not hasattr(record, 'msg'):
+            return False
+        return self.category in record.msg
+
+def log_with_category(logger: logging.Logger, category: str, level: str, message: str, extra: Optional[Dict[str, Any]] = None):
+    """
+    Enregistre un message avec une catégorie spécifique.
+    
+    Args:
+        logger: Logger à utiliser
+        category: Catégorie du log (doit être dans LOG_CATEGORIES)
+        level: Niveau de log ('debug', 'info', 'warning', 'error', 'critical')
+        message: Message à enregistrer
+        extra: Données supplémentaires à inclure dans le log
+    """
+    if category not in LOG_CATEGORIES:
+        category = "GENERAL"
+    
+    # Préfixer le message avec la catégorie
+    categorized_message = f"[{category}] {message}"
+    
+    # Déterminer la méthode de log à utiliser
+    log_method = getattr(logger, level.lower(), logger.info)
+    
+    # Enregistrer le message
+    if extra:
+        log_method(categorized_message, extra=extra)
+    else:
+        log_method(categorized_message)
 
 def setup_logging(name: str = None):
     """Configure logging with rotating file handler and console output"""
@@ -30,6 +81,10 @@ def setup_logging(name: str = None):
     # Create module-specific log directory
     module_dir = log_dir / (name.split('.')[0] if name else 'app')
     module_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create categories directory
+    categories_dir = log_dir / 'categories'
+    categories_dir.mkdir(parents=True, exist_ok=True)
     
     # Create and configure file handler with daily rotation
     log_file = module_dir / f"{datetime.now().strftime('%Y-%m-%d')}.log"
@@ -78,6 +133,12 @@ def setup_logging(name: str = None):
             if hasattr(record, 'error'):
                 log_data['error'] = record.error
                 
+            # Extract category from message if present
+            for category in LOG_CATEGORIES:
+                if f"[{category}]" in record.getMessage():
+                    log_data['category'] = category
+                    break
+                
             # Add stack trace for errors
             if record.exc_info:
                 log_data['exc_info'] = self.formatException(record.exc_info)
@@ -96,6 +157,25 @@ def setup_logging(name: str = None):
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(console_formatter)
     
+    # Create category-specific handlers
+    category_handlers = {}
+    for category in LOG_CATEGORIES:
+        category_log_file = categories_dir / f"{category.lower()}.log"
+        handler = RotatingFileHandler(
+            category_log_file,
+            maxBytes=5*1024*1024,  # 5MB
+            backupCount=3,
+            encoding='utf-8'
+        )
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(file_formatter)
+        
+        # Add category filter
+        category_filter = CategoryFilter(category)
+        handler.addFilter(category_filter)
+        
+        category_handlers[category] = handler
+    
     # Remove any existing handlers to avoid duplicates
     if logger.hasHandlers():
         logger.handlers.clear()
@@ -104,5 +184,9 @@ def setup_logging(name: str = None):
     logger.addHandler(file_handler)
     logger.addHandler(json_handler)
     logger.addHandler(console_handler)
+    
+    # Add category handlers
+    for handler in category_handlers.values():
+        logger.addHandler(handler)
     
     return logger 

@@ -94,16 +94,16 @@ class MusicRecognizer:
                     logger.info("Local match rejected due to low confidence")
                     return None  # Stop here if local match has low confidence
                     
-            # Try MusicBrainz
-            result = await self.external_handler.recognize_with_musicbrainz(audio_data)
+            # Try AcoustID
+            result = await self.external_handler.recognize_with_acoustid(audio_data)
             if result:
                 confidence = float(result.get('confidence', 0.0))
                 if confidence >= self.min_confidence:
-                    logger.info("Track found with MusicBrainz")
+                    logger.info("Track found with AcoustID")
                     await self.db_handler.save_track_to_db(result)
                     return result
                 else:
-                    logger.info("MusicBrainz match rejected due to low confidence")
+                    logger.info("AcoustID match rejected due to low confidence")
                     
             # Finally try Audd
             result = await self.external_handler.recognize_with_audd(audio_data)
