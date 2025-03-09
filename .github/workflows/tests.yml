@@ -1,0 +1,61 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install pytest pytest-cov pytest-asyncio pytest-benchmark
+        
+    - name: Run unit tests
+      run: |
+        python -m pytest backend/tests/ --exclude=backend/tests/integration/ -v --cov=backend --cov-report=xml
+      env:
+        PYTHONPATH: .
+        TEST_DATABASE_URL: sqlite:///./test.db
+        TEST_REDIS_URL: redis://localhost:6379/1
+        TEST_API_KEY: test_key
+        ACOUSTID_API_KEY: test_acoustid_key
+        AUDD_API_KEY: test_audd_key
+        
+    - name: Run integration tests
+      run: |
+        python -m pytest backend/tests/integration/ -v --cov=backend --cov-report=xml:coverage-integration.xml
+      env:
+        PYTHONPATH: .
+        TEST_DATABASE_URL: sqlite:///./test.db
+        TEST_REDIS_URL: redis://localhost:6379/1
+        TEST_API_KEY: test_key
+        ACOUSTID_API_KEY: test_acoustid_key
+        AUDD_API_KEY: test_audd_key
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.xml,./coverage-integration.xml
+        flags: unittests,integrationtests
+        name: codecov-umbrella
+        fail_ci_if_error: false 

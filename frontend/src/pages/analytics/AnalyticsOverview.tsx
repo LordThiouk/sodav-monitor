@@ -24,6 +24,7 @@ import {
   Spinner,
   FormControl,
   FormLabel,
+  Button,
 } from '@chakra-ui/react';
 import {
   LineChart,
@@ -34,6 +35,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 
 // API Response Interfaces
 interface ChartData {
@@ -130,6 +132,8 @@ const AnalyticsOverview: React.FC = () => {
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const textColor = useColorModeValue('gray.600', 'gray.400');
 
+  const navigate = useNavigate();
+
   const handleDateRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setDateRange(e.target.value);
   };
@@ -218,6 +222,7 @@ const AnalyticsOverview: React.FC = () => {
             width="auto"
             ml={4}
             aria-label="Select date range"
+            title="Date range selector"
           >
             <option value="24h">Last 24 Hours</option>
             <option value="7d">Last 7 Days</option>
@@ -295,7 +300,12 @@ const AnalyticsOverview: React.FC = () => {
             borderWidth="1px"
             borderColor={borderColor}
           >
-            <Heading size="md" mb={6}>Top Tracks</Heading>
+            <Flex justify="space-between" align="center" mb={6}>
+              <Heading size="md">Top Tracks</Heading>
+              <Button size="sm" colorScheme="blue" onClick={() => navigate('/analytics/tracks')}>
+                View All
+              </Button>
+            </Flex>
             <Table variant="simple" size="sm">
               <Thead>
                 <Tr>
@@ -336,7 +346,12 @@ const AnalyticsOverview: React.FC = () => {
             borderWidth="1px"
             borderColor={borderColor}
           >
-            <Heading size="md" mb={6}>Top Artists</Heading>
+            <Flex justify="space-between" align="center" mb={6}>
+              <Heading size="md">Top Artists</Heading>
+              <Button size="sm" colorScheme="blue" onClick={() => navigate('/analytics/artists')}>
+                View All
+              </Button>
+            </Flex>
             <Table variant="simple" size="sm">
               <Thead>
                 <Tr>
@@ -370,7 +385,12 @@ const AnalyticsOverview: React.FC = () => {
             borderWidth="1px"
             borderColor={borderColor}
           >
-            <Heading size="md" mb={6}>Top Labels</Heading>
+            <Flex justify="space-between" align="center" mb={6}>
+              <Heading size="md">Top Labels</Heading>
+              <Button size="sm" colorScheme="blue" onClick={() => navigate('/analytics/labels')}>
+                View All
+              </Button>
+            </Flex>
             <Table variant="simple" size="sm">
               <Thead>
                 <Tr>
@@ -404,7 +424,12 @@ const AnalyticsOverview: React.FC = () => {
             borderWidth="1px"
             borderColor={borderColor}
           >
-            <Heading size="md" mb={6}>Top Channels</Heading>
+            <Flex justify="space-between" align="center" mb={6}>
+              <Heading size="md">Top Channels</Heading>
+              <Button size="sm" colorScheme="blue" onClick={() => navigate('/analytics/channels')}>
+                View All
+              </Button>
+            </Flex>
             <Table variant="simple" size="sm">
               <Thead>
                 <Tr>

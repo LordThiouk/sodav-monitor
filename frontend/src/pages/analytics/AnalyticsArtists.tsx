@@ -20,13 +20,9 @@ interface Artist {
   detection_count: number;
   total_play_time: string;
   unique_tracks: number;
-  tracks: string[];
   unique_albums: number;
-  albums: string[];
   unique_labels: number;
-  labels: string[];
   unique_stations: number;
-  stations: string[];
 }
 
 const AnalyticsArtists: React.FC = () => {
@@ -40,11 +36,13 @@ const AnalyticsArtists: React.FC = () => {
       setLoading(true);
       try {
         const data = await getArtistsAnalytics(timeRange);
-        setArtists(data);
+        setArtists(data || []);
       } catch (error) {
         console.error('Error fetching artists analytics:', error);
+        setArtists([]);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchData();
@@ -68,6 +66,8 @@ const AnalyticsArtists: React.FC = () => {
           value={timeRange}
           onChange={(e) => setTimeRange(e.target.value)}
           maxW="200px"
+          aria-label="Select time range"
+          title="Time range selector"
         >
           <option value="24h">Last 24 Hours</option>
           <option value="7d">Last 7 Days</option>
@@ -89,18 +89,19 @@ const AnalyticsArtists: React.FC = () => {
             </Tr>
           </Thead>
           <Tbody>
-            {artists.map((artist) => (
-              <Tr key={artist.artist}>
-                <Td>{artist.artist}</Td>
-                <Td isNumeric>{artist.detection_count}</Td>
-                <Td>{artist.total_play_time}</Td>
-                <Td isNumeric>{artist.unique_tracks}</Td>
-                <Td isNumeric>{artist.unique_albums}</Td>
-                <Td isNumeric>{artist.unique_labels}</Td>
-                <Td isNumeric>{artist.unique_stations}</Td>
-              </Tr>
-            ))}
-            {artists.length === 0 && (
+            {artists.length > 0 ? (
+              artists.map((artist) => (
+                <Tr key={artist.artist}>
+                  <Td>{artist.artist}</Td>
+                  <Td isNumeric>{artist.detection_count}</Td>
+                  <Td>{artist.total_play_time}</Td>
+                  <Td isNumeric>{artist.unique_tracks}</Td>
+                  <Td isNumeric>{artist.unique_albums}</Td>
+                  <Td isNumeric>{artist.unique_labels}</Td>
+                  <Td isNumeric>{artist.unique_stations}</Td>
+                </Tr>
+              ))
+            ) : (
               <Tr>
                 <Td colSpan={7} textAlign="center" py={4}>
                   No artist data available for this time range

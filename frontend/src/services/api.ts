@@ -6,6 +6,23 @@ const API_BASE_URL = process.env.NODE_ENV === 'production'
   ? 'https://sodav-monitor-production.up.railway.app/api'
   : 'http://localhost:8000/api';
 
+// Create axios instance with default config
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add request interceptor to add auth token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 export interface Stream extends RadioStation {
   type: string;
   status: string;
@@ -99,16 +116,73 @@ export const fetchTracks = async (): Promise<Track[]> => {
   }
 };
 
-export const fetchReports = async (): Promise<Report[]> => {
+export interface ReportResponse {
+  id: string;
+  title: string;
+  type: string;
+  format: string;
+  generatedAt: string;
+  status: string;
+  progress?: number;
+  downloadUrl?: string;
+}
+
+export interface ReportsListResponse {
+  reports: ReportResponse[];
+}
+
+export interface SubscriptionResponse {
+  id: string;
+  name: string;
+  frequency: string;
+  type: string;
+  nextDelivery: string;
+  recipients: string[];
+  active: boolean;
+}
+
+export interface SubscriptionsListResponse {
+  subscriptions: SubscriptionResponse[];
+}
+
+export interface GenerateReportRequest {
+  type: string;
+  format: string;
+  start_date: string;
+  end_date: string;
+  email?: string;
+  filters?: {
+    artists?: string[];
+    stations?: string[];
+    labels?: string[];
+    minConfidence?: number;
+    includeMetadata?: boolean;
+  };
+  include_graphs?: boolean;
+  language?: string;
+}
+
+export const fetchReports = async (): Promise<ReportResponse[]> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/reports`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch reports');
-    }
-    const data = await response.json();
-    return data.reports;
+    const response = await api.get<ReportResponse[]>('/reports');
+    return response.data;
   } catch (error) {
     console.error('Error fetching reports:', error);
+    return [];
+  }
+};
+
+export const generateReport = async (reportData: GenerateReportRequest): Promise<ReportResponse> => {
+  const response = await api.post('/reports/generate', reportData);
+  return response.data;
+};
+
+export const getReportSubscriptions = async (): Promise<SubscriptionResponse[]> => {
+  try {
+    const response = await api.get('/reports/subscriptions');
+    return response.data || [];
+  } catch (error) {
+    console.error('Error fetching subscriptions:', error);
     return [];
   }
 };
@@ -157,7 +231,7 @@ export const connectWebSocket = (onMessage: (data: WebSocketMessage) => void): W
 // Analytics API
 export const getArtistsAnalytics = async (timeRange: string = '7d') => {
   const response = await axios.get(`${API_BASE_URL}/analytics/artists?time_range=${timeRange}`);
-  return response.data.artists;
+  return response.data;
 };
 
 export const getLabelsAnalytics = async (timeRange: string = '7d') => {
@@ -168,4 +242,47 @@ export const getLabelsAnalytics = async (timeRange: string = '7d') => {
 export const getChannelsAnalytics = async (timeRange: string = '7d') => {
   const response = await axios.get(`${API_BASE_URL}/analytics/channels?time_range=${timeRange}`);
   return response.data.channels;
+};
+
+export const downloadReport = async (reportId: string) => {
+  const response = await api.get(`/reports/${reportId}/download`, {
+    responseType: 'blob'
+  });
+  return response.data;
+};
+
+export const createSubscription = async (subscriptionData: {
+  name: string;
+  type: string;
+  frequency: string;
+  recipients: string[];
+  filters?: {
+    artists?: string[];
+    stations?: string[];
+    labels?: string[];
+    minConfidence?: number;
+  };
+}) => {
+  const response = await api.post('/reports/subscriptions', subscriptionData);
+  return response.data;
+};
+
+export const updateSubscription = async (id: string, data: {
+  active?: boolean;
+  frequency?: string;
+  recipients?: string[];
+  filters?: {
+    artists?: string[];
+    stations?: string[];
+    labels?: string[];
+    minConfidence?: number;
+  };
+}) => {
+  const response = await api.patch(`/reports/subscriptions/${id}`, data);
+  return response.data;
+};
+
+export const deleteSubscription = async (id: string) => {
+  const response = await api.delete(`/reports/subscriptions/${id}`);
+  return response.data;
 };

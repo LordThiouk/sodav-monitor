@@ -182,17 +182,17 @@ const LiveMonitor: React.FC = () => {
           lastUpdate: new Date().toISOString()
         }));
 
-        // Load latest detections from the database
-        const response = await fetch('/api/detections?limit=10');
+        // Load latest detections from the database using the new endpoint
+        const response = await fetch('/api/detections/latest?limit=10');
         if (!response.ok) {
           throw new Error('Failed to fetch initial detections');
         }
         const data = await response.json();
         const formattedDetections = data.detections.map((d: any) => ({
           id: d.id,
-          stationName: d.station_name,
-          title: d.track_title,
-          artist: d.artist,
+          stationName: d.station_name || d.station?.name || 'Unknown Station',
+          title: d.track_title || d.track?.title || 'Unknown Track',
+          artist: d.artist || d.track?.artist || 'Unknown Artist',
           isrc: d.track?.isrc || '',
           streamUrl: d.station?.stream_url || '',
           confidence: d.confidence,

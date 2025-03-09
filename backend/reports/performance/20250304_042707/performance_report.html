@@ -1,0 +1,143 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Station Monitoring Performance Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .summary {
+            background-color: #e6f7ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Station Monitoring Performance Report</h1>
+    <p>Generated on: 2025-03-04 04:27:07</p>
+    
+    <div class="summary">
+        <h2>Summary</h2>
+        <p>Average Processing Time: 0.25 seconds</p>
+        <p>Average Stations Per Second: 4.00</p>
+        <p>Estimated Optimal Number of Stations for 60-second processing: 240</p>
+        <p>Optimal Concurrency Level: 20</p>
+        <p>Estimated Maximum Number of Stations Based on Available Resources: 200</p>
+    </div>
+    
+    <h2>Station Monitoring Performance</h2>
+    <table>
+        <tr>
+            <th>Number of Stations</th>
+            <th>Processing Time (s)</th>
+            <th>Stations Per Second</th>
+        </tr>
+        <tr>
+            <td>5</td>
+            <td>1.25</td>
+            <td>4.00</td>
+        </tr>
+    </table>
+    
+    <h2>Concurrent Processing Performance</h2>
+    <table>
+        <tr>
+            <th>Concurrency Level</th>
+            <th>Processing Time (s)</th>
+            <th>Stations Per Second</th>
+        </tr>
+        
+        <tr>
+            <td>5</td>
+            <td>2.00</td>
+            <td>50.00</td>
+        </tr>
+        
+        <tr>
+            <td>10</td>
+            <td>1.00</td>
+            <td>100.00</td>
+        </tr>
+        
+        <tr>
+            <td>20</td>
+            <td>0.50</td>
+            <td>200.00</td>
+        </tr>
+        
+        <tr>
+            <td>50</td>
+            <td>0.20</td>
+            <td>500.00</td>
+        </tr>
+        
+    </table>
+    
+    <h2>System Resource Usage</h2>
+    <table>
+        <tr>
+            <th>Number of Stations</th>
+            <th>CPU Usage (%)</th>
+            <th>Memory Usage (MB)</th>
+        </tr>
+        
+        <tr>
+            <td>10</td>
+            <td>5.00</td>
+            <td>25.00</td>
+        </tr>
+        
+        <tr>
+            <td>50</td>
+            <td>25.00</td>
+            <td>125.00</td>
+        </tr>
+        
+        <tr>
+            <td>100</td>
+            <td>50.00</td>
+            <td>250.00</td>
+        </tr>
+        
+    </table>
+    
+    <h2>Recommendations</h2>
+    <p>Based on the performance test results, here are some recommendations:</p>
+    <ul>
+        <li>For optimal performance, monitor no more than 240 stations simultaneously.</li>
+        <li>Use a concurrency level of 20 for best throughput.</li>
+        <li>Based on system resources, the maximum number of stations that can be monitored is approximately 200.</li>
+    </ul>
+    
+    <h2>Conclusion</h2>
+    <p>
+        The performance tests show that the system can effectively monitor multiple radio stations simultaneously.
+        By following the recommendations above, you can optimize the monitoring process for your specific needs.
+    </p>
+    
+</body>
+</html>

@@ -1,0 +1,46 @@
+---
+description: Operational Standards and Requirements
+globs: *
+---
+---
+description: Operational Standards and Requirements
+globs: *
+---
+### Operations Guidelines
+
+1. Server Monitoring
+- Continuous log monitoring
+- Monitor critical metrics:
+  - Detection success rate
+  - API response times
+  - Server resource usage
+  - Database performance
+
+2. API Standards
+- All endpoints must return valid responses (200 OK)
+- Standardized error responses:
+  - Clear error messages
+  - Appropriate status codes
+  - Detailed error context
+- Rate limiting implementation
+- Request validation
+
+3. Database Operations
+- Validate migrations before deployment
+- Maintain database indexes
+- Regular backup schedule
+- Performance optimization
+
+4. Real-time Processing
+- Track all detections with:
+  - Accurate timestamps (detected_at)
+  - Duration measurement (play_duration)
+  - Station identification
+  - Track metadata
+  
+5. Security Measures
+- API authentication
+- Input validation
+- XSS protection
+- CORS configuration
+- Rate limiting

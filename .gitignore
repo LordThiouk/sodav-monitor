@@ -2,6 +2,12 @@
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
+.env.staging
+
+# Railway configuration with sensitive data
+railway.json
 
 # Python
 __pycache__/
@@ -37,7 +43,12 @@ ENV/
 *.swo
 
 # Logs
-logs/
+/logs/  # Root logs directory (deprecated)
+backend/logs/*.log
+backend/logs/*.json
+!backend/logs/__init__.py
+!backend/logs/log_manager.py
+logs
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -134,4 +145,33 @@ versions_backup/
 *.swo
 .vs/
 .history/
-.cursor/
+
+# Fichiers de base de données SQLite
+*.db
+*.db-shm
+*.db-wal
+*.db.bak
+*.db-shm.bak
+*.db-wal.bak
+
+# Fichiers de configuration locaux
+.env
+.env.local
+
+# Logs
+logs/
+*.log
+
+# Misc
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Fichiers de build Docker
+.docker/
+

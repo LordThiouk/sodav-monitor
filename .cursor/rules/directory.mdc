@@ -1,0 +1,5 @@
+---
+description: Règle pour directory
+globs: *
+---
+Toujours vérifie le directory sur lequel on est avant de créer de nouveaux fichiers ou de nouveaux dossiers

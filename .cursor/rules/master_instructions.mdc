@@ -1,0 +1,156 @@
+---
+description: Master Instructions for AI Assistant
+globs: *
+---
+---
+description: Master Instructions for AI Assistant
+globs: *
+---
+<customInstructions>
+### 1. Project Understanding
+- Monitor radio streams in real-time
+- Automatically detect played tracks
+- Generate analysis reports
+- Architecture: Backend (FastAPI) + Frontend (React/TypeScript with Chakra UI) + PostgreSQL
+
+### 2. Algorithm Rules
+#### Content Identification
+- Analyze audio stream to determine:
+  - Music: Continue detection process using /api/channels/detect-music
+  - Speech: Ignore detection, record only broadcast metadata
+- Do not confuse ACOUSTID_API_KEY and AUDD_API_KEY (distinct services)
+
+#### Hierarchical Detection Process
+1. Local Detection:
+   - Search local database using stored fingerprints
+   - If match found, record data
+2. MusicBrainz Detection:
+   - If local detection fails, query MusicBrainz API
+   - Record retrieved metadata if found
+3. Audd Detection:
+   - Use as last resort if MusicBrainz fails
+   - Record Audd information
+
+#### Data Recording Requirements
+For each successful detection:
+- Fingerprint (fingerprint and fingerprint_raw)
+- Exact play time per station
+- Detection confidence
+- Update all relevant tables (Tracks, TrackStats, ArtistStats, StationStats, StationTrackStats, AnalyticsData)
+
+### 3. Analytics Rules
+- Auto-update statistics after each detection
+- Update track_stats, artist_stats, and station_stats
+- Generate daily reports on:
+  - Total detections per station
+  - Total track play duration
+  - Most played artists and labels
+  - Detection counts by artist, track, station, and label
+  - Custom period trends (7 days, 30 days)
+
+### 4. File Organization Rules
+Follow this structure:
+```
+/sodav_monitor/
+├── backend/
+│   ├── detection/
+│   ├── processing/
+│   ├── reports/
+│   ├── logs/
+│   ├── analytics/
+│   ├── models/
+│   ├── utils/
+│   └── tests/
+└── frontend/
+    ├── src/
+    ├── components/
+    ├── pages/
+    └── services/
+```
+
+### 5. Testing Rules
+- All tests in backend/tests/
+- Use pytest framework
+- Test naming: test_<function_name>.py
+- Update docs/tests after running tests
+- Focus on one component at a time
+- Coverage minimum: 90%
+
+### 6. General Operation Rules
+- Monitor server logs continuously
+- API endpoints must return valid responses (status 200)
+- Handle errors with clear messages, log stored in backend
+- Validate database migrations before deployment
+- Real-time detection recording with:
+  - Detection time (detected_at)
+  - Play duration (play_duration)
+  - Station and track details
+
+### 7. Code Style Rules
+- Use snake_case for file naming
+- Maximum file size: 500 lines
+- Split oversized files into modules
+- Group files by functionality
+- Clean up obsolete files or move to /legacy/
+
+### 8. Documentation Rules
+- Update REORGANISATION.md for structure changes
+- Maintain TESTING_STRATEGY.md
+- Keep documentation in sync with code changes
+
+### 9. AI Assistant Behavior Rules
+- Research thoroughly using semantic search before making changes
+- Always validate changes with get_errors after editing files
+- Use proper tools instead of asking user to make manual changes
+- Maintain consistent code style across the project
+- Follow test-driven development practices
+- Break down complex tasks into smaller steps
+- Focus on one component at a time
+- Keep explanations concise and technical
+- Validate external library versions against requirements.txt
+- Respect existing architectural decisions
+- Document significant changes
+- Consider performance implications
+
+### 10. Problem-Solving Approach
+- First analyze existing codebase context
+- Break down user requests into smaller tasks
+- Validate assumptions with codebase search
+- Implement changes incrementally
+- Test after each significant change
+- Document any new patterns introduced
+- Consider backward compatibility
+- Maintain security best practices
+
+### 11. AI Core Capabilities
+- Expert-level knowledge across many programming languages and frameworks
+- Thorough research capability using provided tools
+- Project type inference from context (languages, frameworks, libraries)
+- Task breakdown into smaller concepts
+- Complete context gathering before taking action
+- Creative problem-solving approach
+- Avoiding repetition after tool calls
+
+### 12. Tool Usage Guidelines
+- Follow JSON schema precisely for all tool calls
+- Include all required properties in tool calls
+- Use tools instead of suggesting manual actions
+- Take action directly when stating an intention
+- Sequential tool execution unless parallel is possible
+- Validate file changes with get_errors
+- Avoid repeating code in edit_file, use // ...existing code... comments
+- Group changes by file when editing
+- Research context before editing files
+- Call tools repeatedly until task completion
+- Search broadly with semantic_search unless exact match needed
+
+### 13. Context Management
+- Gather all necessary context before taking action
+- Avoid assumptions without proper research
+- Explore workspace thoroughly for complete solutions
+- Remember user preferences and coding styles
+- Consider project-wide implications of changes
+- Validate changes against existing architecture
+- Maintain awareness of current project state
+
+</customInstructions>

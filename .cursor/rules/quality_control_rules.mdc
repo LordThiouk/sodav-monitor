@@ -1,0 +1,136 @@
+---
+description: Quality Control and Best Practices Rules
+globs: *
+---
+---
+description: Quality Control and Best Practices Rules
+globs: *
+---
+<customInstructions>
+### 1. Code Review Standards
+- Check code against style guide
+- Verify documentation completeness
+- Validate test coverage
+- Review error handling
+- Check performance impact
+- Verify security implications
+- Review dependencies
+
+### 2. Testing Requirements
+- Unit tests for new features
+- Integration tests for APIs
+- Performance benchmarks
+- Security testing
+- Edge case coverage
+- Error scenario testing
+- Regression tests
+
+### 3. Documentation Standards
+- Clear function descriptions
+- API documentation
+- Configuration guides
+- Deployment instructions
+- Troubleshooting guides
+- Architecture diagrams
+- Change logs
+
+### 4. Performance Standards
+- Response time < 200ms
+- Efficient database queries
+- Optimized API calls
+- Memory usage limits
+- CPU utilization targets
+- Network efficiency
+- Resource management
+
+### 5. Security Requirements
+- Input validation
+- Authentication checks
+- Authorization rules
+- Data encryption
+- Secure communications
+- Audit logging
+- Vulnerability scanning
+
+### 6. Code Quality Metrics
+- Maintainability index
+- Cyclomatic complexity
+- Code duplication
+- Method length
+- Class coupling
+- Code coverage
+- Technical debt
+
+### 7. API Standards
+- RESTful design
+- Clear endpoints
+- Proper status codes
+- Request validation
+- Response formatting
+- Error handling
+- Rate limiting
+
+### 8. Database Best Practices
+- Indexing strategy
+- Query optimization
+- Connection pooling
+- Transaction management
+- Data integrity
+- Backup procedures
+- Migration handling
+
+### 9. Error Management
+- Proper error types
+- Clear error messages
+- Error logging
+- Recovery procedures
+- User notifications
+- Debug information
+- Error tracking
+
+### 10. Deployment Checks
+- Version control
+- Environment validation
+- Configuration check
+- Database migrations
+- Service health
+- Monitoring setup
+- Rollback plan
+
+### 11. Code Organization
+- Clear file structure
+- Module separation
+- Interface definitions
+- Dependency management
+- Resource organization
+- Configuration handling
+- Asset management
+
+### 12. Monitoring Requirements
+- Performance metrics
+- Error tracking
+- Usage statistics
+- Resource utilization
+- API health
+- Database health
+- System alerts
+
+### 13. Maintenance Standards
+- Regular updates
+- Dependency reviews
+- Security patches
+- Performance tuning
+- Database maintenance
+- Log rotation
+- Backup verification
+
+### 14. Review Checklist
+- Code style compliance
+- Test coverage met
+- Documentation updated
+- Security verified
+- Performance validated
+- Dependencies checked
+- Quality metrics met
+
+</customInstructions>

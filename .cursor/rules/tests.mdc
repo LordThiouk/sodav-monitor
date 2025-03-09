@@ -1,0 +1,117 @@
+---
+description: Règles pour les Tests Unitaires sur Cursor AI (sodav-monitor)
+globs: *
+---
+<customInstructions>
+### 🔍 **1. Structure des Tests**
+- Tous les tests doivent être situés dans un dossier `backend/tests/`.
+- Chaque fichier de test doit suivre le format `test_<nom_de_la_fonction>.py`.
+- Utiliser `pytest` comme framework de test.
+- Update docs/tests toujours après avoir lancé tests
+- Géré l'amélioration des tests un par un, focus sur un test jusqua le résoudre avant de continuer
+- Focus sur one component at time
+- fais les tests en suivant instructions dans docs
+Le **meilleur choix dépend des objectifs des tests** :
+
+### ✅ **Utiliser des Stations Réelles** (Recommandé pour les tests d'intégration)
+**Avantages :**
+- Teste le système en conditions réelles.
+- Vérifie la connexion réseau, la stabilité des flux, et la détection réelle de musique.
+- Permet de valider l'ensemble de l'algorithme (temps de jeu, empreinte, confidence).
+
+**Inconvénients :**
+- Plus lent et dépend des stations disponibles.
+- Risque d'erreurs dues à des interruptions de flux.
+
+---
+
+### 🎭 **Utiliser des Mockups** (Recommandé pour les tests unitaires)
+**Avantages :**
+- Rapide, ne dépend pas des flux en direct.
+- Permet d'isoler et de tester des fonctions spécifiques sans interruption.
+- Utile pour simuler des scénarios complexes (erreurs de connexion, détection échouée).
+
+**Inconvénients :**
+- Ne garantit pas que le système fonctionne correctement en conditions réelles.
+
+---
+
+### 🚀 **Recommandation**
+1. **Tests unitaires** → Utilisez des **mockups** pour tester les fonctions isolées.  
+2. **Tests d'intégration** → Utilisez des **stations réelles** pour tester l'ensemble du système.  
+
+Vous voulez que je vous aide à configurer les deux types de tests ? 🔧
+
+---
+
+### 🔒 **2. Règles Générales**
+
+1. **Nomination des Fonctions de Test**  
+   Chaque fonction de test doit commencer par `test_`.
+
+2. **Isolation des Tests**  
+   - Chaque test doit être indépendant.  
+   - Utiliser des fixtures pour les configurations répétées.
+
+3. **Assertions**  
+   - Utiliser des assertions claires pour valider les sorties :  
+     - `assert actual == expected`  
+     - `assert isinstance(obj, ClassType)`  
+
+4. **Mocking**  
+   - Utiliser `unittest.mock` pour simuler des appels API externes (ex. Audd, MusicBrainz).  
+   - Simuler les connexions aux bases de données avec des fixtures.
+
+---
+
+### 🎶 **3. Tests Spécifiques aux Fonctionnalités**
+
+#### 🎧 **Détection Musicale**
+
+- Vérifier si le système différencie correctement entre `speech` et `music`.
+- Tester la détection locale :
+  - Empreinte détectée avec succès.
+  - Empreinte non détectée (retourne `None`).
+
+#### 🌐 **APIs Externes (Fallbacks)**
+
+- MusicBrainz et Audd doivent être appelés si la détection locale échoue.
+- Gérer les réponses vides et les erreurs réseau.
+
+#### 📊 **Mise à jour des Statistiques**
+
+- Vérifier la mise à jour des champs suivants :
+  - `play_time` par station
+  - `detection_count`
+  - `last_detected`
+  - `average_confidence`
+
+#### 📈 **Rapports et Abonnements**
+
+- Génération correcte des rapports (`CSV`, 'XLSX', 'PDF').
+- Vérification de l'envoi d'emails automatiques.
+
+#### 🔒 **Sécurité**
+
+- Tester la vérification des mots de passe pour les utilisateurs.
+- Vérifier que les tokens JWT expirés ne sont pas acceptés.
+
+---
+
+### 📂 **4. Couverture des Logs**
+
+- Tous les événements critiques doivent être enregistrés.
+- Vérifier que les erreurs de détection sont loguées.
+
+---
+
+### 💡 **5. Critères de Succès**
+
+- Taux de couverture minimum : 90%
+- Tous les tests doivent passer avant le déploiement
+- Intégration continue (CI) avec vérification automatique des tests
+
+---
+
+Prêt à implémenter ces règles dans votre projet ? 🚀
+</customInstructions>

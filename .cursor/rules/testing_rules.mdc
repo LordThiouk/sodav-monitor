@@ -1,0 +1,55 @@
+---
+description: Testing Standards and Requirements
+globs: *
+---
+---
+description: Testing Standards and Requirements
+globs: *
+---
+### Testing Guidelines
+
+1. Test Organization
+- All tests must be in backend/tests/
+- Follow naming convention: test_<function_name>.py
+- Group tests by component/functionality
+- Maintain clear test hierarchy
+
+2. Testing Framework
+- Use pytest as primary framework
+- Required plugins:
+  - pytest-cov for coverage
+  - pytest-asyncio for async tests
+  - pytest-mock for mocking
+
+3. Coverage Requirements
+- Minimum 90% code coverage
+- Critical paths require 100% coverage:
+  - Detection pipeline
+  - Authentication
+  - Data persistence
+  - API endpoints
+
+4. Testing Approach
+- Unit Tests:
+  - Test individual components
+  - Use mocks for external services
+  - Validate edge cases
+- Integration Tests:
+  - Test component interactions
+  - Validate full detection pipeline
+  - Test database operations
+- End-to-End Tests:
+  - Test complete workflows
+  - Validate system integration
+
+5. Test Documentation
+- Update docs/tests after changes
+- Document test scenarios
+- Maintain TESTING_STRATEGY.md
+- Include example test data
+
+6. Test Data Management
+- Use fixtures for common data
+- Maintain separate test database
+- Clean up test data after runs
+- Version control test assets

@@ -1,0 +1,32 @@
+---
+description: Code Style and Organization Rules
+globs: *
+---
+---
+description: Code Style and Organization Rules
+globs: *
+---
+### Code Style Guidelines
+
+1. File Naming Conventions
+- Use snake_case for all file names
+- Files should be named descriptively based on their primary function
+- Test files must follow pattern: test_<function_name>.py
+
+2. File Size and Organization
+- Maximum file size: 500 lines
+- Split files exceeding limit into logical modules
+- Group related functionality into appropriate directories
+- Move deprecated code to /legacy/ instead of deletion
+
+3. Code Organization
+- Group related functions and classes together
+- Keep one class/main function per file
+- Maintain clear separation of concerns
+- Use appropriate design patterns
+
+4. Code Formatting
+- Follow PEP 8 for Python code
+- Use TypeScript strict mode for frontend
+- Consistent indentation (4 spaces for Python, 2 spaces for TypeScript/JavaScript)
+- Clear spacing between functions and classes

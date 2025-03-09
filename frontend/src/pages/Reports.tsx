@@ -19,7 +19,11 @@ import {
   CardHeader,
   CardBody,
   SimpleGrid,
-  Icon,
+  Flex,
+  FormControl,
+  FormLabel,
+  Input,
+  Select,
   Modal,
   ModalOverlay,
   ModalContent,
@@ -27,285 +31,293 @@ import {
   ModalBody,
   ModalFooter,
   ModalCloseButton,
-  FormControl,
-  FormLabel,
-  Input,
-  Select,
-  useDisclosure,
-  useToast,
-  Flex,
-  Spacer,
-  Spinner,
+  Switch,
+  Progress,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  Icon,
+  useToast
 } from '@chakra-ui/react';
-import {
-  FaDownload,
-  FaCalendarAlt,
-  FaEnvelope,
-  FaFileAlt,
-  FaClock,
-  FaPlus,
-} from 'react-icons/fa';
-import { formatDistanceToNow } from 'date-fns';
-import { authenticatedFetch } from '../services/auth';
+import { FaDownload, FaEdit, FaTrash, FaPlus } from 'react-icons/fa';
 import { useNavigate, useLocation } from 'react-router-dom';
+import {
+  generateReport,
+  downloadReport,
+  getReportSubscriptions,
+  createSubscription,
+  updateSubscription,
+  deleteSubscription,
+  fetchReports,
+  ReportResponse,
+  SubscriptionResponse,
+  GenerateReportRequest
+} from '../services/api';
 
-interface Report {
-  id: string;
-  title: string;
-  type: string;
-  format: string;
-  generatedAt: string;
-  status: 'completed' | 'pending' | 'failed';
-  downloadUrl?: string;
+interface Report extends ReportResponse {
+  filters?: {
+    artists?: string[];
+    stations?: string[];
+    labels?: string[];
+    minConfidence?: number;
+    includeMetadata?: boolean;
+  };
 }
 
-interface Subscription {
-  id: string;
-  name: string;
-  frequency: 'daily' | 'weekly' | 'monthly';
-  type: string;
-  nextDelivery: string;
-  recipients: string[];
+interface Subscription extends SubscriptionResponse {
+  filters?: {
+    artists?: string[];
+    stations?: string[];
+    labels?: string[];
+    minConfidence?: number;
+  };
 }
 
-interface GenerateReportRequest {
-  type: string;
-  format: string;
-  start_date: string;
-  end_date: string;
-}
+const reportTypes = [
+  { value: 'detection', label: 'Track Detections' },
+  { value: 'analytics', label: 'Analytics Overview' },
+  { value: 'summary', label: 'Summary Report' },
+  { value: 'artist', label: 'Artist Details' },
+  { value: 'track', label: 'Track Analysis' },
+  { value: 'station', label: 'Station Statistics' },
+  { value: 'label', label: 'Label Report' }
+];
 
-const formatDate = (dateString: string | undefined): string => {
-  if (!dateString) return 'Unknown date';
-  try {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) {
-      return 'Invalid date';
-    }
-    return formatDistanceToNow(date, { addSuffix: true });
-  } catch (error) {
-    console.error('Error formatting date:', error);
-    return 'Invalid date';
-  }
-};
+const reportFormats = [
+  { value: 'csv', label: 'CSV' },
+  { value: 'xlsx', label: 'Excel' },
+  { value: 'json', label: 'JSON' }
+];
+
+const frequencies = [
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' }
+];
 
 const Reports: React.FC = () => {
   const [reports, setReports] = useState<Report[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [loading, setLoading] = useState(true);
-  const { isOpen: isSubscriptionOpen, onOpen: onSubscriptionOpen, onClose: onSubscriptionClose } = useDisclosure();
-  const { isOpen: isGenerateOpen, onOpen: onGenerateOpen, onClose: onGenerateClose } = useDisclosure();
-  const [isGenerating, setIsGenerating] = useState(false);
-  const toast = useToast();
-  const [newSubscription, setNewSubscription] = useState({
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [selectedFilters, setSelectedFilters] = useState({
+    artists: [],
+    stations: [],
+    labels: [],
+    minConfidence: 80,
+    includeMetadata: true
+  });
+  const [selectedDates, setSelectedDates] = useState<[Date, Date]>([new Date(), new Date()]);
+  const [selectedType, setSelectedType] = useState('detection');
+  const [selectedFormat, setSelectedFormat] = useState('csv');
+  const [subscriptionForm, setSubscriptionForm] = useState({
     name: '',
+    type: 'detection',
     frequency: 'daily',
-    type: 'detection',
-    email: '',
+    recipients: ''
   });
-  const [newReport, setNewReport] = useState({
-    type: 'detection',
-    format: 'csv',
-    start_date: '',
-    end_date: '',
-  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const toast = useToast();
+  const textColor = useColorModeValue('gray.600', 'gray.400');
+  const borderColor = useColorModeValue('gray.200', 'gray.700');
   const navigate = useNavigate();
   const location = useLocation();
 
-  const textColor = useColorModeValue('gray.600', 'gray.400');
-
   useEffect(() => {
     fetchData();
-  }, [toast]);
+  }, []);
+
+  const handleUnauthorized = () => {
+    // Clear token and redirect to login
+    localStorage.removeItem('token');
+    navigate('/login', { state: { from: location.pathname } });
+  };
 
   const fetchData = async () => {
+    setIsLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      // Fetch reports using authenticated fetch
-      const reportsResponse = await authenticatedFetch('/api/reports');
-      if (!reportsResponse.ok) {
-        if (reportsResponse.status === 401) {
-          // Redirect to login if unauthorized
-          navigate('/login', { state: { from: location } });
-          return;
-        }
-        throw new Error('Failed to fetch reports');
-      }
-      const reportsData = await reportsResponse.json();
-      // Ensure reports is always an array
+      const [reportsData, subscriptionsData] = await Promise.all([
+        fetchReports(),
+        getReportSubscriptions()
+      ]);
+      
+      // Set reports and subscriptions, ensuring they are arrays
       setReports(Array.isArray(reportsData) ? reportsData : []);
-
-      // Fetch subscriptions using authenticated fetch
-      const subscriptionsResponse = await authenticatedFetch('/api/reports/subscriptions');
-      if (!subscriptionsResponse.ok) {
-        if (subscriptionsResponse.status === 401) {
-          navigate('/login', { state: { from: location } });
-          return;
-        }
-        throw new Error('Failed to fetch subscriptions');
-      }
-      const subscriptionsData = await subscriptionsResponse.json();
-      // Ensure subscriptions is always an array
       setSubscriptions(Array.isArray(subscriptionsData) ? subscriptionsData : []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching data:', error);
+      if (error?.response?.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+      const errorMessage = error?.response?.data?.detail || 'Failed to fetch data';
+      setError(errorMessage);
       toast({
-        title: 'Error fetching data',
-        description: 'Unable to load reports and subscriptions',
+        title: 'Error',
+        description: errorMessage,
         status: 'error',
         duration: 5000,
-        isClosable: true,
       });
+      // Reset data on error
       setReports([]);
       setSubscriptions([]);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const handleGenerateReport = async () => {
+  const handleGenerateReport = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
-      setIsGenerating(true);
+      const reportRequest: GenerateReportRequest = {
+        type: selectedType,
+        format: selectedFormat,
+        start_date: selectedDates[0].toISOString(),
+        end_date: selectedDates[1].toISOString(),
+        filters: selectedFilters,
+        include_graphs: true,
+        language: 'fr' // or get from user preferences
+      };
+
+      const data = await generateReport(reportRequest);
+
+      toast({
+        title: 'Report generation started',
+        status: 'success',
+        duration: 3000,
+      });
       
-      // Validate dates
-      if (!newReport.start_date || !newReport.end_date) {
-        toast({
-          title: 'Validation Error',
-          description: 'Please select both start and end dates',
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-        });
+      // Refresh reports list
+      fetchData();
+    } catch (error: any) {
+      console.error('Error generating report:', error);
+      if (error?.response?.status === 401) {
+        handleUnauthorized();
         return;
       }
-
-      const response = await authenticatedFetch('/api/reports', {
-        method: 'POST',
-        body: JSON.stringify(newReport),
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          navigate('/login', { state: { from: location } });
-          return;
-        }
-        throw new Error('Failed to generate report');
-      }
-
-      const data = await response.json();
-      toast({
-        title: 'Report Generation Started',
-        description: 'Your report is being generated. It will appear in the list when ready.',
-        status: 'info',
-        duration: 5000,
-        isClosable: true,
-      });
-
-      // Refresh the reports list after a short delay
-      setTimeout(fetchData, 2000);
-      onGenerateClose();
-    } catch (error) {
-      console.error('Error generating report:', error);
       toast({
         title: 'Error',
         description: 'Failed to generate report',
         status: 'error',
         duration: 5000,
-        isClosable: true,
       });
-    } finally {
-      setIsGenerating(false);
     }
   };
 
   const handleDownload = async (report: Report) => {
-    if (!report.downloadUrl) {
-      toast({
-        title: 'Download not available',
-        description: 'Report is not ready for download',
-        status: 'warning',
-        duration: 5000,
-        isClosable: true,
-      });
-      return;
-    }
-
     try {
-      const response = await authenticatedFetch(report.downloadUrl);
-      if (!response.ok) {
-        if (response.status === 401) {
-          navigate('/login', { state: { from: location } });
-          return;
-        }
-        throw new Error('Download failed');
-      }
-      const blob = await response.blob();
+      const blob = await downloadReport(report.id);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${report.title}-${report.generatedAt}.${report.format}`;
+      a.download = `${report.title}-${new Date(report.generatedAt).toISOString()}.${report.format}`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error downloading report:', error);
+      if (error?.response?.status === 401) {
+        handleUnauthorized();
+        return;
+      }
       toast({
-        title: 'Download failed',
-        description: 'Unable to download the report',
+        title: 'Error',
+        description: 'Failed to download report',
         status: 'error',
         duration: 5000,
-        isClosable: true,
       });
     }
   };
 
-  const handleCreateSubscription = async () => {
+  const handleToggleSubscription = async (id: string, active: boolean) => {
     try {
-      const response = await authenticatedFetch('/api/reports/subscriptions', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: newSubscription.name,
-          frequency: newSubscription.frequency,
-          type: newSubscription.type,
-          recipients: [newSubscription.email],
-        }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          navigate('/login', { state: { from: location } });
-          return;
-        }
-        throw new Error('Failed to create subscription');
-      }
-
-      const data = await response.json();
-      setSubscriptions(prev => [...prev, data]);
-      onSubscriptionClose();
+      await updateSubscription(id, { active });
+      setSubscriptions(subscriptions.map(sub =>
+        sub.id === id ? { ...sub, active } : sub
+      ));
       toast({
-        title: 'Subscription created',
-        description: 'Your report subscription has been created successfully',
+        title: `Subscription ${active ? 'activated' : 'deactivated'}`,
         status: 'success',
-        duration: 5000,
-        isClosable: true,
+        duration: 3000,
       });
     } catch (error) {
+      console.error('Error toggling subscription:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update subscription',
+        status: 'error',
+        duration: 5000,
+      });
+    }
+  };
+
+  const handleDeleteSubscription = async (id: string) => {
+    try {
+      await deleteSubscription(id);
+      setSubscriptions(subscriptions.filter(sub => sub.id !== id));
+      toast({
+        title: 'Subscription deleted',
+        status: 'success',
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Error deleting subscription:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete subscription',
+        status: 'error',
+        duration: 5000,
+      });
+    }
+  };
+
+  const handleCreateSubscription = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const data = await createSubscription({
+        name: subscriptionForm.name,
+        type: subscriptionForm.type,
+        frequency: subscriptionForm.frequency,
+        recipients: subscriptionForm.recipients.split(',').map(r => r.trim()),
+        filters: selectedFilters
+      });
+
+      setSubscriptions([...subscriptions, {
+        ...data,
+        active: true,
+        nextDelivery: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // Tomorrow
+      }]);
+
+      setShowSubscriptionModal(false);
+      toast({
+        title: 'Subscription created',
+        status: 'success',
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Error creating subscription:', error);
       toast({
         title: 'Error',
         description: 'Failed to create subscription',
         status: 'error',
         duration: 5000,
-        isClosable: true,
       });
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string): string => {
     switch (status) {
       case 'completed':
         return 'green';
       case 'pending':
         return 'yellow';
+      case 'generating':
+        return 'blue';
       case 'failed':
         return 'red';
       default:
@@ -313,313 +325,264 @@ const Reports: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <Container maxW="container.xl" py={8}>
-        <VStack spacing={4} align="center">
-          <Spinner size="xl" />
-          <Text>Loading reports and subscriptions...</Text>
-        </VStack>
-      </Container>
-    );
-  }
-
   return (
-    <Container maxW="container.xl" py={8}>
-      <VStack spacing={8} align="stretch">
-        <HStack justify="space-between">
-          <Heading size="lg">Reports & Subscriptions</Heading>
-          <Button
-            leftIcon={<Icon as={FaPlus} />}
-            colorScheme="blue"
-            onClick={onSubscriptionOpen}
-          >
-            New Subscription
-          </Button>
-        </HStack>
+    <Container maxW="container.xl" py={5}>
+      <VStack spacing={5} align="stretch">
+        {isLoading ? (
+          <Progress size="xs" isIndeterminate />
+        ) : error ? (
+          <Text color="red.500" textAlign="center">{error}</Text>
+        ) : (
+          <>
+            <HStack justify="space-between">
+              <Heading size="lg">Reports & Subscriptions</Heading>
+              <Button
+                colorScheme="green"
+                onClick={() => setShowSubscriptionModal(true)}
+                leftIcon={<Icon as={FaPlus} />}
+              >
+                Create Subscription
+              </Button>
+            </HStack>
 
-        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
-          {/* Recent Reports */}
-          <Card>
-            <CardHeader>
-              <Flex align="center">
-                <Heading size="md">Recent Reports</Heading>
-                <Spacer />
-                <Button
-                  size="sm"
-                  colorScheme="blue"
-                  leftIcon={<Icon as={FaFileAlt} />}
-                  onClick={onGenerateOpen}
-                >
-                  Generate Report
-                </Button>
-              </Flex>
-            </CardHeader>
-            <CardBody>
-              <Table variant="simple">
-                <Thead>
-                  <Tr>
-                    <Th>Report</Th>
-                    <Th>Generated</Th>
-                    <Th>Status</Th>
-                    <Th>Action</Th>
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {reports.map((report) => (
-                    <Tr key={report.id}>
-                      <Td>
-                        <HStack>
-                          <Icon as={FaFileAlt} color={textColor} />
-                          <Box>
-                            <Text fontWeight="medium">{report.title}</Text>
-                            <Text fontSize="sm" color={textColor}>
-                              {report.type}
-                            </Text>
-                          </Box>
-                        </HStack>
-                      </Td>
-                      <Td>
-                        <Text>
-                          {formatDate(report.generatedAt)}
-                        </Text>
-                      </Td>
-                      <Td>
-                        <Badge colorScheme={getStatusColor(report.status)}>
-                          {report.status}
-                        </Badge>
-                      </Td>
-                      <Td>
-                        <Button
-                          size="sm"
-                          leftIcon={<Icon as={FaDownload} />}
-                          isDisabled={report.status !== 'completed'}
-                          onClick={() => handleDownload(report)}
-                        >
-                          Download
-                        </Button>
-                      </Td>
-                    </Tr>
-                  ))}
-                  {reports.length === 0 && (
-                    <Tr>
-                      <Td colSpan={4} textAlign="center" py={8}>
-                        <Text color={textColor}>No reports available</Text>
-                      </Td>
-                    </Tr>
-                  )}
-                </Tbody>
-              </Table>
-            </CardBody>
-          </Card>
+            <Card>
+              <CardBody>
+                <form onSubmit={handleGenerateReport}>
+                  <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
+                    <FormControl isRequired>
+                      <FormLabel htmlFor="reportType">Report Type</FormLabel>
+                      <Select
+                        id="reportType"
+                        value={selectedType}
+                        onChange={(e) => setSelectedType(e.target.value)}
+                        aria-label="Select report type"
+                        title="Report type selector"
+                      >
+                        {reportTypes.map(type => (
+                          <option key={type.value} value={type.value}>{type.label}</option>
+                        ))}
+                      </Select>
+                    </FormControl>
 
-          {/* Active Subscriptions */}
-          <Card>
-            <CardHeader>
-              <Heading size="md">Active Subscriptions</Heading>
-            </CardHeader>
-            <CardBody>
-              <Table variant="simple">
-                <Thead>
-                  <Tr>
-                    <Th>Name</Th>
-                    <Th>Frequency</Th>
-                    <Th>Next Delivery</Th>
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {subscriptions.map((subscription) => (
-                    <Tr key={subscription.id}>
-                      <Td>
-                        <HStack>
-                          <Icon as={FaEnvelope} color={textColor} />
-                          <Box>
-                            <Text fontWeight="medium">{subscription.name}</Text>
-                            <Text fontSize="sm" color={textColor}>
-                              {subscription.type} report
-                            </Text>
-                          </Box>
-                        </HStack>
-                      </Td>
-                      <Td>
-                        <HStack>
-                          <Icon as={FaCalendarAlt} color={textColor} />
-                          <Text>{subscription.frequency}</Text>
-                        </HStack>
-                      </Td>
-                      <Td>
-                        <HStack>
-                          <Icon as={FaClock} color={textColor} />
-                          <Text>
-                            {formatDate(subscription.nextDelivery)}
-                          </Text>
-                        </HStack>
-                      </Td>
-                    </Tr>
-                  ))}
-                  {subscriptions.length === 0 && (
-                    <Tr>
-                      <Td colSpan={3} textAlign="center" py={8}>
-                        <Text color={textColor}>No active subscriptions</Text>
-                      </Td>
-                    </Tr>
-                  )}
-                </Tbody>
-              </Table>
-            </CardBody>
-          </Card>
-        </SimpleGrid>
-      </VStack>
+                    <FormControl isRequired>
+                      <FormLabel htmlFor="reportFormat">Format</FormLabel>
+                      <Select
+                        id="reportFormat"
+                        value={selectedFormat}
+                        onChange={(e) => setSelectedFormat(e.target.value)}
+                        aria-label="Select report format"
+                        title="Report format selector"
+                      >
+                        {reportFormats.map(format => (
+                          <option key={format.value} value={format.value}>{format.label}</option>
+                        ))}
+                      </Select>
+                    </FormControl>
 
-      {/* New Subscription Modal */}
-      <Modal isOpen={isSubscriptionOpen} onClose={onSubscriptionClose}>
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Create New Subscription</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <VStack spacing={4}>
-              <FormControl isRequired>
-                <FormLabel>Subscription Name</FormLabel>
-                <Input
-                  placeholder="Daily Detection Report"
-                  value={newSubscription.name}
-                  onChange={(e) =>
-                    setNewSubscription({ ...newSubscription, name: e.target.value })
-                  }
-                />
-              </FormControl>
+                    <FormControl isRequired>
+                      <FormLabel>Date Range</FormLabel>
+                      <Input
+                        id="startDate"
+                        type="date"
+                        value={selectedDates[0].toISOString().split('T')[0]}
+                        onChange={(e) => setSelectedDates([new Date(e.target.value), selectedDates[1]])}
+                      />
+                      <Input
+                        id="endDate"
+                        type="date"
+                        value={selectedDates[1].toISOString().split('T')[0]}
+                        onChange={(e) => setSelectedDates([selectedDates[0], new Date(e.target.value)])}
+                        mt={2}
+                      />
+                    </FormControl>
+                  </SimpleGrid>
 
-              <FormControl isRequired>
-                <FormLabel>Report Type</FormLabel>
-                <Select
-                  value={newSubscription.type}
-                  onChange={(e) =>
-                    setNewSubscription({ ...newSubscription, type: e.target.value })
-                  }
-                >
-                  <option value="detection">Detection Report</option>
-                  <option value="analytics">Analytics Report</option>
-                  <option value="summary">Summary Report</option>
-                </Select>
-              </FormControl>
+                  <Button
+                    mt={6}
+                    colorScheme="blue"
+                    type="submit"
+                    width="full"
+                  >
+                    Generate Report
+                  </Button>
+                </form>
+              </CardBody>
+            </Card>
 
-              <FormControl isRequired>
-                <FormLabel>Frequency</FormLabel>
-                <Select
-                  value={newSubscription.frequency}
-                  onChange={(e) =>
-                    setNewSubscription({
-                      ...newSubscription,
-                      frequency: e.target.value as 'daily' | 'weekly' | 'monthly',
-                    })
-                  }
-                >
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
-                </Select>
-              </FormControl>
+            <Tabs>
+              <TabList>
+                <Tab>Generated Reports</Tab>
+                <Tab>Subscriptions</Tab>
+              </TabList>
 
-              <FormControl isRequired>
-                <FormLabel>Email</FormLabel>
-                <Input
-                  type="email"
-                  placeholder="your@email.com"
-                  value={newSubscription.email}
-                  onChange={(e) =>
-                    setNewSubscription({ ...newSubscription, email: e.target.value })
-                  }
-                />
-              </FormControl>
-            </VStack>
-          </ModalBody>
+              <TabPanels>
+                <TabPanel>
+                  <VStack spacing={4} align="stretch">
+                    {Array.isArray(reports) && reports.length > 0 ? (
+                      reports.map((report) => (
+                        <Card key={report.id}>
+                          <CardBody>
+                            <HStack justify="space-between">
+                              <VStack align="start" spacing={1}>
+                                <Text fontWeight="bold">{report.title}</Text>
+                                <Text fontSize="sm" color={textColor}>
+                                  Generated: {new Date(report.generatedAt).toLocaleString()}
+                                </Text>
+                              </VStack>
+                              <HStack>
+                                <Badge colorScheme={getStatusColor(report.status)}>
+                                  {report.status}
+                                </Badge>
+                                {report.status === 'generating' && report.progress && (
+                                  <Progress
+                                    value={report.progress * 100}
+                                    size="sm"
+                                    width="100px"
+                                  />
+                                )}
+                                {report.status === 'completed' && report.downloadUrl && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleDownload(report)}
+                                    leftIcon={<Icon as={FaDownload} />}
+                                  >
+                                    Download
+                                  </Button>
+                                )}
+                              </HStack>
+                            </HStack>
+                          </CardBody>
+                        </Card>
+                      ))
+                    ) : (
+                      <Text textAlign="center" color={textColor}>
+                        No reports available
+                      </Text>
+                    )}
+                  </VStack>
+                </TabPanel>
 
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onSubscriptionClose}>
-              Cancel
-            </Button>
-            <Button colorScheme="blue" onClick={handleCreateSubscription}>
-              Create Subscription
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+                <TabPanel>
+                  <VStack spacing={4} align="stretch">
+                    {Array.isArray(subscriptions) && subscriptions.length > 0 ? (
+                      subscriptions.map((subscription) => (
+                        <Card key={subscription.id}>
+                          <CardBody>
+                            <HStack justify="space-between">
+                              <VStack align="start" spacing={1}>
+                                <Text fontWeight="bold">{subscription.name}</Text>
+                                <Text fontSize="sm" color={textColor}>
+                                  {subscription.type} report - {subscription.frequency}
+                                </Text>
+                                <Text fontSize="sm" color={textColor}>
+                                  Next delivery: {new Date(subscription.nextDelivery).toLocaleString()}
+                                </Text>
+                              </VStack>
+                              <HStack>
+                                <Switch
+                                  isChecked={subscription.active}
+                                  onChange={(e) => handleToggleSubscription(subscription.id, e.target.checked)}
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  colorScheme="red"
+                                  onClick={() => handleDeleteSubscription(subscription.id)}
+                                  leftIcon={<Icon as={FaTrash} />}
+                                >
+                                  Delete
+                                </Button>
+                              </HStack>
+                            </HStack>
+                          </CardBody>
+                        </Card>
+                      ))
+                    ) : (
+                      <Text textAlign="center" color={textColor}>
+                        No active subscriptions
+                      </Text>
+                    )}
+                  </VStack>
+                </TabPanel>
+              </TabPanels>
+            </Tabs>
 
-      {/* Generate Report Modal */}
-      <Modal isOpen={isGenerateOpen} onClose={onGenerateClose}>
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Generate New Report</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <VStack spacing={4}>
-              <FormControl isRequired>
-                <FormLabel>Report Type</FormLabel>
-                <Select
-                  value={newReport.type}
-                  onChange={(e) =>
-                    setNewReport({ ...newReport, type: e.target.value })
-                  }
-                >
-                  <option value="detection">Detection Report</option>
-                  <option value="analytics">Analytics Report</option>
-                  <option value="summary">Summary Report</option>
-                </Select>
-              </FormControl>
-
-              <FormControl isRequired>
-                <FormLabel>Format</FormLabel>
-                <Select
-                  value={newReport.format}
-                  onChange={(e) =>
-                    setNewReport({ ...newReport, format: e.target.value })
-                  }
-                >
-                  <option value="csv">CSV</option>
-                  <option value="xlsx">Excel</option>
-                </Select>
-              </FormControl>
-
-              <FormControl isRequired>
-                <FormLabel>Start Date</FormLabel>
-                <Input
-                  type="datetime-local"
-                  value={newReport.start_date}
-                  onChange={(e) =>
-                    setNewReport({ ...newReport, start_date: e.target.value })
-                  }
-                />
-              </FormControl>
-
-              <FormControl isRequired>
-                <FormLabel>End Date</FormLabel>
-                <Input
-                  type="datetime-local"
-                  value={newReport.end_date}
-                  onChange={(e) =>
-                    setNewReport({ ...newReport, end_date: e.target.value })
-                  }
-                />
-              </FormControl>
-            </VStack>
-          </ModalBody>
-
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onGenerateClose}>
-              Cancel
-            </Button>
-            <Button
-              colorScheme="blue"
-              onClick={handleGenerateReport}
-              isLoading={isGenerating}
-              loadingText="Generating..."
+            <Modal
+              isOpen={showSubscriptionModal}
+              onClose={() => setShowSubscriptionModal(false)}
             >
-              Generate Report
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+              <ModalOverlay />
+              <ModalContent>
+                <ModalHeader>Create Subscription</ModalHeader>
+                <ModalCloseButton />
+                <ModalBody>
+                  <VStack spacing={4}>
+                    <FormControl isRequired>
+                      <FormLabel htmlFor="subscriptionName">Subscription Name</FormLabel>
+                      <Input
+                        id="subscriptionName"
+                        value={subscriptionForm.name}
+                        onChange={(e) => setSubscriptionForm({...subscriptionForm, name: e.target.value})}
+                        placeholder="Daily Detection Report"
+                      />
+                    </FormControl>
+
+                    <FormControl isRequired>
+                      <FormLabel htmlFor="subscriptionType">Report Type</FormLabel>
+                      <Select
+                        id="subscriptionType"
+                        value={subscriptionForm.type}
+                        onChange={(e) => setSubscriptionForm({...subscriptionForm, type: e.target.value})}
+                        aria-label="Select subscription report type"
+                        title="Subscription report type selector"
+                      >
+                        {reportTypes.map(type => (
+                          <option key={type.value} value={type.value}>{type.label}</option>
+                        ))}
+                      </Select>
+                    </FormControl>
+
+                    <FormControl isRequired>
+                      <FormLabel htmlFor="subscriptionFrequency">Frequency</FormLabel>
+                      <Select
+                        id="subscriptionFrequency"
+                        value={subscriptionForm.frequency}
+                        onChange={(e) => setSubscriptionForm({...subscriptionForm, frequency: e.target.value})}
+                        aria-label="Select subscription frequency"
+                        title="Subscription frequency selector"
+                      >
+                        {frequencies.map(freq => (
+                          <option key={freq.value} value={freq.value}>{freq.label}</option>
+                        ))}
+                      </Select>
+                    </FormControl>
+
+                    <FormControl isRequired>
+                      <FormLabel htmlFor="subscriptionRecipients">Recipients</FormLabel>
+                      <Input
+                        id="subscriptionRecipients"
+                        type="email"
+                        value={subscriptionForm.recipients}
+                        onChange={(e) => setSubscriptionForm({...subscriptionForm, recipients: e.target.value})}
+                        placeholder="Enter email addresses (comma-separated)"
+                      />
+                    </FormControl>
+                  </VStack>
+                </ModalBody>
+
+                <ModalFooter>
+                  <Button variant="ghost" mr={3} onClick={() => setShowSubscriptionModal(false)}>
+                    Cancel
+                  </Button>
+                  <Button colorScheme="blue" onClick={handleCreateSubscription}>
+                    Create
+                  </Button>
+                </ModalFooter>
+              </ModalContent>
+            </Modal>
+          </>
+        )}
+      </VStack>
     </Container>
   );
 };

@@ -1,0 +1,47 @@
+---
+description: Music Detection and Processing Rules
+globs: *
+---
+<customInstructions>
+### Detection Process Guidelines
+
+1. Content Type Analysis
+- Analyze incoming audio streams to identify content type:
+  - Music → Proceed with detection pipeline
+  - Speech → Skip detection, record metadata only
+- API endpoint: /api/channels/detect-music
+
+2. Detection Pipeline Order
+a. Local Detection (Primary)
+   - Query local database with fingerprints
+   - Proceed if match found
+   - Record detection data
+
+b. MusicBrainz Detection (Secondary)
+   - Query if local detection fails
+   - Use ACOUSTID_API_KEY (distinct from AUDD)
+   - Store metadata if found
+
+c. Audd Detection (Fallback)
+   - Last resort option
+   - Use AUDD_API_KEY
+   - Store any successful matches
+
+3. Required Detection Data
+- Fingerprint Information:
+  - fingerprint: Processed audio fingerprint
+  - fingerprint_raw: Raw fingerprint data
+- Timing Data:
+  - detected_at: Timestamp of detection
+  - play_duration: Track play duration
+  - station_id: Broadcasting station
+- Confidence Metrics:
+  - confidence_score: Detection confidence level
+  - detection_method: Which detection service succeeded
+
+4. Error Handling
+- Log failed detections with timestamps
+- Record failed attempts for analysis
+- Implement retry mechanism for network failures
+- Maintain error statistics per detection method
+<customInstructions>

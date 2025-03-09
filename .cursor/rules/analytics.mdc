@@ -1,0 +1,13 @@
+---
+description: Règles pour les Analytics
+globs: *
+---
+Les statistiques doivent être mises à jour automatiquement après chaque détection :
+Mise à jour de track_stats, artist_stats, et station_stats
+Génération quotidienne des rapports sur :
+Le nombre total de détections par station
+La durée totale de lecture des morceaux
+Les artistes et labels les plus diffusés
+Nombre de détections par artiste, morceau, station et label.
+Temps de jeu total par morceau et par station.
+Détection des tendances sur des périodes personnalisées (7 jours, 30 jours).
