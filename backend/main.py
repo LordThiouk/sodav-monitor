@@ -83,12 +83,10 @@ async def lifespan(app: FastAPI):
                 if active_stations:
                     logger.info(f"Found {len(active_stations)} active stations for music detection")
                     
-                    # Lancer la détection sur chaque station
-                    for station in active_stations:
-                        # Créer une tâche asyncio pour chaque station
-                        asyncio.create_task(detect_station_music(station.id))
-                        
-                    logger.info(f"Music detection initiated for {len(active_stations)} active stations")
+                    # Informer sur le service de détection séparé
+                    logger.info("Music detection is not started automatically to prevent server blocking.")
+                    logger.info("To start the detection service, run: python backend/scripts/run_detection_service.py")
+                    logger.info("You can customize the service with: --max_concurrent 5 --interval 60")
                 else:
                     logger.warning("No active stations found for music detection")
             else:

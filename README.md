@@ -273,7 +273,6 @@ python -m backend.scripts.tests.run_tests
 # Exécuter tous les tests avec rapport de couverture
 ./backend/scripts/tests/run_all_tests.sh
 ```
-
 ### Documentation des Tests
 
 Pour plus d'informations sur la stratégie de test, consultez les documents suivants :
@@ -296,3 +295,4 @@ Le workflow CI exécute les étapes suivantes :
 5. Téléchargement des rapports de couverture vers Codecov
 
 Pour visualiser les résultats des tests CI, consultez l'onglet "Actions" du dépôt GitHub.
+

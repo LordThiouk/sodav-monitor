@@ -1,0 +1,72 @@
+[
+  {
+    "id": 6,
+    "name": "Dakar Musique",
+    "url": "http://listen.senemultimedia.net:8090/stream",
+    "country": "Senegal",
+    "language": "french",
+    "genre": "african music",
+    "bitrate": 128,
+    "codec": "MP3",
+    "homepage": "https://dakarmusique.com/",
+    "favicon": "https://dakarmusique.com/wp-content/uploads/2022/11/cropped-486-486-max-180x180.png",
+    "votes": 4068,
+    "original_id": "aaa5f838-2dea-4e70-8d03-b536265bdbfc"
+  },
+  {
+    "id": 7,
+    "name": "Dakar Musique",
+    "url": "http://listen.senemultimedia.net:8090/stream",
+    "country": "Senegal",
+    "language": "",
+    "genre": "Variété",
+    "bitrate": 128,
+    "codec": "MP3",
+    "homepage": "https://dakarmusique.com/",
+    "favicon": "https://dakarmusique.com/wp-content/uploads/2022/11/logo.jpg.webp",
+    "votes": 162,
+    "original_id": "3e587068-3e15-4ac9-8cd0-f86c5c784f0b"
+  },
+  {
+    "id": 11,
+    "name": "GMS FM 89.3 Ziguinchor",
+    "url": "https://myfm.acan.group/radio/8140/radio.mp3?1690707378",
+    "country": "Senegal",
+    "language": "french",
+    "genre": "african music",
+    "bitrate": 128,
+    "codec": "MP3",
+    "homepage": "https://www.gms.sn/",
+    "favicon": "https://i0.wp.com/www.gms.sn/wp-content/uploads/2023/02/cropped-cropped-logo-set.png?fit=180%2c180&#038;ssl=1",
+    "votes": 208,
+    "original_id": "3ccaf86c-afe5-47ae-82f2-1d6eff7cb83f"
+  },
+  {
+    "id": 12,
+    "name": "H24",
+    "url": "http://listen.senemultimedia.net:8070/stream",
+    "country": "Senegal",
+    "language": "",
+    "genre": "Variété",
+    "bitrate": 128,
+    "codec": "MP3",
+    "homepage": "https://h24.sn/",
+    "favicon": "",
+    "votes": 2019,
+    "original_id": "71300488-0398-4cc6-9007-d2f43c506349"
+  },
+  {
+    "id": 13,
+    "name": "H24 Senegal",
+    "url": "https://listen.senemultimedia.net:8072/stream",
+    "country": "Senegal",
+    "language": "french",
+    "genre": "music",
+    "bitrate": 128,
+    "codec": "MP3",
+    "homepage": "https://www.h24.sn/",
+    "favicon": "",
+    "votes": 396,
+    "original_id": "b7f8fa40-7be5-4407-ba9e-df6d984aea53"
+  }
+]

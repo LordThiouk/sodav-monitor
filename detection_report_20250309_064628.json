@@ -1,0 +1,63 @@
+{
+  "test_info": {
+    "audio_file": "samples_test/Dakar_Musique_20250309_023146.mp3",
+    "station_id": 1,
+    "station_name": "Test Station",
+    "timestamp": "2025-03-09T06:46:28.025394",
+    "processing_time": 0.21025395393371582
+  },
+  "detection_result": {
+    "success": true,
+    "detection": {
+      "track_id": 19,
+      "start_time": "2025-03-09T06:46:27.973772",
+      "confidence": 1.0
+    },
+    "source": "local"
+  },
+  "track_info": {
+    "id": 19,
+    "title": "Piste Test Multi-Fingerprint 20250309054519",
+    "artist": "Artiste Test Multi-Fingerprint",
+    "album": "The Final Nights Of Paradise Pt. 4/5",
+    "isrc": null,
+    "label": null,
+    "release_date": null,
+    "fingerprint": "f26e80c17d32d67d2bf4...",
+    "chromaprint": null
+  },
+  "fingerprints": [
+    {
+      "id": 3,
+      "algorithm": "md5",
+      "hash": "f26e80c17d32d67d2bf4..."
+    },
+    {
+      "id": 4,
+      "algorithm": "md5",
+      "hash": "dbc53f1e201241aeed2c..."
+    },
+    {
+      "id": 5,
+      "algorithm": "md5",
+      "hash": "a83843d9e0a83fdbdc51..."
+    },
+    {
+      "id": 6,
+      "algorithm": "md5",
+      "hash": "7f06807c431334a268d5..."
+    },
+    {
+      "id": 7,
+      "algorithm": "md5",
+      "hash": "8f843b1d3f28728d4abb..."
+    },
+    {
+      "id": 35,
+      "algorithm": "md5",
+      "hash": "3992081940,398786715..."
+    }
+  ],
+  "detections": [],
+  "statistics": {}
+}

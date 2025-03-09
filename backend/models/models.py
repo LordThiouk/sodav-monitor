@@ -169,6 +169,7 @@ class Track(Base):
     duration = Column(Interval)
     fingerprint = Column(String, unique=True)
     fingerprint_raw = Column(LargeBinary)
+    chromaprint = Column(String, nullable=True)  # Ajout de la colonne chromaprint
     release_date = Column(String, nullable=True)  # Ajout du champ release_date
     genre = Column(String, nullable=True)  # Ajout du champ genre pour plus de complétude
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -178,6 +179,7 @@ class Track(Base):
     artist = relationship("Artist", back_populates="tracks")
     detections = relationship("TrackDetection", back_populates="track")
     stats = relationship("TrackStats", back_populates="track", uselist=False)
+    fingerprints = relationship("Fingerprint", back_populates="track", cascade="all, delete-orphan")
 
 class TrackDetection(Base):
     __tablename__ = 'track_detections'
@@ -384,6 +386,21 @@ class StationStatusHistory(Base):
     # Relationships
     station = relationship("RadioStation", back_populates="status_history")
     user = relationship("User", backref="station_status_changes")
+
+class Fingerprint(Base):
+    """Fingerprint model for storing multiple fingerprints per track."""
+    __tablename__ = "fingerprints"
+    
+    id = Column(Integer, primary_key=True)
+    track_id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), index=True)
+    hash = Column(String(255), index=True)
+    raw_data = Column(LargeBinary)
+    offset = Column(Float)  # Position dans la piste en secondes
+    algorithm = Column(String(50))  # 'md5', 'chromaprint', etc.
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationship with Track
+    track = relationship("Track", back_populates="fingerprints")
 
 # Add indexes for analytics queries
 Index('idx_track_detections_detected_at', TrackDetection.detected_at)

@@ -192,4 +192,36 @@ class AudioAnalyzer:
             return duration
         except Exception as e:
             logger.error(f"Error calculating audio duration: {e}")
-            raise ValueError(f"Failed to calculate audio duration: {e}") 
+            raise ValueError(f"Failed to calculate audio duration: {e}")
+    
+    def classify_audio_type(self, audio_data: bytes) -> str:
+        """
+        Classify audio data as either 'music', 'speech', or 'unknown'.
+        
+        Args:
+            audio_data: Raw audio data as bytes
+            
+        Returns:
+            String classification: 'music', 'speech', or 'unknown'
+        """
+        try:
+            if self.is_music(audio_data):
+                return "music"
+            else:
+                # Analyse plus détaillée pour distinguer la parole du silence ou du bruit
+                features = self.extract_features(audio_data)
+                
+                # Vérifier si c'est probablement de la parole
+                # La parole a généralement un taux de passage par zéro modéré et une énergie modérée
+                zcr = features['zero_crossing_rate']
+                energy = features['energy']
+                
+                if 0.01 < zcr < 0.1 and 0.001 < energy < 0.05:
+                    return "speech"
+                
+                # Si ce n'est ni de la musique ni de la parole, c'est probablement du bruit ou du silence
+                return "unknown"
+                
+        except Exception as e:
+            logger.error(f"Error classifying audio type: {e}")
+            return "unknown" 

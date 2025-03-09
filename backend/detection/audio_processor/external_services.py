@@ -19,6 +19,7 @@ import asyncio
 from pathlib import Path
 import io
 import traceback
+import hashlib
 
 logger = setup_logging(__name__)
 
@@ -149,29 +150,76 @@ class AcoustIDService:
                 temp_file_path = temp_file.name
             
             try:
+                # Vérifier que le fichier existe et a une taille valide
+                if not os.path.exists(temp_file_path) or os.path.getsize(temp_file_path) == 0:
+                    log_with_category(logger, "ACOUSTID", "error", f"Temporary file does not exist or is empty: {temp_file_path}")
+                    return None, 0
+                
                 # Générer l'empreinte avec fpcalc
                 log_with_category(logger, "ACOUSTID", "info", f"Generating fingerprint with fpcalc for file: {temp_file_path}")
                 result = subprocess.run(
                     [fpcalc_path, "-json", temp_file_path],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    timeout=30  # Add timeout to avoid hanging
                 )
                 
                 if result.returncode != 0:
                     log_with_category(logger, "ACOUSTID", "error", f"fpcalc failed with error: {result.stderr}")
-                    return None, 0
+                    
+                    # Try with different audio format if MP3 fails
+                    log_with_category(logger, "ACOUSTID", "info", "Trying with WAV format...")
+                    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as wav_file:
+                        wav_file_path = wav_file.name
+                    
+                    try:
+                        # Convert MP3 to WAV using pydub
+                        from pydub import AudioSegment
+                        audio = AudioSegment.from_file(temp_file_path, format="mp3")
+                        audio.export(wav_file_path, format="wav")
+                        
+                        # Try again with WAV file
+                        log_with_category(logger, "ACOUSTID", "info", f"Generating fingerprint with fpcalc for WAV file: {wav_file_path}")
+                        result = subprocess.run(
+                            [fpcalc_path, "-json", wav_file_path],
+                            capture_output=True,
+                            text=True,
+                            timeout=30
+                        )
+                        
+                        if result.returncode != 0:
+                            log_with_category(logger, "ACOUSTID", "error", f"fpcalc failed with WAV file: {result.stderr}")
+                            return None, 0
+                    except Exception as wav_error:
+                        log_with_category(logger, "ACOUSTID", "error", f"Error converting to WAV: {str(wav_error)}")
+                        return None, 0
+                    finally:
+                        # Clean up WAV file
+                        if os.path.exists(wav_file_path):
+                            os.unlink(wav_file_path)
                 
                 # Analyser la sortie JSON
-                fpcalc_output = json.loads(result.stdout)
+                try:
+                    fpcalc_output = json.loads(result.stdout)
+                except json.JSONDecodeError as e:
+                    log_with_category(logger, "ACOUSTID", "error", f"Error parsing fpcalc output: {str(e)}")
+                    log_with_category(logger, "ACOUSTID", "error", f"fpcalc stdout: {result.stdout}")
+                    return None, 0
+                
                 fingerprint = fpcalc_output.get("fingerprint")
                 duration = fpcalc_output.get("duration")
                 
                 if not fingerprint or not duration:
                     log_with_category(logger, "ACOUSTID", "error", "Failed to generate fingerprint or duration")
+                    log_with_category(logger, "ACOUSTID", "error", f"fpcalc output: {fpcalc_output}")
                     return None, 0
                 
                 log_with_category(logger, "ACOUSTID", "info", f"Generated fingerprint: {fingerprint[:20]}... (length: {len(fingerprint)})")
                 log_with_category(logger, "ACOUSTID", "info", f"Duration: {duration} seconds")
+                
+                # Store fingerprint in cache for future use
+                fingerprint_cache_key = hashlib.md5(audio_data).hexdigest()
+                # TODO: Implement caching mechanism if needed
                 
                 return fingerprint, float(duration)
             
@@ -180,6 +228,9 @@ class AcoustIDService:
                 if os.path.exists(temp_file_path):
                     os.unlink(temp_file_path)
         
+        except subprocess.TimeoutExpired:
+            log_with_category(logger, "ACOUSTID", "error", "fpcalc process timed out after 30 seconds")
+            return None, 0
         except Exception as e:
             log_with_category(logger, "ACOUSTID", "error", f"Error generating fingerprint: {str(e)}")
             log_with_category(logger, "ACOUSTID", "error", f"Traceback: {traceback.format_exc()}")
@@ -220,34 +271,34 @@ class AcoustIDService:
             log_with_category(logger, "ACOUSTID", "info", f"Sending request to AcoustID: {url} with fingerprint length {len(fingerprint)}")
             log_with_category(logger, "ACOUSTID", "debug", f"AcoustID request parameters: {params}")
             
+            # Send POST request to AcoustID
+            log_with_category(logger, "ACOUSTID", "info", "Sending POST request to AcoustID...")
+            
             async with aiohttp.ClientSession() as session:
                 try:
-                    # Essayer avec une requête POST simple
-                    log_with_category(logger, "ACOUSTID", "info", "Sending POST request to AcoustID...")
-                    
-                    # Utiliser un timeout de 30 secondes
+                    # Use a timeout to avoid hanging requests
                     async with session.post(url, data=params, timeout=30) as response:
-                        # Log response status
                         log_with_category(logger, "ACOUSTID", "info", f"AcoustID response status: {response.status}")
                         
-                        # Get response text for logging
+                        # Read response text
                         response_text = await response.text()
                         log_with_category(logger, "ACOUSTID", "info", f"AcoustID response text (first 500 chars): {response_text[:500]}...")
                         
+                        # Check if response is valid
                         if response.status != 200:
-                            log_with_category(logger, "ACOUSTID", "error", f"AcoustID error: {response_text}")
+                            log_with_category(logger, "ACOUSTID", "error", f"AcoustID HTTP error: {response.status}")
+                            log_with_category(logger, "ACOUSTID", "error", f"Response text: {response_text}")
                             return None
                         
+                        # Parse JSON response
                         try:
                             data = json.loads(response_text)
-                            log_with_category(logger, "ACOUSTID", "info", f"Successfully parsed JSON response")
+                            log_with_category(logger, "ACOUSTID", "info", "Successfully parsed JSON response")
+                            log_with_category(logger, "ACOUSTID", "debug", f"AcoustID complete response: {data}")
                         except json.JSONDecodeError as e:
-                            log_with_category(logger, "ACOUSTID", "error", f"Failed to parse AcoustID response as JSON: {e}")
-                            log_with_category(logger, "ACOUSTID", "error", f"Response text: {response_text[:1000]}")
+                            log_with_category(logger, "ACOUSTID", "error", f"Failed to parse JSON response: {str(e)}")
+                            log_with_category(logger, "ACOUSTID", "error", f"Response text: {response_text}")
                             return None
-                        
-                        # Log complete response for debugging
-                        log_with_category(logger, "ACOUSTID", "debug", f"AcoustID complete response: {json.dumps(data)}")
                         
                         # Check if status is OK
                         if "status" not in data or data["status"] != "ok":
@@ -292,6 +343,7 @@ class AcoustIDService:
                         isrc = None
                         label = None
                         release_date = None
+                        genre = None
                         
                         if "releases" in recording and recording["releases"]:
                             release = recording["releases"][0]
@@ -309,6 +361,10 @@ class AcoustIDService:
                             # Extract release date
                             if "date" in release:
                                 release_date = release["date"]
+                                
+                            # Extract genre if available
+                            if "genres" in release and release["genres"]:
+                                genre = release["genres"][0]
                         
                         # Create result dictionary
                         result = {
@@ -318,10 +374,13 @@ class AcoustIDService:
                             "isrc": isrc,
                             "label": label,
                             "release_date": release_date,
+                            "genre": genre,
                             "id": recording.get("id"),
                             "confidence": score,
                             "source": "acoustid",
-                            "detection_method": "acoustid"
+                            "detection_method": "acoustid",
+                            "fingerprint": fingerprint,
+                            "duration": duration
                         }
                         
                         log_with_category(logger, "ACOUSTID", "info", f"AcoustID detection result: {title} by {artist}, confidence: {score}")
@@ -397,77 +456,59 @@ class AcoustIDService:
     
     async def detect_track_with_retry(self, audio_data: bytes, max_retries: int = 2) -> Optional[Dict[str, Any]]:
         """
-        Detect track with retry mechanism.
+        Detect track with automatic retry on failure.
         
         Args:
             audio_data: Audio data as bytes
-            max_retries: Maximum number of retries
+            max_retries: Maximum number of retry attempts
             
         Returns:
             Dictionary with track information or None if not found
         """
-        log_with_category(logger, "ACOUSTID", "info", f"Starting track detection with retry (max_retries={max_retries})")
+        log_with_category(logger, "ACOUSTID", "info", f"Detecting track with retry (max_retries={max_retries})")
         
-        # Test the AcoustID API first
-        api_works = await self.test_acoustid_api()
-        if not api_works:
-            log_with_category(logger, "ACOUSTID", "error", "AcoustID API test failed, cannot proceed with detection")
-            return None
-            
-        log_with_category(logger, "ACOUSTID", "info", "AcoustID API test successful, proceeding with detection")
-        
-        # First attempt with normal parameters
-        result = await self.detect_track(audio_data)
-        if result:
-            log_with_category(logger, "ACOUSTID", "info", "Track detected on first attempt")
-            return result
-            
-        # If first attempt failed, try with different configurations
+        # Try detection with exponential backoff
         for retry in range(max_retries):
-            log_with_category(logger, "ACOUSTID", "info", f"Retry attempt {retry+1}/{max_retries}")
-            
             try:
-                # Try with a different audio segment (skip first 5 seconds for retry 1, skip 10 seconds for retry 2)
-                skip_seconds = (retry + 1) * 5
-                log_with_category(logger, "ACOUSTID", "info", f"Trying with audio segment starting at {skip_seconds} seconds")
+                # Add delay for retries (not for first attempt)
+                if retry > 0:
+                    delay = 2 ** retry  # Exponential backoff: 1, 2, 4, 8...
+                    log_with_category(logger, "ACOUSTID", "info", f"Retry {retry+1}/{max_retries}, waiting {delay} seconds...")
+                    await asyncio.sleep(delay)
                 
-                # Use AudioAnalyzer to extract a segment
-                from .audio_analysis import AudioAnalyzer
-                analyzer = AudioAnalyzer()
+                log_with_category(logger, "ACOUSTID", "info", f"Detection attempt {retry+1}/{max_retries}")
                 
-                # Load audio data
-                audio = analyzer.load_audio_from_bytes(audio_data)
-                if audio is None:
-                    log_with_category(logger, "ACOUSTID", "error", "Failed to load audio data for retry")
-                    continue
-                    
-                # Extract segment (skip first N seconds, take 20 seconds)
-                sample_rate = audio.frame_rate
-                start_frame = skip_seconds * sample_rate
-                duration_frames = 20 * sample_rate
+                # Try detection
+                result = await self.detect_track(audio_data)
                 
-                if start_frame >= len(audio):
-                    log_with_category(logger, "ACOUSTID", "warning", f"Audio too short for segment starting at {skip_seconds} seconds")
-                    continue
-                    
-                end_frame = min(start_frame + duration_frames, len(audio))
-                segment = audio[start_frame:end_frame]
-                
-                # Convert segment to bytes
-                segment_bytes = analyzer.audio_to_bytes(segment)
-                log_with_category(logger, "ACOUSTID", "info", f"Extracted segment of {len(segment_bytes)} bytes")
-                
-                # Try detection with segment
-                result = await self.detect_track(segment_bytes)
                 if result:
                     log_with_category(logger, "ACOUSTID", "info", f"Track detected on retry {retry+1}")
+                    # Add retry information to result
+                    result["retry_count"] = retry
                     return result
+                else:
+                    log_with_category(logger, "ACOUSTID", "info", f"No track detected on attempt {retry+1}")
                     
             except Exception as e:
                 log_with_category(logger, "ACOUSTID", "error", f"Error in retry attempt {retry+1}: {str(e)}")
-                import traceback
                 log_with_category(logger, "ACOUSTID", "error", f"Traceback: {traceback.format_exc()}")
                 
+                # If this is the last retry, log the failure
+                if retry == max_retries - 1:
+                    log_with_category(logger, "ACOUSTID", "error", "All detection attempts failed")
+                    # Log detailed information for debugging
+                    try:
+                        # Generate fingerprint for logging
+                        fingerprint_result = await self._generate_fingerprint(audio_data)
+                        if fingerprint_result:
+                            fingerprint, duration = fingerprint_result
+                            log_with_category(logger, "ACOUSTID", "info", 
+                                f"Failed detection fingerprint: {fingerprint[:20]}... (length: {len(fingerprint)})")
+                            log_with_category(logger, "ACOUSTID", "info", f"Failed detection duration: {duration}")
+                    except Exception as fingerprint_error:
+                        log_with_category(logger, "ACOUSTID", "error", 
+                            f"Error generating fingerprint for failed detection: {str(fingerprint_error)}")
+        
         log_with_category(logger, "ACOUSTID", "info", "All detection attempts failed")
         return None
 
@@ -478,8 +519,75 @@ class AcoustIDService:
         Returns:
             True if the API works, False otherwise
         """
-        # Always return True as we don't use this method anymore
-        return True
+        try:
+            # Vérifier que la clé API est configurée
+            if not self.api_key:
+                log_with_category(logger, "ACOUSTID", "error", "AcoustID API key not configured")
+                return False
+                
+            log_with_category(logger, "ACOUSTID", "info", f"Testing AcoustID API with key: {self.api_key[:3]}...{self.api_key[-3:]}")
+            
+            # Utiliser un fichier audio de test existant
+            test_file_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+                "backend", "tests", "data", "audio", "sample1.mp3"
+            )
+            
+            if not os.path.exists(test_file_path):
+                log_with_category(logger, "ACOUSTID", "error", f"Test audio file not found: {test_file_path}")
+                return False
+                
+            log_with_category(logger, "ACOUSTID", "info", f"Using test audio file: {test_file_path}")
+            
+            # Lire le fichier audio
+            with open(test_file_path, "rb") as f:
+                audio_data = f.read()
+                
+            # Générer une empreinte
+            fingerprint_result = await self._generate_fingerprint(audio_data)
+            if not fingerprint_result:
+                log_with_category(logger, "ACOUSTID", "error", "Failed to generate fingerprint for test")
+                return False
+                
+            fingerprint, duration = fingerprint_result
+            
+            # Préparer les paramètres de la requête
+            params = {
+                "client": self.api_key,
+                "meta": "recordings",
+                "fingerprint": fingerprint,
+                "duration": str(int(duration))
+            }
+            
+            # Envoyer la requête à AcoustID
+            url = f"{self.base_url}/lookup"
+            log_with_category(logger, "ACOUSTID", "info", f"Sending test request to AcoustID: {url}")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, data=params, timeout=30) as response:
+                    if response.status != 200:
+                        log_with_category(logger, "ACOUSTID", "error", f"AcoustID API error: {response.status}")
+                        response_text = await response.text()
+                        log_with_category(logger, "ACOUSTID", "error", f"Response text: {response_text}")
+                        return False
+                        
+                    data = await response.json()
+                    
+                    # Vérifier si le statut est OK
+                    if data.get("status") != "ok":
+                        error_msg = data.get("error", {}).get("message", "Unknown error")
+                        log_with_category(logger, "ACOUSTID", "error", f"AcoustID API error: {error_msg}")
+                        return False
+                        
+                    # Pour un fichier audio de test, il est possible de ne pas avoir de résultats
+                    # Nous vérifions seulement que l'API répond correctement
+                    log_with_category(logger, "ACOUSTID", "info", "AcoustID API test successful")
+                    return True
+                    
+        except Exception as e:
+            log_with_category(logger, "ACOUSTID", "error", f"Error testing AcoustID API: {str(e)}")
+            log_with_category(logger, "ACOUSTID", "error", f"Traceback: {traceback.format_exc()}")
+            return False
 
     async def detect_track_from_station(self, station_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -509,6 +617,26 @@ class AcoustIDService:
             log_with_category(logger, "ACOUSTID", "info", f"Detecting track from station {station_name} (ID: {station_id}) at {timestamp}")
             log_with_category(logger, "ACOUSTID", "info", f"Audio data size: {len(audio_data)} bytes")
             
+            # First, analyze the audio to determine if it's music or speech
+            try:
+                from .audio_analysis import AudioAnalyzer
+                analyzer = AudioAnalyzer()
+                audio_type = analyzer.classify_audio_type(audio_data)
+                
+                if audio_type == "speech":
+                    log_with_category(logger, "ACOUSTID", "info", f"Audio from station {station_name} classified as speech, skipping detection")
+                    return {
+                        "success": False,
+                        "error": "Audio classified as speech",
+                        "station_id": station_id,
+                        "station_name": station_name,
+                        "timestamp": timestamp,
+                        "audio_type": "speech"
+                    }
+            except Exception as e:
+                # If classification fails, continue with detection
+                log_with_category(logger, "ACOUSTID", "warning", f"Error classifying audio type: {str(e)}, continuing with detection")
+            
             # Generate fingerprint
             fingerprint_result = await self._generate_fingerprint(audio_data)
             if not fingerprint_result:
@@ -530,35 +658,38 @@ class AcoustIDService:
             
             # Send request to AcoustID
             url = f"{self.base_url}/lookup"
-            
-            # Log request details
             log_with_category(logger, "ACOUSTID", "info", f"Sending request to AcoustID for station {station_name}")
             
             async with aiohttp.ClientSession() as session:
                 try:
-                    # Send POST request
+                    # Use a timeout to avoid hanging requests
                     async with session.post(url, data=params, timeout=30) as response:
-                        # Log response status
                         log_with_category(logger, "ACOUSTID", "info", f"AcoustID response status for station {station_name}: {response.status}")
                         
-                        # Get response text for logging
+                        # Read response text
                         response_text = await response.text()
                         log_with_category(logger, "ACOUSTID", "info", f"AcoustID response text for station {station_name} (first 500 chars): {response_text[:500]}...")
                         
+                        # Check if response is valid
                         if response.status != 200:
-                            log_with_category(logger, "ACOUSTID", "error", f"AcoustID error for station {station_name}: {response_text}")
+                            log_with_category(logger, "ACOUSTID", "error", f"AcoustID HTTP error for station {station_name}: {response.status}")
+                            log_with_category(logger, "ACOUSTID", "error", f"Response text: {response_text}")
                             return None
                         
+                        # Parse JSON response
                         try:
                             data = json.loads(response_text)
                             log_with_category(logger, "ACOUSTID", "info", f"Successfully parsed JSON response for station {station_name}")
                         except json.JSONDecodeError as e:
-                            log_with_category(logger, "ACOUSTID", "error", f"Failed to parse AcoustID response as JSON for station {station_name}: {e}")
+                            log_with_category(logger, "ACOUSTID", "error", f"Failed to parse JSON response for station {station_name}: {str(e)}")
+                            log_with_category(logger, "ACOUSTID", "error", f"Response text: {response_text}")
                             return None
                         
                         # Check if status is OK
                         if "status" not in data or data["status"] != "ok":
                             log_with_category(logger, "ACOUSTID", "error", f"AcoustID returned non-OK status for station {station_name}: {data.get('status', 'unknown')}")
+                            if "error" in data:
+                                log_with_category(logger, "ACOUSTID", "error", f"AcoustID error message: {data['error'].get('message', 'No message')}")
                             return None
                         
                         # Check if results are found
@@ -597,6 +728,7 @@ class AcoustIDService:
                         isrc = None
                         label = None
                         release_date = None
+                        genre = None
                         
                         if "releases" in recording and recording["releases"]:
                             release = recording["releases"][0]
@@ -614,6 +746,10 @@ class AcoustIDService:
                             # Extract release date
                             if "date" in release:
                                 release_date = release["date"]
+                                
+                            # Extract genre if available
+                            if "genres" in release and release["genres"]:
+                                genre = release["genres"][0]
                         
                         # Create result dictionary
                         result = {
@@ -623,6 +759,7 @@ class AcoustIDService:
                             "isrc": isrc,
                             "label": label,
                             "release_date": release_date,
+                            "genre": genre,
                             "id": recording.get("id"),
                             "confidence": score,
                             "source": "acoustid",
@@ -630,7 +767,11 @@ class AcoustIDService:
                             "station_id": station_id,
                             "station_name": station_name,
                             "timestamp": timestamp,
-                            "fingerprint": fingerprint
+                            "fingerprint": fingerprint,
+                            "duration": duration,
+                            "play_duration": duration,  # Initial play duration is the duration of the sample
+                            "detected_at": timestamp,
+                            "audio_type": "music"
                         }
                         
                         log_with_category(logger, "ACOUSTID", "info", f"AcoustID detection result for station {station_name}: {title} by {artist}, confidence: {score}")
@@ -640,8 +781,11 @@ class AcoustIDService:
                     log_with_category(logger, "ACOUSTID", "error", f"AcoustID client error for station {station_name}: {str(e)}")
                     return None
         
+        except asyncio.TimeoutError:
+            log_with_category(logger, "ACOUSTID", "error", f"AcoustID request timed out after 30 seconds for station {station_name}")
+            return None
         except Exception as e:
-            log_with_category(logger, "ACOUSTID", "error", f"Error detecting track from station data: {str(e)}")
+            log_with_category(logger, "ACOUSTID", "error", f"Error detecting track with AcoustID for station {station_name}: {str(e)}")
             log_with_category(logger, "ACOUSTID", "error", f"Traceback: {traceback.format_exc()}")
             return None
 
@@ -655,56 +799,82 @@ class AuddService:
         self.api_key = api_key
         self.base_url = base_url
     
-    async def detect_track(self, audio_data: bytes) -> Optional[Dict[str, Any]]:
+    async def detect_track(self, audio_data: bytes, station_id: Optional[int] = None, timestamp: Optional[str] = None) -> Dict[str, Any]:
         """
-        Detect track using AudD service.
+        Détecte une piste en utilisant le service AudD.
         
         Args:
-            audio_data: Audio data as bytes
+            audio_data: Données audio brutes
+            station_id: ID de la station (optionnel)
+            timestamp: Horodatage de la détection (optionnel)
             
         Returns:
-            Dictionary with track information or None if not found
+            Dictionnaire contenant les informations de la piste détectée ou un message d'erreur
         """
         try:
-            # Prepare the audio data for sending
-            audio_file = io.BytesIO(audio_data)
-            
-            data = {
-                'api_token': self.api_key,
-                'return': 'spotify,apple_music,musicbrainz,deezer'
-            }
-            
-            files = {
-                'file': ('audio.mp3', audio_file, 'audio/mpeg')
-            }
-            
             log_with_category(logger, "AUDD", "info", f"Sending audio data to AudD API: {len(audio_data)} bytes")
             
+            # Préparer les données pour l'envoi
+            data = {
+                'api_token': self.api_key,
+                'return': 'apple_music,spotify,deezer'
+            }
+            
+            # Créer une requête multipart
+            form = aiohttp.FormData()
+            for key, value in data.items():
+                form.add_field(key, value)
+            form.add_field('file', audio_data, filename='audio.mp3', content_type='audio/mpeg')
+            
+            # Envoyer la requête à l'API AudD
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.base_url, data=data, files=files) as response:
-                    # Log response status
+                async with session.post(self.base_url, data=form) as response:
                     log_with_category(logger, "AUDD", "info", f"AudD response status: {response.status}")
                     
                     if response.status != 200:
-                        error_text = await response.text()
-                        log_with_category(logger, "AUDD", "error", f"AudD error: {error_text}")
-                        return None
+                        log_with_category(logger, "AUDD", "error", f"AudD API error: {response.status}")
+                        return {"success": False, "error": f"AudD API error: {response.status}"}
                     
+                    # Analyser la réponse JSON
                     result = await response.json()
-                    
-                    # Log complete response for debugging
                     log_with_category(logger, "AUDD", "debug", f"AudD complete response: {json.dumps(result)}")
                     
-                    # Check if track is found
-                    if "result" not in result or not result["result"]:
-                        log_with_category(logger, "AUDD", "info", "No AudD results found")
-                        return None
+                    if result.get("status") != "success" or "result" not in result:
+                        log_with_category(logger, "AUDD", "error", f"AudD API error: {result.get('error', {}).get('error_message', 'Unknown error')}")
+                        return {"success": False, "error": f"AudD API error: {result.get('error', {}).get('error_message', 'Unknown error')}"}
                     
-                    # Extract track information
+                    # Si aucun résultat n'est trouvé
+                    if not result.get("result"):
+                        log_with_category(logger, "AUDD", "info", "AudD found no matching track")
+                        return {"success": False, "error": "No matching track found"}
+                    
                     track_data = result["result"]
                     
                     # Log track details
                     log_with_category(logger, "AUDD", "info", f"AudD found track: {track_data.get('title', 'Unknown')} by {track_data.get('artist', 'Unknown')}")
+                    
+                    # Extraire l'ISRC des différentes sources
+                    isrc = None
+                    
+                    # Vérifier si l'ISRC est directement dans le résultat principal
+                    if "isrc" in track_data:
+                        isrc = track_data["isrc"]
+                        log_with_category(logger, "AUDD", "info", f"ISRC found in main result: {isrc}")
+                    
+                    # Vérifier dans Apple Music
+                    elif "apple_music" in track_data and isinstance(track_data["apple_music"], dict) and "isrc" in track_data["apple_music"]:
+                        isrc = track_data["apple_music"]["isrc"]
+                        log_with_category(logger, "AUDD", "info", f"ISRC found in Apple Music data: {isrc}")
+                    
+                    # Vérifier dans Spotify
+                    elif "spotify" in track_data and isinstance(track_data["spotify"], dict) and "external_ids" in track_data["spotify"] and isinstance(track_data["spotify"]["external_ids"], dict) and "isrc" in track_data["spotify"]["external_ids"]:
+                        isrc = track_data["spotify"]["external_ids"]["isrc"]
+                        log_with_category(logger, "AUDD", "info", f"ISRC found in Spotify data: {isrc}")
+                    
+                    # Vérifier dans Deezer
+                    elif "deezer" in track_data and isinstance(track_data["deezer"], dict) and "isrc" in track_data["deezer"]:
+                        isrc = track_data["deezer"]["isrc"]
+                        log_with_category(logger, "AUDD", "info", f"ISRC found in Deezer data: {isrc}")
                     
                     # Create result dictionary
                     detection_result = {
@@ -713,35 +883,27 @@ class AuddService:
                         "album": track_data.get("album", "Unknown Album"),
                         "release_date": track_data.get("release_date"),
                         "label": track_data.get("label"),
-                        "isrc": track_data.get("isrc"),
+                        "isrc": isrc,
                         "confidence": 0.8,  # AudD doesn't provide confidence, so we use a default value
                         "source": "audd"
                     }
                     
-                    # Add external IDs if available
-                    if "spotify" in track_data:
-                        spotify_data = track_data["spotify"]
-                        detection_result["spotify_id"] = spotify_data.get("id")
-                        
-                        # Add additional Spotify data if available
-                        if "album" in spotify_data and "release_date" not in detection_result:
-                            detection_result["release_date"] = spotify_data["album"].get("release_date")
+                    # Inclure les données complètes pour le débogage et l'extraction ultérieure
+                    if "apple_music" in track_data:
+                        detection_result["apple_music"] = track_data["apple_music"]
                     
-                    if "musicbrainz" in track_data:
-                        musicbrainz_data = track_data["musicbrainz"]
-                        detection_result["musicbrainz_id"] = musicbrainz_data.get("id")
+                    if "spotify" in track_data:
+                        detection_result["spotify"] = track_data["spotify"]
                     
                     if "deezer" in track_data:
-                        deezer_data = track_data["deezer"]
-                        detection_result["deezer_id"] = deezer_data.get("id")
+                        detection_result["deezer"] = track_data["deezer"]
                     
-                    log_with_category(logger, "AUDD", "info", f"AudD detection result: {detection_result['title']} by {detection_result['artist']}")
+                    log_with_category(logger, "AUDD", "info", f"AudD detection result: {detection_result.get('title')} by {detection_result.get('artist')}")
                     
-                    return detection_result
-        
+                    return {"success": True, "detection": detection_result}
         except Exception as e:
             log_with_category(logger, "AUDD", "error", f"Error detecting track with AudD: {str(e)}")
-            return None
+            return {"success": False, "error": f"Error detecting track with AudD: {str(e)}"}
     
     async def detect_track_with_url(self, url: str) -> Optional[Dict[str, Any]]:
         """
