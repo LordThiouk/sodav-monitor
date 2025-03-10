@@ -4,6 +4,78 @@ Ce document retrace les principales modifications apportées à la structure du 
 
 ## Dernières Modifications
 
+### 20/04/2025 - Corrections des Modules TrackManager
+
+#### 1. Résolution des Problèmes de Tests
+
+- **Problème identifié** : Suite à la refactorisation du TrackManager, plusieurs tests échouaient en raison de problèmes d'intégration et de compatibilité.
+- **Solution** :
+  - Correction des méthodes de détection externe pour gérer correctement les mocks dans les tests
+  - Amélioration de la gestion des erreurs et des cas limites
+  - Adaptation des tests pour fonctionner avec la nouvelle structure modulaire
+  - Correction des problèmes avec les appels asynchrones et les mocks AsyncMock
+
+#### 2. Améliorations Apportées
+
+- Correction du module `external_detection.py` pour gérer correctement les environnements de test
+- Amélioration de la robustesse des méthodes de détection musicale
+- Standardisation des formats de retour pour les différentes méthodes de détection
+- Optimisation de la gestion des erreurs et du logging
+
+### 15/03/2025 - Refactorisation du TrackManager
+
+#### 1. Division du TrackManager en Modules Spécialisés
+
+- **Problème identifié** : Le fichier `backend/detection/audio_processor/track_manager.py` était devenu trop volumineux (plus de 1600 lignes), rendant sa maintenance difficile et sa compréhension complexe.
+- **Solution** :
+  - Création d'une structure modulaire avec des classes spécialisées
+  - Division du code en modules plus petits et plus faciles à maintenir
+  - Amélioration de la séparation des préoccupations
+  - Facilitation des tests unitaires
+
+#### 2. Nouvelle Structure Implémentée
+
+```
+backend/detection/audio_processor/
+├── track_manager/
+│   ├── __init__.py                  # Exporte la classe TrackManager principale
+│   ├── track_manager.py             # Classe principale (réduite)
+│   ├── track_creator.py             # Gestion de la création des pistes
+│   ├── track_finder.py              # Recherche de pistes (locale, ISRC)
+│   ├── external_detection.py        # Intégration avec services externes (AudD, MusicBrainz)
+│   ├── fingerprint_handler.py       # Gestion des empreintes digitales
+│   ├── stats_recorder.py            # Enregistrement des statistiques
+│   └── utils.py                     # Fonctions utilitaires
+```
+
+#### 3. Responsabilités des Modules
+
+- **track_manager.py** : Façade pour les différentes opérations, délègue aux classes spécialisées
+- **track_creator.py** : Création et mise à jour des pistes et des artistes
+- **track_finder.py** : Recherche de pistes par empreinte digitale ou ISRC
+- **external_detection.py** : Intégration avec les services de détection externes
+- **fingerprint_handler.py** : Gestion des empreintes digitales audio
+- **stats_recorder.py** : Enregistrement et mise à jour des statistiques de lecture
+- **utils.py** : Fonctions utilitaires partagées
+
+#### 4. Avantages de la Refactorisation
+
+- **Meilleure Séparation des Préoccupations** : Chaque classe a une responsabilité unique et bien définie
+- **Code Plus Lisible** : Fichiers plus petits et plus faciles à comprendre
+- **Maintenance Simplifiée** : Modifications futures plus faciles à implémenter
+- **Testabilité Améliorée** : Chaque composant peut être testé indépendamment
+- **Respect des Standards** : Conformité à la règle de taille maximale de 500 lignes
+- **Extensibilité Accrue** : Plus facile d'ajouter de nouvelles fonctionnalités
+
+#### 5. Tests Unitaires
+
+- Création de tests unitaires pour chaque classe spécialisée :
+  - `test_track_creator.py`
+  - `test_track_finder.py`
+  - `test_external_detection.py`
+  - `test_fingerprint_handler.py`
+  - `test_stats_recorder.py`
+
 ### 09/03/2025 - Implémentation de la Contrainte d'Unicité ISRC
 
 #### 1. Ajout de la Contrainte d'Unicité sur l'ISRC
@@ -353,6 +425,76 @@ Ce document retrace les principales modifications apportées à la structure du 
 - Documentation automatique des changements
 - Vérification systématique de la cohérence
 - Meilleure traçabilité des opérations
+
+## 15/04/2025 - Refactorisation du TrackManager
+
+#### 1. Problème Identifié
+- **Fichier trop volumineux** : Le fichier `backend/detection/audio_processor/track_manager.py` dépasse 1600 lignes, bien au-delà de la limite recommandée de 500 lignes.
+- **Responsabilités multiples** : La classe `TrackManager` gère trop de responsabilités différentes (création de pistes, recherche, statistiques, empreintes digitales, etc.).
+- **Difficulté de maintenance** : La taille et la complexité du fichier rendent les modifications et les tests difficiles.
+
+#### 2. Solution Appliquée
+- **Création d'un package dédié** : Transformation du fichier monolithique en un package structuré :
+  ```
+  backend/detection/audio_processor/
+  ├── track_manager/
+  │   ├── __init__.py                  # Exporte la classe TrackManager principale
+  │   ├── track_manager.py             # Classe principale (réduite)
+  │   ├── track_creator.py             # Gestion de la création des pistes
+  │   ├── track_finder.py              # Recherche de pistes (locale, ISRC)
+  │   ├── external_detection.py        # Intégration avec services externes
+  │   ├── fingerprint_handler.py       # Gestion des empreintes digitales
+  │   ├── stats_recorder.py            # Enregistrement des statistiques
+  │   └── utils.py                     # Fonctions utilitaires
+  ```
+- **Application du principe de responsabilité unique** : Chaque classe a maintenant une responsabilité unique et bien définie.
+- **Maintien de la compatibilité** : La classe `TrackManager` principale sert de façade pour maintenir la compatibilité avec le code existant.
+
+#### 3. Bénéfices
+- **Meilleure maintenabilité** : Fichiers plus petits et plus faciles à comprendre.
+- **Testabilité améliorée** : Possibilité de tester chaque composant indépendamment.
+- **Évolutivité accrue** : Facilité d'ajout de nouvelles fonctionnalités.
+- **Respect des standards** : Conformité avec la règle de taille maximale de 500 lignes.
+- **Séparation des préoccupations** : Chaque classe a une responsabilité unique et bien définie.
+
+#### 4. Documentation
+- Création du document `docs/refactoring/track_manager_refactoring.md` pour détailler le plan et l'implémentation de la refactorisation.
+- Mise à jour de la documentation existante pour refléter la nouvelle structure.
+
+## 16/04/2025 - Refactorisation du TrackManager
+
+#### 1. Problème Identifié
+- **Fichier trop volumineux** : Le fichier `backend/detection/audio_processor/track_manager.py` dépassait 1600 lignes, bien au-delà de la limite recommandée de 500 lignes.
+- **Responsabilités multiples** : La classe `TrackManager` gérait trop de responsabilités différentes (création de pistes, recherche, statistiques, empreintes digitales, etc.).
+- **Difficulté de maintenance** : La taille et la complexité du fichier rendaient les modifications et les tests difficiles.
+
+#### 2. Solution Appliquée
+- **Création d'un package dédié** : Transformation du fichier monolithique en un package structuré :
+  ```
+  backend/detection/audio_processor/
+  ├── track_manager/
+  │   ├── __init__.py                  # Exporte la classe TrackManager principale
+  │   ├── track_manager.py             # Classe principale (réduite)
+  │   ├── track_creator.py             # Gestion de la création des pistes
+  │   ├── track_finder.py              # Recherche de pistes (locale, ISRC)
+  │   ├── external_detection.py        # Intégration avec services externes
+  │   ├── fingerprint_handler.py       # Gestion des empreintes digitales
+  │   ├── stats_recorder.py            # Enregistrement des statistiques
+  │   └── utils.py                     # Fonctions utilitaires
+  ```
+- **Application du principe de responsabilité unique** : Chaque classe a maintenant une responsabilité unique et bien définie.
+- **Maintien de la compatibilité** : La classe `TrackManager` principale sert de façade pour maintenir la compatibilité avec le code existant.
+
+#### 3. Bénéfices
+- **Meilleure maintenabilité** : Fichiers plus petits et plus faciles à comprendre.
+- **Testabilité améliorée** : Possibilité de tester chaque composant indépendamment.
+- **Évolutivité accrue** : Facilité d'ajout de nouvelles fonctionnalités.
+- **Respect des standards** : Conformité avec la règle de taille maximale de 500 lignes.
+- **Séparation des préoccupations** : Chaque classe a une responsabilité unique et bien définie.
+
+#### 4. Documentation
+- Création du document `docs/refactoring/track_manager_refactoring.md` pour détailler le plan et l'implémentation de la refactorisation.
+- Mise à jour de la documentation existante pour refléter la nouvelle structure.
 
 ## Avantages de la Nouvelle Organisation
 

@@ -227,14 +227,16 @@ app.add_middleware(
 # Mount static files
 app.mount("/static", StaticFiles(directory=PATHS["STATIC_DIR"]), name="static")
 
-# Include routers in specific order
+# Inclure le routeur des métriques en premier (sans authentification)
+app.include_router(metrics_router, prefix="/api")
+
+# Include routers in specific order (with authentication)
 app.include_router(auth.router, prefix="/api")
 app.include_router(detections_router, prefix="/api")  # Detections router first for /search endpoint
 app.include_router(channels_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api/analytics")
 app.include_router(reports_router, prefix="/api/reports")
 app.include_router(websocket.router, prefix="/api/ws")
-app.include_router(metrics_router, prefix="/api")  # Ajouter le router de métriques
 
 @app.get("/health")
 async def health_check():

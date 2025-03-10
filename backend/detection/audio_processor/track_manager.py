@@ -386,311 +386,97 @@ class TrackManager:
             self.db_session.rollback()
             return None
 
-    async def _get_or_create_track(self, title: str = None, artist_name: str = None, features: Optional[Dict[str, Any]] = None) -> Optional[Track]:
+    async def _get_or_create_track(self, title: str, artist_id: int, album: Optional[str] = None, 
+                              isrc: Optional[str] = None, label: Optional[str] = None, 
+                              release_date: Optional[str] = None, duration: Optional[float] = None) -> Optional[Track]:
         """
-        Récupère une piste existante ou en crée une nouvelle dans la base de données.
-        
-        Cette méthode est au cœur du système de gestion des pistes, assurant l'unicité
-        des pistes grâce à plusieurs critères de recherche hiérarchisés, avec une
-        priorité donnée à l'ISRC. Elle extrait également les métadonnées des différentes
-        sources disponibles et met à jour les pistes existantes avec de nouvelles informations.
-        
-        Processus de recherche hiérarchique:
-        1. Recherche par ISRC (prioritaire) - Exploite la contrainte d'unicité
-        2. Recherche par empreinte digitale dans la table fingerprints
-        3. Recherche par empreinte digitale dans la table tracks
-        4. Recherche par titre et artiste
-        
-        Si une piste est trouvée, ses métadonnées sont mises à jour avec les nouvelles
-        informations disponibles. Si aucune piste n'est trouvée, une nouvelle est créée.
+        Récupère ou crée une piste dans la base de données.
         
         Args:
-            title (str, optional): Titre de la piste. Défaut à None.
-            artist_name (str, optional): Nom de l'artiste. Défaut à None.
-            features (Optional[Dict[str, Any]], optional): Caractéristiques et métadonnées
-                supplémentaires (album, isrc, label, fingerprint, etc.). Défaut à None.
+            title: Titre de la piste
+            artist_id: ID de l'artiste
+            album: Nom de l'album (optionnel)
+            isrc: Code ISRC (optionnel)
+            label: Label (optionnel)
+            release_date: Date de sortie (optionnel)
+            duration: Durée de la piste en secondes (optionnel)
             
         Returns:
-            Optional[Track]: Objet Track créé ou récupéré, ou None en cas d'erreur.
-            
-        Raises:
-            Exception: Les exceptions sont capturées et journalisées, et la méthode
-                      retourne None en cas d'erreur.
-                      
-        Note:
-            Cette méthode est cruciale pour maintenir l'intégrité des données et éviter
-            les doublons dans la base de données, notamment grâce à la contrainte
-            d'unicité sur les codes ISRC.
+            Objet Track ou None en cas d'erreur
         """
         try:
-            if not title or not artist_name:
-                self.logger.error("Title and artist_name are required")
-                return None
+            if not title or title == "Unknown Track":
+                log_with_category(logger, "TRACK_MANAGER", "warning", "Invalid track title, using 'Unknown Track'")
+                title = "Unknown Track"
             
-            self.logger.info(f"Getting or creating track: {title} by {artist_name}")
+            # Rechercher la piste dans la base de données
+            query = self.db_session.query(Track).filter(
+                Track.title == title,
+                Track.artist_id == artist_id
+            )
             
-            # Extraire les métadonnées des caractéristiques
-            album = None
-            isrc = None
-            label = None
-            release_date = None
-            fingerprint_hash = None
-            fingerprint_raw = None
-            chromaprint = None
-            
-            if features:
-                # Extraire l'album
-                album = features.get("album")
-                
-                # Extraire l'ISRC - vérifier plusieurs sources possibles
-                isrc = features.get("isrc")
-                
-                # Vérifier dans Apple Music
-                if not isrc and "apple_music" in features and features["apple_music"]:
-                    if "isrc" in features["apple_music"]:
-                        isrc = features["apple_music"]["isrc"]
-                        self.logger.info(f"ISRC found in Apple Music: {isrc}")
-                
-                # Vérifier dans Spotify
-                if not isrc and "spotify" in features and features["spotify"]:
-                    if "external_ids" in features["spotify"] and "isrc" in features["spotify"]["external_ids"]:
-                        isrc = features["spotify"]["external_ids"]["isrc"]
-                        self.logger.info(f"ISRC found in Spotify: {isrc}")
-                
-                # Vérifier dans Deezer
-                if not isrc and "deezer" in features and features["deezer"]:
-                    if "isrc" in features["deezer"]:
-                        isrc = features["deezer"]["isrc"]
-                        self.logger.info(f"ISRC found in Deezer: {isrc}")
-                
-                # Normaliser et valider l'ISRC si présent
-                if isrc:
-                    isrc = isrc.replace('-', '').upper()
-                    if not self._validate_isrc(isrc):
-                        self.logger.warning(f"ISRC invalide ignoré: {isrc}")
-                        isrc = None  # Ignorer l'ISRC invalide
-                    else:
-                        self.logger.info(f"ISRC valide trouvé et normalisé: {isrc}")
-                
-                # Extraire le label
-                label = features.get("label")
-                
-                # Extraire la date de sortie
-                release_date = features.get("release_date")
-                
-                # Extraire l'empreinte digitale
-                fingerprint_hash, fingerprint_raw = self._extract_fingerprint(features)
-                
-                # Extraire l'empreinte Chromaprint
-                chromaprint = features.get("chromaprint")
-            
-            # Récupérer ou créer l'artiste
-            artist_id = await self._get_or_create_artist(artist_name)
-            
-            if not artist_id:
-                self.logger.error(f"Failed to get or create artist: {artist_name}")
-                return None
-            
-            # Log des informations extraites
-            self.logger.info(f"Track metadata - Title: {title}, Artist: {artist_name}, Album: {album}, ISRC: {isrc}, Label: {label}, Release date: {release_date}")
-            if fingerprint_hash:
-                self.logger.info(f"Fingerprint extracted: {fingerprint_hash[:20]}...")
-            
-            track = None
-            
-            # 1. Rechercher d'abord par ISRC si disponible (critère principal)
+            # Ajouter l'ISRC à la recherche s'il est disponible
             if isrc:
-                self.logger.info(f"Searching for track with ISRC: {isrc}")
-                track = self.db_session.query(Track).filter(Track.isrc == isrc).first()
-                
-                if track:
-                    self.logger.info(f"Track found by ISRC: {track.title} by artist ID {track.artist_id}")
-                    # Mettre à jour le titre et l'artiste si nécessaire pour standardiser
-                    if track.title != title or track.artist_id != artist_id:
-                        self.logger.info(f"Updating track metadata to standardize: {track.title} -> {title}, artist ID {track.artist_id} -> {artist_id}")
-                        # On ne change pas l'artiste_id pour éviter de casser les relations, mais on peut mettre à jour le titre
-                        if track.title != title:
-                            track.title = title
-                            track.updated_at = datetime.utcnow()
-                            self.db_session.flush()
+                query = query.filter(Track.isrc == isrc)
             
-            # 2. Si pas trouvé par ISRC, rechercher par fingerprint
-            if not track and fingerprint_hash:
-                self.logger.info(f"Searching for track with fingerprint: {fingerprint_hash[:20]}...")
-                
-                # Vérifier si la table fingerprints existe
-                from sqlalchemy import inspect
-                inspector = inspect(self.db_session.bind)
-                if "fingerprints" in inspector.get_table_names():
-                    # Rechercher dans la table fingerprints
-                    from backend.models.models import Fingerprint
-                    fingerprint = self.db_session.query(Fingerprint).filter_by(hash=fingerprint_hash).first()
-                    
-                    if fingerprint:
-                        # Si l'empreinte existe, récupérer la piste associée
-                        track = self.db_session.query(Track).filter_by(id=fingerprint.track_id).first()
-                        if track:
-                            self.logger.info(f"Track found by fingerprint in fingerprints table: {track.title}")
-                            
-                            # Si on a un ISRC mais que la piste n'en a pas, mettre à jour
-                            if isrc and not track.isrc:
-                                self.logger.info(f"Updating track with ISRC: {isrc}")
-                                track.isrc = isrc
-                                track.updated_at = datetime.utcnow()
-                                self.db_session.flush()
+            track = query.first()
             
-            # 3. Si toujours pas trouvé, rechercher dans la colonne fingerprint de la table tracks
-            if not track and fingerprint_hash:
-                track = self.db_session.query(Track).filter(Track.fingerprint == fingerprint_hash).first()
-                if track:
-                    self.logger.info(f"Track found by fingerprint in tracks table: {track.title}")
-                    
-                    # Si on a un ISRC mais que la piste n'en a pas, mettre à jour
-                    if isrc and not track.isrc:
-                        self.logger.info(f"Updating track with ISRC: {isrc}")
-                        track.isrc = isrc
-                        track.updated_at = datetime.utcnow()
-                        self.db_session.flush()
-            
-            # 4. En dernier recours, rechercher par titre et artiste
-            if not track:
-                track = self.db_session.query(Track).filter(
-                    Track.title == title,
-                    Track.artist_id == artist_id
-                ).first()
-                
-                if track:
-                    self.logger.info(f"Track found by title and artist: {track.title}")
-                    
-                    # Si on a un ISRC mais que la piste n'en a pas, mettre à jour
-                    if isrc and not track.isrc:
-                        self.logger.info(f"Updating track with ISRC: {isrc}")
-                        track.isrc = isrc
-                        track.updated_at = datetime.utcnow()
-                        self.db_session.flush()
-            
-            # Utiliser _execute_with_transaction pour gérer les transactions
             if track:
-                # Mettre à jour la piste existante avec les nouvelles informations
-                def update_track():
-                    updated = False
-                    
-                    if isrc and not track.isrc:
-                        track.isrc = isrc
-                        updated = True
-                        self.logger.info(f"Updated track with ISRC: {isrc}")
-                    
-                    if label and not track.label:
-                        track.label = label
-                        updated = True
-                        self.logger.info(f"Updated track with label: {label}")
-                    
-                    if album and not track.album:
-                        track.album = album
-                        updated = True
-                        self.logger.info(f"Updated track with album: {album}")
-                    
-                    if release_date and not track.release_date:
-                        track.release_date = release_date
-                        updated = True
-                        self.logger.info(f"Updated track with release date: {release_date}")
-                    
-                    if fingerprint_hash and not track.fingerprint:
-                        track.fingerprint = fingerprint_hash
-                        track.fingerprint_raw = fingerprint_raw
-                        updated = True
-                        self.logger.info(f"Updated track with fingerprint: {fingerprint_hash[:20]}...")
-                    
-                    if chromaprint and not track.chromaprint:
-                        track.chromaprint = chromaprint
-                        updated = True
-                        self.logger.info(f"Updated track with chromaprint: {chromaprint[:20]}...")
-                    
-                    # Ajouter l'empreinte à la table fingerprints si elle existe
-                    if fingerprint_hash:
-                        from sqlalchemy import inspect
-                        inspector = inspect(self.db_session.bind)
-                        if "fingerprints" in inspector.get_table_names():
-                            from backend.models.models import Fingerprint
-                            
-                            # Vérifier si l'empreinte existe déjà pour cette piste
-                            existing_fingerprint = self.db_session.query(Fingerprint).filter_by(
-                                track_id=track.id,
-                                hash=fingerprint_hash
-                            ).first()
-                            
-                            if not existing_fingerprint:
-                                new_fingerprint = Fingerprint(
-                                    track_id=track.id,
-                                    hash=fingerprint_hash,
-                                    raw_data=fingerprint_raw,
-                                    offset=0.0,  # Position par défaut
-                                    algorithm="md5"  # Algorithme par défaut
-                                )
-                                self.db_session.add(new_fingerprint)
-                                updated = True
-                                self.logger.info(f"Added fingerprint to fingerprints table for existing track {track.id}")
-                    
-                    if updated:
-                        track.updated_at = datetime.utcnow()
-                        self.db_session.flush()
-                        self.logger.info(f"Track updated: {track.title} (ID: {track.id})")
-                    
-                    return track
+                log_with_category(logger, "TRACK_MANAGER", "info", f"Track found in database: {title} (ID: {track.id})")
                 
-                return self._execute_with_transaction(update_track)
-            else:
-                # Créer une nouvelle piste
-                def create_track():
-                    self.logger.info(f"Creating new track: {title} by {artist_name}")
-                    
-                    # Créer une nouvelle piste
-                    track = Track(
-                        title=title,
-                        artist_id=artist_id,
-                        isrc=isrc,
-                        label=label,
-                        album=album,
-                        release_date=release_date,
-                        fingerprint=fingerprint_hash,
-                        fingerprint_raw=fingerprint_raw,
-                        chromaprint=chromaprint
-                    )
-                    
-                    self.db_session.add(track)
-                    self.db_session.flush()
-                    
-                    # Ajouter l'empreinte à la table fingerprints si elle existe
-                    if fingerprint_hash:
-                        from sqlalchemy import inspect
-                        inspector = inspect(self.db_session.bind)
-                        if "fingerprints" in inspector.get_table_names():
-                            from backend.models.models import Fingerprint
-                            new_fingerprint = Fingerprint(
-                                track_id=track.id,
-                                hash=fingerprint_hash,
-                                raw_data=fingerprint_raw,
-                                offset=0.0,  # Position par défaut
-                                algorithm="md5"  # Algorithme par défaut
-                            )
-                            self.db_session.add(new_fingerprint)
-                            self.logger.info(f"Added fingerprint to fingerprints table for new track {track.id}")
-                    
-                    # Créer les statistiques de piste
-                    from backend.models.models import TrackStats
-                    track_stats = TrackStats(track_id=track.id)
-                    self.db_session.add(track_stats)
-                    
-                    self.db_session.flush()
-                    self.logger.info(f"New track created: {track.title} (ID: {track.id})")
-                    
-                    return track
+                # Mettre à jour les informations manquantes
+                updated = False
                 
-                return self._execute_with_transaction(create_track)
-        
+                if isrc and not track.isrc:
+                    track.isrc = isrc
+                    updated = True
+                
+                if label and not track.label:
+                    track.label = label
+                    updated = True
+                
+                if album and not track.album:
+                    track.album = album
+                    updated = True
+                
+                if release_date and not track.release_date:
+                    track.release_date = release_date
+                    updated = True
+                
+                if updated:
+                    track.updated_at = datetime.utcnow()
+                    self.db_session.flush()
+                    log_with_category(logger, "TRACK_MANAGER", "info", f"Track updated: {title} (ID: {track.id})")
+                
+                return track
+            
+            # Créer une nouvelle piste
+            log_with_category(logger, "TRACK_MANAGER", "info", f"Creating new track: {title}")
+            
+            # Convertir la durée en timedelta si elle est fournie
+            duration_value = None
+            if duration is not None:
+                duration_value = timedelta(seconds=duration)
+            
+            track = Track(
+                title=title,
+                artist_id=artist_id,
+                album=album,
+                isrc=isrc,
+                label=label,
+                release_date=release_date,
+                duration=duration_value,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            
+            self.db_session.add(track)
+            self.db_session.flush()
+            
+            log_with_category(logger, "TRACK_MANAGER", "info", f"New track created: {title} (ID: {track.id})")
+            return track
         except Exception as e:
-            self.logger.error(f"Erreur lors de la création de la piste: {str(e)}")
-            self.db_session.rollback()
+            log_with_category(logger, "TRACK_MANAGER", "error", f"Error creating track: {e}")
             return None
     
     def _start_track_detection(self, track: Track, station_id: int, features: Dict[str, Any]) -> Dict[str, Any]:
@@ -1026,6 +812,8 @@ class TrackManager:
         
         # Mettre à jour les statistiques si station_id est fourni
         if station_id and play_duration > 0:
+            # Convertir play_duration en timedelta pour l'enregistrement
+            play_duration_td = timedelta(seconds=play_duration)
             self._record_play_time(station_id, existing_track.id, play_duration)
         
         self.logger.info(f"Found existing track with ISRC {isrc}: {existing_track.title} by {artist_name_from_db}")
@@ -1039,7 +827,8 @@ class TrackManager:
                 "album": existing_track.album,
                 "isrc": existing_track.isrc,
                 "label": existing_track.label,
-                "release_date": existing_track.release_date
+                "release_date": existing_track.release_date,
+                "duration": existing_track.duration.total_seconds() if existing_track.duration else 0
             },
             "confidence": 1.0,  # Confiance maximale pour les correspondances ISRC
             "source": source,
@@ -1552,6 +1341,15 @@ class TrackManager:
             >>> self._record_play_time(1, 42, 180.5)  # Enregistre 3 minutes de lecture
         """
         try:
+            # Convertir play_duration en timedelta si ce n'est pas déjà le cas
+            if isinstance(play_duration, (int, float)):
+                play_duration_td = timedelta(seconds=play_duration)
+            elif isinstance(play_duration, timedelta):
+                play_duration_td = play_duration
+            else:
+                self.logger.warning(f"Invalid play_duration type: {type(play_duration)}, using 0 seconds")
+                play_duration_td = timedelta(seconds=0)
+                
             # Get the station
             station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
             if not station:
@@ -1569,14 +1367,14 @@ class TrackManager:
                 track_id=track_id,
                 station_id=station_id,
                 detected_at=datetime.utcnow(),
-                play_duration=timedelta(seconds=play_duration),
+                play_duration=play_duration_td,
                 confidence=0.8,
                 detection_method="audd"
             )
             self.db_session.add(detection)
             
             # Update station track stats
-            self._update_station_track_stats(station_id, track_id, timedelta(seconds=play_duration))
+            self._update_station_track_stats(station_id, track_id, play_duration_td)
             
             # Use StatsUpdater to update all statistics
             try:
@@ -1596,7 +1394,7 @@ class TrackManager:
                     detection_result=detection_result,
                     station_id=station_id,
                     track=track,
-                    play_duration=timedelta(seconds=play_duration)
+                    play_duration=play_duration_td
                 )
                 
                 self.logger.info(f"Updated all stats for track ID {track_id} on station ID {station_id}")
@@ -1605,7 +1403,7 @@ class TrackManager:
                 # Continue with the rest of the method even if stats update fails
             
             self.db_session.commit()
-            self.logger.info(f"Recorded play time for track ID {track_id} on station ID {station_id}: {play_duration} seconds")
+            self.logger.info(f"Recorded play time for track ID {track_id} on station ID {station_id}: {play_duration_td.total_seconds()} seconds")
         except Exception as e:
             self.logger.error(f"Error recording play time: {e}")
             self.db_session.rollback()
@@ -1796,91 +1594,6 @@ class TrackManager:
             return artist
         except Exception as e:
             log_with_category(logger, "TRACK_MANAGER", "error", f"Error creating artist: {e}")
-            return None
-
-    async def _get_or_create_track(self, title: str, artist_id: int, album: Optional[str] = None, 
-                              isrc: Optional[str] = None, label: Optional[str] = None, 
-                              release_date: Optional[str] = None) -> Optional[Track]:
-        """
-        Récupère ou crée une piste dans la base de données.
-        
-        Args:
-            title: Titre de la piste
-            artist_id: ID de l'artiste
-            album: Nom de l'album (optionnel)
-            isrc: Code ISRC (optionnel)
-            label: Label (optionnel)
-            release_date: Date de sortie (optionnel)
-            
-        Returns:
-            Objet Track ou None en cas d'erreur
-        """
-        try:
-            if not title or title == "Unknown Track":
-                log_with_category(logger, "TRACK_MANAGER", "warning", "Invalid track title, using 'Unknown Track'")
-                title = "Unknown Track"
-            
-            # Rechercher la piste dans la base de données
-            query = self.db_session.query(Track).filter(
-                Track.title == title,
-                Track.artist_id == artist_id
-            )
-            
-            # Ajouter l'ISRC à la recherche s'il est disponible
-            if isrc:
-                query = query.filter(Track.isrc == isrc)
-            
-            track = query.first()
-            
-            if track:
-                log_with_category(logger, "TRACK_MANAGER", "info", f"Track found in database: {title} (ID: {track.id})")
-                
-                # Mettre à jour les informations manquantes
-                updated = False
-                
-                if isrc and not track.isrc:
-                    track.isrc = isrc
-                    updated = True
-                
-                if label and not track.label:
-                    track.label = label
-                    updated = True
-                
-                if album and not track.album:
-                    track.album = album
-                    updated = True
-                
-                if release_date and not track.release_date:
-                    track.release_date = release_date
-                    updated = True
-                
-                if updated:
-                    track.updated_at = datetime.utcnow()
-                    self.db_session.flush()
-                    log_with_category(logger, "TRACK_MANAGER", "info", f"Track updated: {title} (ID: {track.id})")
-                
-                return track
-            
-            # Créer une nouvelle piste
-            log_with_category(logger, "TRACK_MANAGER", "info", f"Creating new track: {title}")
-            track = Track(
-                title=title,
-                artist_id=artist_id,
-                album=album,
-                isrc=isrc,
-                label=label,
-                release_date=release_date,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
-            )
-            
-            self.db_session.add(track)
-            self.db_session.flush()
-            
-            log_with_category(logger, "TRACK_MANAGER", "info", f"New track created: {title} (ID: {track.id})")
-            return track
-        except Exception as e:
-            log_with_category(logger, "TRACK_MANAGER", "error", f"Error creating track: {e}")
             return None
 
     async def process_station_data(self, station_data: Dict[str, Any]) -> Dict[str, Any]:

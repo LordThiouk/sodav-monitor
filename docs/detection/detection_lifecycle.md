@@ -196,7 +196,58 @@ Les ISRC peuvent être obtenus à partir de plusieurs sources :
 2. Ajouter des logs détaillés pour suivre l'extraction de l'ISRC.
 3. Vérifier les transactions de base de données et les commits.
 
-### 5.2. Détections non finalisées
+### 5.2. Gestion des durées et types de données
+
+**Problème** : Les durées (duration) doivent être stockées sous forme d'objets `timedelta` dans la base de données PostgreSQL (type `interval`), mais sont parfois fournies sous forme d'entiers ou de flottants.
+
+**Causes possibles** :
+1. Les API externes retournent des durées en secondes (entiers ou flottants).
+2. Les calculs internes produisent des durées en secondes.
+3. Les conversions de type ne sont pas effectuées avant l'insertion en base de données.
+
+**Solutions** :
+1. **Conversion systématique** : Convertir toutes les durées en objets `timedelta` avant de les assigner aux modèles :
+   ```python
+   # Convertir la durée en timedelta si c'est un entier ou un float
+   duration_value = track_info.get("duration", 0)
+   if isinstance(duration_value, (int, float)):
+       duration_value = timedelta(seconds=duration_value)
+   
+   track = Track(
+       title=track_title,
+       artist_id=artist.id,
+       album=track_info.get("album", "Unknown Album"),
+       duration=duration_value,
+       fingerprint=track_info.get("fingerprint", "")
+   )
+   ```
+
+2. **Validation dans les modèles** : Ajouter des méthodes de validation dans les modèles SQLAlchemy pour convertir automatiquement les durées :
+   ```python
+   @validates('duration')
+   def validate_duration(self, key, value):
+       if isinstance(value, (int, float)):
+           return timedelta(seconds=value)
+       return value
+   ```
+
+3. **Schémas Pydantic** : Utiliser des schémas Pydantic pour valider et convertir les données avant de les insérer dans la base de données :
+   ```python
+   class TrackCreate(BaseModel):
+       title: str
+       artist_id: int
+       duration: Union[int, float, timedelta]
+       
+       @validator('duration')
+       def validate_duration(cls, v):
+           if isinstance(v, (int, float)):
+               return timedelta(seconds=v)
+           return v
+   ```
+
+4. **Tests spécifiques** : Ajouter des tests unitaires pour vérifier que les conversions de durée fonctionnent correctement.
+
+### 5.3. Détections non finalisées
 
 **Problème** : Les détections ne sont pas finalisées, ce qui empêche l'enregistrement des statistiques.
 
@@ -208,7 +259,7 @@ Les ISRC peuvent être obtenus à partir de plusieurs sources :
 1. Ajouter des mécanismes pour finaliser automatiquement les détections après un certain temps.
 2. Améliorer la gestion des exceptions pour s'assurer que les détections sont toujours finalisées.
 
-### 5.3. Doublons de pistes
+### 5.4. Doublons de pistes
 
 **Problème** : Des pistes en double sont créées dans la base de données malgré des ISRC identiques.
 
@@ -220,7 +271,7 @@ Les ISRC peuvent être obtenus à partir de plusieurs sources :
 1. Utiliser l'ISRC comme critère principal de recherche.
 2. Mettre en place des algorithmes de correspondance floue pour les titres et les noms d'artistes.
 
-### 5.4. Problèmes avec les empreintes digitales
+### 5.5. Problèmes avec les empreintes digitales
 
 **Problème** : Les empreintes digitales ne permettent pas une détection locale fiable.
 

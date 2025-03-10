@@ -1,4 +1,4 @@
-# Updated Dockerfile to trigger rebuild - v2
+# Updated Dockerfile with simplified dependencies
 # Build stage for frontend
 FROM node:18-alpine as frontend-build
 WORKDIR /app/frontend
@@ -7,36 +7,8 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# Build stage for backend
-FROM python:3.9.18-slim-bullseye
-
-# Install system dependencies and configure nginx in a single layer
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client \
-    libpq-dev \
-    gcc \
-    python3-dev \
-    ffmpeg \
-    curl \
-    nginx \
-    gettext-base \
-    libavcodec-dev \
-    libavformat-dev \
-    libavutil-dev \
-    libswscale-dev \
-    procps \
-    libsndfile1 \
-    libportaudio2 \
-    python3-scipy \
-    libblas-dev \
-    liblapack-dev \
-    libatlas-base-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /run/nginx /var/log/nginx /var/lib/nginx /var/cache/nginx /var/run/nginx \
-    && groupadd -r nginx \
-    && useradd -r -g nginx nginx \
-    && chown -R nginx:nginx /run/nginx /var/log/nginx /var/lib/nginx /var/cache/nginx /var/run/nginx \
-    && chmod -R 755 /run/nginx /var/log/nginx /var/lib/nginx /var/cache/nginx /var/run/nginx
+# Build stage for backend - using a more complete base image
+FROM python:3.9-slim-buster
 
 # Set working directory and environment
 WORKDIR /app/backend
@@ -50,17 +22,24 @@ ENV PYTHONPATH=/app/backend \
     DEBUG=False \
     NODE_ENV=production
 
-# Create log directory
-RUN mkdir -p /app/backend/logs && chmod 777 /app/backend/logs
+# Install minimal system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    nginx \
+    ffmpeg \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/nginx /var/log/nginx /var/lib/nginx /var/cache/nginx /var/run/nginx \
+    && mkdir -p /app/backend/logs && chmod 777 /app/backend/logs
 
-# Install Python dependencies in a single layer
-COPY backend/requirements.txt .
+# Install Python dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
 
-# Install core dependencies in a single layer with explicit versions and better error handling
-RUN echo "Installing core dependencies..." && \
-    pip install --no-cache-dir \
+# Install core dependencies
+RUN pip install --no-cache-dir \
     uvicorn==0.22.0 \
     fastapi==0.95.2 \
     python-dotenv==1.0.0 \
@@ -90,31 +69,27 @@ RUN echo "Installing core dependencies..." && \
     aiohttp>=3.9.1 \
     prometheus-client>=0.19.0 \
     typing-extensions>=4.5.0 \
-    psutil>=5.9.0 \
-    && echo "Core dependencies installed successfully" \
-    && python3 -m pip show uvicorn \
-    && python3 -c "import uvicorn; print(f'uvicorn version: {uvicorn.__version__}')" \
-    && python3 -c "import fastapi; print(f'fastapi version: {fastapi.__version__}')" \
-    && python3 -c "import alembic; print(f'alembic version: {alembic.__version__}')" \
-    && python3 -c "import jose; print(f'python-jose version: {jose.__version__}')" \
-    && python3 -c "import passlib; print(f'passlib version: {passlib.__version__}')" \
-    && python3 -m pip show musicbrainzngs | grep "Version:" \
-    && python3 -c "import numpy; print(f'numpy version: {numpy.__version__}')" \
-    && python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" \
-    && python3 -c "import librosa; print(f'librosa version: {librosa.__version__}')"
+    psutil>=5.9.0
 
 # Copy backend files
 COPY backend/ ./
-COPY backend/migrations ./migrations/
-RUN chmod -R 755 migrations
+
+# Créer le répertoire migrations s'il n'existe pas
+RUN mkdir -p ./models/migrations
+
+# Copier les migrations depuis le bon emplacement
+COPY backend/models/migrations ./models/migrations/
+
+# Définir les permissions
+RUN chmod -R 755 ./models/migrations
 
 # Copy frontend build and configuration files
 COPY --from=frontend-build /app/frontend/build /app/frontend/build
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh && \
     sed -i 's/\r$//' /app/start.sh  # Fix line endings for Windows
-COPY nginx.conf /etc/nginx/nginx.conf
-COPY default.conf /etc/nginx/conf.d/default.conf
+COPY docker/nginx.conf /etc/nginx/nginx.conf
+COPY docker/default.conf /etc/nginx/conf.d/default.conf
 
 # Expose ports
 EXPOSE ${PORT} ${API_PORT}

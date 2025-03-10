@@ -12,6 +12,13 @@ scrape_configs:
     static_configs:
       - targets: ['backend:8000']
     scrape_interval: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: backend:8000
 
   - job_name: 'node-exporter'
     static_configs:

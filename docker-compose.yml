@@ -3,9 +3,7 @@ version: '3.8'
 services:
   # Service principal - Backend FastAPI
   backend:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
+    image: python:3.9-slim
     container_name: sodav-backend
     restart: unless-stopped
     ports:
@@ -14,24 +12,40 @@ services:
       - ./backend:/app/backend
       - ./logs:/app/logs
       - ./data:/app/data
+      - ./logs/docker/backend:/var/log/backend
+      - ./requirements.txt:/app/requirements.txt
+      - ./start.sh:/app/start.sh
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/sodav_monitor
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/sodav_dev
       - REDIS_URL=redis://redis:6379/0
       - ENVIRONMENT=development
       - DEBUG=true
       - HOST=0.0.0.0
       - PORT=8000
+      - PYTHONPATH=/app
+      - ACOUSTID_API_KEY=7HKKBoukZR
+      - AUDD_API_KEY=a718282167d84385a8c9d1ea9f45747a
+      - SECRET_KEY=a3b1c8d9e0f12a345b67890cdef1234567890abcdef1234567890abcdef12
     depends_on:
       - db
       - redis
     networks:
       - sodav-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.Name}}"
+    command: >
+      bash -c "cd /app && 
+      pip install -r requirements.txt && 
+      cd /app/backend && 
+      python -m uvicorn main:app --host 0.0.0.0 --port 8000"
 
   # Frontend React/TypeScript avec Chakra UI
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: node:18-alpine
     container_name: sodav-frontend
     restart: unless-stopped
     ports:
@@ -39,6 +53,7 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - ./logs/docker/frontend:/var/log/frontend
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NODE_ENV=development
@@ -46,6 +61,16 @@ services:
       - backend
     networks:
       - sodav-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.Name}}"
+    working_dir: /app
+    command: >
+      sh -c "npm install && 
+      npm start"
 
   # Base de données PostgreSQL
   db:
@@ -56,12 +81,19 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./logs/docker/postgres:/var/log/postgresql
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=sodav_dev
     networks:
       - sodav-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.Name}}"
 
   # Cache Redis
   redis:
@@ -72,8 +104,15 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+      - ./logs/docker/redis:/var/log/redis
     networks:
       - sodav-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.Name}}"
 
   # Prometheus pour la collecte de métriques
   prometheus:
@@ -85,6 +124,7 @@ services:
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
+      - ./logs/docker/prometheus:/var/log/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -92,6 +132,12 @@ services:
       - '--web.console.templates=/usr/share/prometheus/consoles'
     networks:
       - sodav-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.Name}}"
 
   # Grafana pour la visualisation des métriques
   grafana:
@@ -103,6 +149,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - ./logs/docker/grafana:/var/log/grafana
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -111,6 +158,12 @@ services:
       - prometheus
     networks:
       - sodav-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.Name}}"
 
   # Node Exporter pour les métriques système
   node-exporter:
@@ -123,6 +176,7 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      - ./logs/docker/node-exporter:/var/log/node-exporter
     command:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
@@ -130,6 +184,12 @@ services:
       - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
     networks:
       - sodav-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.Name}}"
 
   # Nginx pour servir l'application
   nginx:
@@ -139,12 +199,21 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./docker/default.conf:/etc/nginx/conf.d/default.conf
+      - ./logs/docker/nginx:/var/log/nginx
+    environment:
+      - PORT=80
     depends_on:
       - backend
       - frontend
     networks:
       - sodav-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.Name}}"
 
 networks:
   sodav-network:

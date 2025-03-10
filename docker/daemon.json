@@ -1,0 +1,29 @@
+{
+  "debug": true,
+  "log-level": "debug",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3",
+    "labels": "production_status",
+    "env": "os,customer"
+  },
+  "experimental": true,
+  "metrics-addr": "0.0.0.0:9323",
+  "dns": ["8.8.8.8", "8.8.4.4"],
+  "registry-mirrors": [
+    "https://registry-1.docker.io",
+    "https://registry.hub.docker.com"
+  ],
+  "max-concurrent-downloads": 3,
+  "max-concurrent-uploads": 3,
+  "storage-driver": "overlay2",
+  "storage-opts": ["overlay2.override_kernel_check=true"],
+  "default-ulimits": {
+    "nofile": {
+      "Name": "nofile",
+      "Hard": 64000,
+      "Soft": 64000
+    }
+  }
+} 

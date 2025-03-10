@@ -18,9 +18,13 @@ def get_database_url():
     """Get database URL based on environment"""
     env = os.getenv("ENV", "development")
     
-    if env == "test":
+    # Prioritize DATABASE_URL from environment variables (Docker)
+    db_url = os.getenv("DATABASE_URL")
+    if db_url:
+        logger.info(f"Using DATABASE_URL from environment variables")
+    elif env == "test":
         # Use test PostgreSQL database
-        db_url = os.getenv("TEST_DATABASE_URL", "postgresql://sodav:sodav123@localhost:5432/sodav_test")
+        db_url = os.getenv("TEST_DATABASE_URL", "postgresql://postgres:postgres@db:5432/sodav_test")
         logger.info("Using test database")
     elif env == "production":
         # Use production PostgreSQL URL
@@ -29,7 +33,7 @@ def get_database_url():
             raise ValueError("DATABASE_URL not set in production environment")
     else:
         # Use development PostgreSQL database
-        db_url = os.getenv("DEV_DATABASE_URL", "postgresql://sodav:sodav123@localhost:5432/sodav_dev")
+        db_url = os.getenv("DEV_DATABASE_URL", "postgresql://postgres:postgres@db:5432/sodav_dev")
         logger.info("Using development database")
     
     # Handle special case for postgres:// URLs
@@ -127,7 +131,7 @@ def init_db():
         raise
 
 # Test database configuration
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "postgresql://sodav:sodav123@localhost:5432/sodav_test")
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "postgresql://postgres:postgres@db:5432/sodav_test")
 test_engine = create_engine(
     TEST_DATABASE_URL,
     pool_size=5,

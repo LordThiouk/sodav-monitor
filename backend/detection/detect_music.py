@@ -301,14 +301,21 @@ class MusicDetector:
                         if not track:
                             # Créer une nouvelle piste
                             log_with_category(logger, "DETECTION", "info", f"Creating new track: {track_title} by {track_artist}")
+                            
+                            # Convertir la durée en timedelta si c'est un entier ou un float
+                            duration_value = track_info.get("duration", 0)
+                            if isinstance(duration_value, (int, float)):
+                                duration_value = timedelta(seconds=duration_value)
+                            elif duration_value is None:
+                                # S'assurer que la durée n'est jamais None
+                                duration_value = timedelta(seconds=0)
+                            
                             track = Track(
                                 title=track_title,
                                 artist_id=artist.id,
                                 album=track_info.get("album", "Unknown Album"),
-                                duration=track_info.get("duration", 0),
-                                fingerprint=track_info.get("fingerprint", ""),
-                                external_id=track_info.get("id", ""),
-                                source=result.get("source", "unknown")
+                                duration=duration_value,
+                                fingerprint=track_info.get("fingerprint", "")
                             )
                             self.db_session.add(track)
                             self.db_session.flush()
