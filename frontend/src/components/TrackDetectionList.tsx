@@ -116,7 +116,32 @@ const TrackDetectionItem: React.FC<{ detection: TrackDetectionWithStation }> = (
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
 
-  const formatDuration = (duration: number): string => {
+  const formatDuration = (duration: number | string | null | undefined): string => {
+    // Handle null or undefined
+    if (duration === null || duration === undefined) {
+      return '0:00';
+    }
+    
+    // Handle string format (could be "mm:ss" or a number as string)
+    if (typeof duration === 'string') {
+      // Check if it's already in mm:ss format
+      if (duration.includes(':')) {
+        return duration;
+      }
+      
+      // Try to parse as number
+      const parsed = parseFloat(duration);
+      if (isNaN(parsed)) {
+        return '0:00';
+      }
+      duration = parsed;
+    }
+    
+    // Now duration is definitely a number
+    if (duration < 0) {
+      return '0:00';
+    }
+    
     const minutes = Math.floor(duration / 60);
     const seconds = Math.floor(duration % 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;

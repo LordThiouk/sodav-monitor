@@ -21,25 +21,73 @@ class StatsUpdater:
         self.logger = logger
 
     def _validate_duration(self, duration: timedelta) -> timedelta:
-        """Validate and normalize duration values"""
+        """
+        Validate and normalize duration values.
+        
+        This method ensures that all duration values are valid timedelta objects
+        within reasonable bounds (positive and not exceeding 1 hour).
+        
+        Args:
+            duration: The duration to validate, can be timedelta, int, float, or string
+            
+        Returns:
+            A valid timedelta object
+        """
         try:
+            # If duration is None, return minimum duration
+            if duration is None:
+                self.logger.warning("Duration is None, using default minimum duration")
+                return timedelta(seconds=15)
+                
+            # Convert to timedelta if not already
             if not isinstance(duration, timedelta):
                 self.logger.warning(f"Invalid duration type: {type(duration)}, converting to timedelta")
+                
+                # Handle numeric types (int, float)
                 if isinstance(duration, (int, float)):
-                    duration = timedelta(seconds=float(duration))
+                    # Ensure positive value
+                    seconds = max(0, float(duration))
+                    duration = timedelta(seconds=seconds)
+                    
+                # Handle string format (could be "HH:MM:SS" or seconds as string)
                 elif isinstance(duration, str):
                     try:
-                        hours, minutes, seconds = map(float, duration.split(':'))
-                        duration = timedelta(hours=hours, minutes=minutes, seconds=seconds)
-                    except:
-                        self.logger.error(f"Could not parse duration string: {duration}")
+                        # Try to parse as "HH:MM:SS" format
+                        if ':' in duration:
+                            parts = duration.split(':')
+                            if len(parts) == 3:
+                                hours, minutes, seconds = map(float, parts)
+                                duration = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+                            elif len(parts) == 2:
+                                minutes, seconds = map(float, parts)
+                                duration = timedelta(minutes=minutes, seconds=seconds)
+                            else:
+                                # Invalid format, use default
+                                self.logger.error(f"Invalid time format: {duration}")
+                                return timedelta(seconds=15)
+                        else:
+                            # Try to parse as seconds
+                            seconds = float(duration)
+                            duration = timedelta(seconds=seconds)
+                    except Exception as e:
+                        self.logger.error(f"Could not parse duration string: {duration}, error: {str(e)}")
                         return timedelta(seconds=15)
-                        
-            if duration.total_seconds() <= 0:
-                self.logger.warning("Duration is zero or negative, using default")
+                else:
+                    # Unknown type, use default
+                    self.logger.error(f"Unsupported duration type: {type(duration)}")
+                    return timedelta(seconds=15)
+            
+            # Validate the timedelta bounds
+            seconds = duration.total_seconds()
+            
+            # Handle zero or negative duration
+            if seconds <= 0:
+                self.logger.warning(f"Duration is zero or negative ({seconds}s), using default minimum")
                 return timedelta(seconds=15)
-            if duration.total_seconds() > 3600:
-                self.logger.warning("Duration exceeds maximum, capping at 1 hour")
+                
+            # Cap maximum duration
+            if seconds > 3600:
+                self.logger.warning(f"Duration exceeds maximum ({seconds}s), capping at 1 hour")
                 return timedelta(hours=1)
                 
             return duration

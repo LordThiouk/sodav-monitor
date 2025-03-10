@@ -278,6 +278,36 @@ const LiveMonitor: React.FC = () => {
           // Add new detection to the list
           setLatestDetections(prev => {
             const station = stations.find(s => s.id === detection.station_id);
+            
+            // Format play_duration consistently
+            let formattedDuration = '0:00';
+            if (detection.play_duration) {
+              // Handle different formats of play_duration
+              if (typeof detection.play_duration === 'number') {
+                // Convert seconds to mm:ss format
+                const minutes = Math.floor(detection.play_duration / 60);
+                const seconds = Math.floor(detection.play_duration % 60);
+                formattedDuration = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+              } else if (typeof detection.play_duration === 'string') {
+                // If it's already in mm:ss format, use it directly
+                if (detection.play_duration.includes(':')) {
+                  formattedDuration = detection.play_duration;
+                } else {
+                  // Try to parse as number
+                  try {
+                    const durationSeconds = parseFloat(detection.play_duration);
+                    if (!isNaN(durationSeconds)) {
+                      const minutes = Math.floor(durationSeconds / 60);
+                      const seconds = Math.floor(durationSeconds % 60);
+                      formattedDuration = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    }
+                  } catch (e) {
+                    console.warn('Could not parse play_duration:', detection.play_duration);
+                  }
+                }
+              }
+            }
+            
             const newDetection = {
               id: detection.id,
               stationName: station?.name || detection.station_name || 'Unknown Station',
@@ -287,7 +317,7 @@ const LiveMonitor: React.FC = () => {
               streamUrl: station?.stream_url || '',
               confidence: detection.confidence,
               detected_at: detection.detected_at,
-              play_duration: detection.play_duration || '0:00'
+              play_duration: formattedDuration
             };
             
             const exists = prev.some(d => d.id === newDetection.id);

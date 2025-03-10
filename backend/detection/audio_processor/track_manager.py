@@ -189,7 +189,30 @@ class TrackManager:
             
             # Calculer le temps écoulé depuis la dernière mise à jour
             now = datetime.utcnow()
-            time_since_last_update = now - current.get("last_update_time", current["start_time"])
+            
+            # Vérifier que last_update_time existe, sinon utiliser start_time
+            last_time = current.get("last_update_time", current["start_time"])
+            
+            # Vérifier que last_time est un objet datetime valide
+            if not isinstance(last_time, datetime):
+                self.logger.warning(f"Invalid last_update_time type: {type(last_time)}, using start_time")
+                last_time = current["start_time"]
+            
+            # Calculer le temps écoulé
+            time_since_last_update = now - last_time
+            
+            # Vérifier que le temps écoulé est positif et raisonnable
+            if time_since_last_update.total_seconds() < 0:
+                self.logger.warning("Negative time since last update, using 1 second")
+                time_since_last_update = timedelta(seconds=1)
+            elif time_since_last_update.total_seconds() > 3600:  # Plus d'une heure
+                self.logger.warning("Time since last update exceeds 1 hour, capping at 1 hour")
+                time_since_last_update = timedelta(hours=1)
+            
+            # Vérifier que play_duration existe et est un objet timedelta
+            if not isinstance(current["play_duration"], timedelta):
+                self.logger.warning(f"Invalid play_duration type: {type(current['play_duration'])}, resetting")
+                current["play_duration"] = timedelta(seconds=0)
             
             # Mettre à jour la durée totale avec le temps réel écoulé
             current["play_duration"] += time_since_last_update
@@ -212,7 +235,7 @@ class TrackManager:
             }
             
         except Exception as e:
-            self.logger.error(f"Erreur lors de la mise à jour de la piste: {str(e)}")
+            self.logger.error(f"Erreur lors de la mise à jour de la piste: {str(e)}", exc_info=True)
             return {"error": str(e)}
     
     def _end_current_track(self, station_id: int):
@@ -235,10 +258,41 @@ class TrackManager:
                 
                 # Calculer le temps écoulé depuis la dernière mise à jour
                 now = datetime.utcnow()
-                time_since_last_update = now - current.get("last_update_time", current["start_time"])
+                
+                # Vérifier que last_update_time existe, sinon utiliser start_time
+                last_time = current.get("last_update_time", current["start_time"])
+                
+                # Vérifier que last_time est un objet datetime valide
+                if not isinstance(last_time, datetime):
+                    self.logger.warning(f"Invalid last_update_time type: {type(last_time)}, using start_time")
+                    last_time = current["start_time"]
+                
+                # Calculer le temps écoulé
+                time_since_last_update = now - last_time
+                
+                # Vérifier que le temps écoulé est positif et raisonnable
+                if time_since_last_update.total_seconds() < 0:
+                    self.logger.warning("Negative time since last update, using 1 second")
+                    time_since_last_update = timedelta(seconds=1)
+                elif time_since_last_update.total_seconds() > 3600:  # Plus d'une heure
+                    self.logger.warning("Time since last update exceeds 1 hour, capping at 1 hour")
+                    time_since_last_update = timedelta(hours=1)
+                
+                # Vérifier que play_duration existe et est un objet timedelta
+                if not isinstance(current["play_duration"], timedelta):
+                    self.logger.warning(f"Invalid play_duration type: {type(current['play_duration'])}, resetting")
+                    current["play_duration"] = timedelta(seconds=0)
                 
                 # Ajouter ce dernier intervalle à la durée totale
                 total_duration = current["play_duration"] + time_since_last_update
+                
+                # Vérifier que la durée totale est raisonnable
+                if total_duration.total_seconds() <= 0:
+                    self.logger.warning("Total duration is zero or negative, using minimum duration")
+                    total_duration = timedelta(seconds=15)
+                elif total_duration.total_seconds() > 3600:
+                    self.logger.warning("Total duration exceeds maximum, capping at 1 hour")
+                    total_duration = timedelta(hours=1)
                 
                 # Créer un enregistrement de détection avec la durée totale précise
                 detection = TrackDetection(
@@ -290,7 +344,7 @@ class TrackManager:
                 return result
                 
             except Exception as e:
-                self.logger.error(f"Erreur lors de la fin du suivi de piste: {str(e)}")
+                self.logger.error(f"Erreur lors de la fin du suivi de piste: {str(e)}", exc_info=True)
                 self.db_session.rollback()
                 return {"error": str(e)}
                 
