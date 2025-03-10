@@ -16,25 +16,41 @@ import {
   Icon,
   Text,
   useColorModeValue,
-  useDisclosure
+  useDisclosure,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
+  Avatar
 } from '@chakra-ui/react';
-import { HamburgerIcon, CloseIcon } from '@chakra-ui/icons';
-import { FaBroadcastTower, FaChartBar, FaFileDownload, FaMusic } from 'react-icons/fa';
-import { Link as RouterLink, useLocation } from 'react-router-dom';
+import { HamburgerIcon, CloseIcon, ChevronDownIcon } from '@chakra-ui/icons';
+import { FaBroadcastTower, FaChartBar, FaFileDownload, FaMusic, FaChartLine, FaSignInAlt, FaSignOutAlt, FaUserPlus } from 'react-icons/fa';
+import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
+import { isAuthenticated, getUser, removeToken } from '../services/auth';
 
 export default function Navbar() {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const location = useLocation();
+  const navigate = useNavigate();
   const isMobile = useMediaQuery("(max-width: 48em)")[0];
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
+  
+  const authenticated = isAuthenticated();
+  const user = getUser();
 
   const navItems = [
     { to: '/', label: 'Live Monitor', icon: FaMusic },
     { to: '/channels', label: 'Channels', icon: FaBroadcastTower },
     { to: '/analytics', label: 'Analytics', icon: FaChartBar },
+    { to: '/monitoring', label: 'Monitoring', icon: FaChartLine },
     { to: '/reports', label: 'Reports', icon: FaFileDownload }
   ];
+  
+  const handleLogout = () => {
+    removeToken();
+    navigate('/login');
+  };
 
   return (
     <Box>
@@ -82,21 +98,69 @@ export default function Navbar() {
           </Flex>
 
           {!isMobile && (
-            <HStack spacing={4}>
-              {navItems.map((item) => (
-                <Button
-                  key={item.to}
-                  as={RouterLink}
-                  to={item.to}
-                  variant={location.pathname === item.to ? 'solid' : 'ghost'}
-                  colorScheme="brand"
-                  leftIcon={<Icon as={item.icon} />}
-                  size="md"
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </HStack>
+            <>
+              {authenticated ? (
+                <HStack spacing={4}>
+                  {navItems.map((item) => (
+                    <Button
+                      key={item.to}
+                      as={RouterLink}
+                      to={item.to}
+                      variant={location.pathname === item.to ? 'solid' : 'ghost'}
+                      colorScheme="brand"
+                      leftIcon={<Icon as={item.icon} />}
+                      size="md"
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
+                </HStack>
+              ) : (
+                <HStack spacing={4}>
+                  <Button
+                    as={RouterLink}
+                    to="/login"
+                    variant="ghost"
+                    colorScheme="brand"
+                    leftIcon={<Icon as={FaSignInAlt} />}
+                    size="md"
+                  >
+                    Login
+                  </Button>
+                  <Button
+                    as={RouterLink}
+                    to="/register"
+                    variant="solid"
+                    colorScheme="brand"
+                    leftIcon={<Icon as={FaUserPlus} />}
+                    size="md"
+                  >
+                    Register
+                  </Button>
+                </HStack>
+              )}
+            </>
+          )}
+          
+          {authenticated && !isMobile && (
+            <Menu>
+              <MenuButton
+                as={Button}
+                variant="ghost"
+                rightIcon={<ChevronDownIcon />}
+                ml={4}
+              >
+                <HStack>
+                  <Avatar size="sm" name={user?.username} />
+                  <Text>{user?.username}</Text>
+                </HStack>
+              </MenuButton>
+              <MenuList>
+                <MenuItem onClick={handleLogout} icon={<Icon as={FaSignOutAlt} />}>
+                  Logout
+                </MenuItem>
+              </MenuList>
+            </Menu>
           )}
         </Flex>
       </Box>
@@ -110,23 +174,74 @@ export default function Navbar() {
         <DrawerContent>
           <DrawerCloseButton />
           <DrawerBody pt={12}>
-            <List spacing={4}>
-              {navItems.map((item) => (
-                <ListItem key={item.to}>
+            {authenticated ? (
+              <>
+                <Flex align="center" mb={6}>
+                  <Avatar size="sm" name={user?.username} mr={2} />
+                  <Text fontWeight="bold">{user?.username}</Text>
+                </Flex>
+                <List spacing={4}>
+                  {navItems.map((item) => (
+                    <ListItem key={item.to}>
+                      <Button
+                        as={RouterLink}
+                        to={item.to}
+                        variant={location.pathname === item.to ? 'solid' : 'ghost'}
+                        colorScheme="brand"
+                        leftIcon={<Icon as={item.icon} />}
+                        w="full"
+                        onClick={onClose}
+                      >
+                        {item.label}
+                      </Button>
+                    </ListItem>
+                  ))}
+                  <ListItem>
+                    <Button
+                      variant="ghost"
+                      colorScheme="red"
+                      leftIcon={<Icon as={FaSignOutAlt} />}
+                      w="full"
+                      onClick={() => {
+                        handleLogout();
+                        onClose();
+                      }}
+                    >
+                      Logout
+                    </Button>
+                  </ListItem>
+                </List>
+              </>
+            ) : (
+              <List spacing={4}>
+                <ListItem>
                   <Button
                     as={RouterLink}
-                    to={item.to}
-                    variant={location.pathname === item.to ? 'solid' : 'ghost'}
+                    to="/login"
+                    variant="ghost"
                     colorScheme="brand"
-                    leftIcon={<Icon as={item.icon} />}
+                    leftIcon={<Icon as={FaSignInAlt} />}
                     w="full"
                     onClick={onClose}
                   >
-                    {item.label}
+                    Login
                   </Button>
                 </ListItem>
-              ))}
-            </List>
+                <ListItem>
+                  <Button
+                    as={RouterLink}
+                    to="/register"
+                    variant="solid"
+                    colorScheme="brand"
+                    leftIcon={<Icon as={FaUserPlus} />}
+                    w="full"
+                    onClick={onClose}
+                  >
+                    Register
+                  </Button>
+                </ListItem>
+              </List>
+            )}
           </DrawerBody>
         </DrawerContent>
       </Drawer>

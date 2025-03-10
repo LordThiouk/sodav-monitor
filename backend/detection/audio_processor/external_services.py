@@ -1202,6 +1202,13 @@ class ExternalServiceHandler:
                         audd_result["timestamp"] = station_data.get("timestamp")
                         audd_result["detection_method"] = "audd"
                         
+                        # Ensure title and artist are at the top level of the dictionary
+                        if "detection" in audd_result and isinstance(audd_result["detection"], dict):
+                            if "title" not in audd_result and "title" in audd_result["detection"]:
+                                audd_result["title"] = audd_result["detection"]["title"]
+                            if "artist" not in audd_result and "artist" in audd_result["detection"]:
+                                audd_result["artist"] = audd_result["detection"]["artist"]
+                        
                         return audd_result
                     else:
                         log_with_category(logger, "GENERAL", "info", f"No track recognized from station {station_name} using Audd")
@@ -1225,6 +1232,13 @@ class ExternalServiceHandler:
                         audd_result["station_name"] = station_name
                         audd_result["timestamp"] = station_data.get("timestamp")
                         audd_result["detection_method"] = "audd"
+                        
+                        # Ensure title and artist are at the top level of the dictionary
+                        if "detection" in audd_result and isinstance(audd_result["detection"], dict):
+                            if "title" not in audd_result and "title" in audd_result["detection"]:
+                                audd_result["title"] = audd_result["detection"]["title"]
+                            if "artist" not in audd_result and "artist" in audd_result["detection"]:
+                                audd_result["artist"] = audd_result["detection"]["artist"]
                         
                         return audd_result
                     else:

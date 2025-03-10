@@ -13,6 +13,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import Monitoring from './pages/Monitoring';
 import PrivateRoute from './components/PrivateRoute';
 import AnalyticsOverview from './pages/analytics/AnalyticsOverview';
 import AnalyticsArtists from './pages/analytics/AnalyticsArtists';
@@ -38,10 +39,38 @@ const App: React.FC = () => {
               <Route path="/register" element={<Register />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/" element={<LiveMonitor />} />
-              <Route path="/channels" element={<Channels />} />
-              <Route path="/channels/:id/detections" element={<ChannelDetections />} />
-              <Route path="/analytics/*" element={<Analytics />} />
+              <Route 
+                path="/" 
+                element={
+                  <PrivateRoute>
+                    <LiveMonitor />
+                  </PrivateRoute>
+                } 
+              />
+              <Route 
+                path="/channels" 
+                element={
+                  <PrivateRoute>
+                    <Channels />
+                  </PrivateRoute>
+                } 
+              />
+              <Route 
+                path="/channels/:id/detections" 
+                element={
+                  <PrivateRoute>
+                    <ChannelDetections />
+                  </PrivateRoute>
+                } 
+              />
+              <Route 
+                path="/analytics/*" 
+                element={
+                  <PrivateRoute>
+                    <Analytics />
+                  </PrivateRoute>
+                } 
+              />
               <Route 
                 path="/reports" 
                 element={
@@ -50,11 +79,54 @@ const App: React.FC = () => {
                   </PrivateRoute>
                 } 
               />
-              <Route path="/analytics" element={<AnalyticsOverview />} />
-              <Route path="/analytics/artists" element={<AnalyticsArtists />} />
-              <Route path="/analytics/tracks" element={<AnalyticsTracks />} />
-              <Route path="/analytics/labels" element={<AnalyticsLabels />} />
-              <Route path="/analytics/channels" element={<AnalyticsChannels />} />
+              <Route 
+                path="/monitoring" 
+                element={
+                  <PrivateRoute>
+                    <Monitoring />
+                  </PrivateRoute>
+                } 
+              />
+              <Route 
+                path="/analytics" 
+                element={
+                  <PrivateRoute>
+                    <AnalyticsOverview />
+                  </PrivateRoute>
+                } 
+              />
+              <Route 
+                path="/analytics/artists" 
+                element={
+                  <PrivateRoute>
+                    <AnalyticsArtists />
+                  </PrivateRoute>
+                } 
+              />
+              <Route 
+                path="/analytics/tracks" 
+                element={
+                  <PrivateRoute>
+                    <AnalyticsTracks />
+                  </PrivateRoute>
+                } 
+              />
+              <Route 
+                path="/analytics/labels" 
+                element={
+                  <PrivateRoute>
+                    <AnalyticsLabels />
+                  </PrivateRoute>
+                } 
+              />
+              <Route 
+                path="/analytics/channels" 
+                element={
+                  <PrivateRoute>
+                    <AnalyticsChannels />
+                  </PrivateRoute>
+                } 
+              />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ErrorBoundary>

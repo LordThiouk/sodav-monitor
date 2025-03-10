@@ -16,14 +16,39 @@ import hashlib
 import json
 from sqlalchemy import select, and_, or_
 from sqlalchemy import inspect
+import re
+from backend.utils.validators import validate_isrc as validate_isrc_util
 
 logger = setup_logging(__name__)
 
 class TrackManager:
-    """Gestionnaire des pistes audio."""
+    """
+    Gère les pistes musicales dans la base de données.
+    
+    Cette classe fournit des méthodes pour créer, rechercher, mettre à jour et
+    gérer les pistes musicales dans la base de données. Elle est responsable de
+    la détection des pistes, de l'extraction des métadonnées, de la gestion des
+    empreintes digitales et du suivi des statistiques de lecture.
+    
+    La classe utilise différentes méthodes de détection (locale, AcoustID, AudD)
+    pour identifier les pistes musicales et éviter les doublons en utilisant
+    notamment les codes ISRC comme identifiants uniques.
+    
+    Attributes:
+        db_session (Session): Session de base de données SQLAlchemy.
+        feature_extractor (Optional): Extracteur de caractéristiques audio.
+        logger (Logger): Logger pour enregistrer les événements.
+        current_tracks (Dict[int, Dict]): Dictionnaire des pistes en cours de lecture par station.
+    """
     
     def __init__(self, db_session: Session, feature_extractor=None):
-        """Initialise le gestionnaire de pistes."""
+        """
+        Initialise un gestionnaire de pistes.
+        
+        Args:
+            db_session: Session de base de données SQLAlchemy.
+            feature_extractor: Extracteur de caractéristiques audio (optionnel).
+        """
         self.db_session = db_session
         self.logger = logging.getLogger(__name__)
         self.current_tracks = {}
@@ -67,7 +92,42 @@ class TrackManager:
             self.audd_service = None
     
     async def process_track(self, features: Dict[str, Any], station_id: Optional[int] = None) -> Dict[str, Any]:
-        """Traite une piste détectée."""
+        """
+        Traite une piste détectée et gère son cycle de vie dans le système.
+        
+        Cette méthode est le point d'entrée principal pour le traitement des pistes
+        détectées. Elle gère le cycle de vie complet d'une piste, depuis sa détection
+        jusqu'à sa fin de lecture, en passant par la création ou la récupération
+        de la piste dans la base de données et la mise à jour des statistiques.
+        
+        Le processus comprend:
+        1. Vérification si une piste est déjà en cours de lecture sur la station
+           - Si c'est la même piste, mise à jour de la durée de lecture
+           - Si c'est une nouvelle piste, fin de la piste précédente
+        2. Création ou récupération de la piste dans la base de données
+           - Utilisation de l'ISRC comme identifiant unique si disponible
+        3. Démarrage du suivi de la nouvelle piste
+        
+        Args:
+            features (Dict[str, Any]): Caractéristiques audio et métadonnées de la piste détectée.
+                Peut inclure: title, artist, isrc, fingerprint, audio_data, etc.
+            station_id (Optional[int], optional): ID de la station radio. Défaut à None.
+            
+        Returns:
+            Dict[str, Any]: Dictionnaire contenant:
+                - status: "success" si le traitement a réussi
+                - track: Informations sur la piste (id, title, artist, etc.)
+                - detection: Informations sur la détection (id, timestamp, etc.)
+                - error: Message d'erreur si le traitement a échoué
+                
+        Raises:
+            Exception: Les exceptions sont capturées et retournées dans le dictionnaire
+                      de résultat avec une clé "error".
+                      
+        Note:
+            Cette méthode utilise la contrainte d'unicité ISRC pour éviter les doublons
+            et consolider les statistiques de lecture pour une même piste.
+        """
         try:
             # Vérifie si une piste est déjà en cours de lecture
             if station_id in self.current_tracks:
@@ -110,16 +170,45 @@ class TrackManager:
             return False
     
     def _update_current_track(self, station_id: int, features: Dict[str, Any]) -> Dict[str, Any]:
-        """Met à jour les informations de la piste en cours."""
+        """
+        Met à jour les informations de la piste en cours.
+        
+        Cette méthode est cruciale pour le suivi précis de la durée réelle de diffusion.
+        Au lieu d'utiliser simplement la durée de l'échantillon audio, elle calcule
+        le temps réel écoulé depuis la dernière détection de cette piste.
+        
+        Args:
+            station_id: ID de la station radio
+            features: Caractéristiques audio extraites
+            
+        Returns:
+            Dict contenant le statut de la piste et sa durée de lecture actuelle
+        """
         try:
             current = self.current_tracks[station_id]
-            current["play_duration"] += timedelta(seconds=features.get("play_duration", 0))
+            
+            # Calculer le temps écoulé depuis la dernière mise à jour
+            now = datetime.utcnow()
+            time_since_last_update = now - current.get("last_update_time", current["start_time"])
+            
+            # Mettre à jour la durée totale avec le temps réel écoulé
+            current["play_duration"] += time_since_last_update
+            current["last_update_time"] = now
             current["features"] = features
+            
+            # Enregistrer cette mise à jour dans les logs pour le suivi
+            self.logger.info(
+                f"Mise à jour de la piste en cours sur la station {station_id}: "
+                f"Track ID {current['track'].id}, "
+                f"Temps écoulé depuis dernière mise à jour: {time_since_last_update.total_seconds()} secondes, "
+                f"Durée totale accumulée: {current['play_duration'].total_seconds()} secondes"
+            )
             
             return {
                 "status": "playing",
                 "track": current["track"].to_dict(),
-                "play_duration": current["play_duration"].total_seconds()
+                "play_duration": current["play_duration"].total_seconds(),
+                "time_since_last_update": time_since_last_update.total_seconds()
             }
             
         except Exception as e:
@@ -128,26 +217,83 @@ class TrackManager:
     
     def _end_current_track(self, station_id: int):
         """
-        Termine la piste en cours pour une station donnée.
+        Termine le suivi de la piste en cours pour une station donnée.
+        
+        Cette méthode est appelée lorsqu'une piste cesse d'être détectée sur une station,
+        soit parce qu'une nouvelle piste commence, soit parce que la diffusion s'arrête.
+        Elle enregistre la durée totale de diffusion et met à jour les statistiques.
+        
+        Args:
+            station_id: ID de la station radio
+            
+        Returns:
+            Dict contenant les informations sur la piste terminée, ou None si aucune piste n'était en cours
         """
         if station_id in self.current_tracks:
-            current_track = self.current_tracks[station_id]
-            
-            # Calculer la durée de lecture
-            start_time = current_track.get("start_time")
-            if start_time:
-                end_time = datetime.now()
-                play_duration = end_time - start_time
+            try:
+                current = self.current_tracks[station_id]
                 
-                # Mettre à jour les statistiques
-                track_id = current_track.get("track_id")
-                if track_id:
-                    self._update_station_track_stats(station_id, track_id, play_duration)
-            
-            # Supprimer la piste en cours
-            del self.current_tracks[station_id]
-            
-            return current_track
+                # Calculer le temps écoulé depuis la dernière mise à jour
+                now = datetime.utcnow()
+                time_since_last_update = now - current.get("last_update_time", current["start_time"])
+                
+                # Ajouter ce dernier intervalle à la durée totale
+                total_duration = current["play_duration"] + time_since_last_update
+                
+                # Créer un enregistrement de détection avec la durée totale précise
+                detection = TrackDetection(
+                    track_id=current["track"].id,
+                    station_id=station_id,
+                    detected_at=current["start_time"],
+                    end_time=now,
+                    play_duration=total_duration,
+                    fingerprint=current["features"].get("fingerprint", ""),
+                    audio_hash=current["features"].get("audio_hash", ""),
+                    confidence=current["features"].get("confidence", 0),
+                    detection_method=current["features"].get("detection_method", "unknown")
+                )
+                self.db_session.add(detection)
+                
+                # Mettre à jour les statistiques avec la durée totale précise
+                self._update_station_track_stats(
+                    station_id,
+                    current["track"].id,
+                    total_duration
+                )
+                
+                # Enregistrer cette fin de diffusion dans les logs
+                self.logger.info(
+                    f"Fin de diffusion sur la station {station_id}: "
+                    f"Track ID {current['track'].id}, "
+                    f"Durée totale: {total_duration.total_seconds()} secondes, "
+                    f"Début: {current['start_time'].isoformat()}, "
+                    f"Fin: {now.isoformat()}"
+                )
+                
+                # Créer un résumé de la diffusion
+                result = {
+                    "track_id": current["track"].id,
+                    "track_title": current["track"].title,
+                    "artist_name": current["track"].artist.name if current["track"].artist else None,
+                    "start_time": current["start_time"].isoformat(),
+                    "end_time": now.isoformat(),
+                    "play_duration": total_duration.total_seconds(),
+                    "confidence": current["features"].get("confidence", 0)
+                }
+                
+                # Supprimer la piste en cours
+                del self.current_tracks[station_id]
+                
+                # Valider les changements
+                self.db_session.commit()
+                
+                return result
+                
+            except Exception as e:
+                self.logger.error(f"Erreur lors de la fin du suivi de piste: {str(e)}")
+                self.db_session.rollback()
+                return {"error": str(e)}
+                
         return None
 
     async def _get_or_create_artist(self, artist_name: str) -> Optional[int]:
@@ -188,15 +334,39 @@ class TrackManager:
 
     async def _get_or_create_track(self, title: str = None, artist_name: str = None, features: Optional[Dict[str, Any]] = None) -> Optional[Track]:
         """
-        Récupère ou crée une piste dans la base de données.
+        Récupère une piste existante ou en crée une nouvelle dans la base de données.
+        
+        Cette méthode est au cœur du système de gestion des pistes, assurant l'unicité
+        des pistes grâce à plusieurs critères de recherche hiérarchisés, avec une
+        priorité donnée à l'ISRC. Elle extrait également les métadonnées des différentes
+        sources disponibles et met à jour les pistes existantes avec de nouvelles informations.
+        
+        Processus de recherche hiérarchique:
+        1. Recherche par ISRC (prioritaire) - Exploite la contrainte d'unicité
+        2. Recherche par empreinte digitale dans la table fingerprints
+        3. Recherche par empreinte digitale dans la table tracks
+        4. Recherche par titre et artiste
+        
+        Si une piste est trouvée, ses métadonnées sont mises à jour avec les nouvelles
+        informations disponibles. Si aucune piste n'est trouvée, une nouvelle est créée.
         
         Args:
-            title: Titre de la piste
-            artist_name: Nom de l'artiste
-            features: Caractéristiques supplémentaires (album, isrc, label, etc.)
+            title (str, optional): Titre de la piste. Défaut à None.
+            artist_name (str, optional): Nom de l'artiste. Défaut à None.
+            features (Optional[Dict[str, Any]], optional): Caractéristiques et métadonnées
+                supplémentaires (album, isrc, label, fingerprint, etc.). Défaut à None.
             
         Returns:
-            Objet Track créé ou récupéré, ou None en cas d'erreur
+            Optional[Track]: Objet Track créé ou récupéré, ou None en cas d'erreur.
+            
+        Raises:
+            Exception: Les exceptions sont capturées et journalisées, et la méthode
+                      retourne None en cas d'erreur.
+                      
+        Note:
+            Cette méthode est cruciale pour maintenir l'intégrité des données et éviter
+            les doublons dans la base de données, notamment grâce à la contrainte
+            d'unicité sur les codes ISRC.
         """
         try:
             if not title or not artist_name:
@@ -239,6 +409,15 @@ class TrackManager:
                         isrc = features["deezer"]["isrc"]
                         self.logger.info(f"ISRC found in Deezer: {isrc}")
                 
+                # Normaliser et valider l'ISRC si présent
+                if isrc:
+                    isrc = isrc.replace('-', '').upper()
+                    if not self._validate_isrc(isrc):
+                        self.logger.warning(f"ISRC invalide ignoré: {isrc}")
+                        isrc = None  # Ignorer l'ISRC invalide
+                    else:
+                        self.logger.info(f"ISRC valide trouvé et normalisé: {isrc}")
+                
                 # Extraire le label
                 label = features.get("label")
                 
@@ -263,27 +442,26 @@ class TrackManager:
             if fingerprint_hash:
                 self.logger.info(f"Fingerprint extracted: {fingerprint_hash[:20]}...")
             
-            # Rechercher la piste dans la base de données
-            query = self.db_session.query(Track).filter(
-                Track.title == title,
-                Track.artist_id == artist_id
-            )
+            track = None
             
-            # Ajouter l'ISRC à la recherche s'il est disponible
+            # 1. Rechercher d'abord par ISRC si disponible (critère principal)
             if isrc:
                 self.logger.info(f"Searching for track with ISRC: {isrc}")
-                query = self.db_session.query(Track).filter(
-                    or_(
-                        and_(
-                            Track.title == title,
-                            Track.artist_id == artist_id
-                        ),
-                        Track.isrc == isrc
-                    )
-                )
+                track = self.db_session.query(Track).filter(Track.isrc == isrc).first()
+                
+                if track:
+                    self.logger.info(f"Track found by ISRC: {track.title} by artist ID {track.artist_id}")
+                    # Mettre à jour le titre et l'artiste si nécessaire pour standardiser
+                    if track.title != title or track.artist_id != artist_id:
+                        self.logger.info(f"Updating track metadata to standardize: {track.title} -> {title}, artist ID {track.artist_id} -> {artist_id}")
+                        # On ne change pas l'artiste_id pour éviter de casser les relations, mais on peut mettre à jour le titre
+                        if track.title != title:
+                            track.title = title
+                            track.updated_at = datetime.utcnow()
+                            self.db_session.flush()
             
-            # Ajouter le fingerprint à la recherche s'il est disponible
-            if fingerprint_hash:
+            # 2. Si pas trouvé par ISRC, rechercher par fingerprint
+            if not track and fingerprint_hash:
                 self.logger.info(f"Searching for track with fingerprint: {fingerprint_hash[:20]}...")
                 
                 # Vérifier si la table fingerprints existe
@@ -299,21 +477,43 @@ class TrackManager:
                         track = self.db_session.query(Track).filter_by(id=fingerprint.track_id).first()
                         if track:
                             self.logger.info(f"Track found by fingerprint in fingerprints table: {track.title}")
-                            return track
+                            
+                            # Si on a un ISRC mais que la piste n'en a pas, mettre à jour
+                            if isrc and not track.isrc:
+                                self.logger.info(f"Updating track with ISRC: {isrc}")
+                                track.isrc = isrc
+                                track.updated_at = datetime.utcnow()
+                                self.db_session.flush()
             
-            # Fallback: rechercher dans la colonne fingerprint de la table tracks
-            query = self.db_session.query(Track).filter(
-                or_(
-                    and_(
-                        Track.title == title,
-                        Track.artist_id == artist_id
-                    ),
-                    Track.isrc == isrc,
-                    Track.fingerprint == fingerprint_hash
-                )
-            )
+            # 3. Si toujours pas trouvé, rechercher dans la colonne fingerprint de la table tracks
+            if not track and fingerprint_hash:
+                track = self.db_session.query(Track).filter(Track.fingerprint == fingerprint_hash).first()
+                if track:
+                    self.logger.info(f"Track found by fingerprint in tracks table: {track.title}")
+                    
+                    # Si on a un ISRC mais que la piste n'en a pas, mettre à jour
+                    if isrc and not track.isrc:
+                        self.logger.info(f"Updating track with ISRC: {isrc}")
+                        track.isrc = isrc
+                        track.updated_at = datetime.utcnow()
+                        self.db_session.flush()
             
-            track = query.first()
+            # 4. En dernier recours, rechercher par titre et artiste
+            if not track:
+                track = self.db_session.query(Track).filter(
+                    Track.title == title,
+                    Track.artist_id == artist_id
+                ).first()
+                
+                if track:
+                    self.logger.info(f"Track found by title and artist: {track.title}")
+                    
+                    # Si on a un ISRC mais que la piste n'en a pas, mettre à jour
+                    if isrc and not track.isrc:
+                        self.logger.info(f"Updating track with ISRC: {isrc}")
+                        track.isrc = isrc
+                        track.updated_at = datetime.utcnow()
+                        self.db_session.flush()
             
             # Utiliser _execute_with_transaction pour gérer les transactions
             if track:
@@ -441,28 +641,93 @@ class TrackManager:
             return None
     
     def _start_track_detection(self, track: Track, station_id: int, features: Dict[str, Any]) -> Dict[str, Any]:
-        """Démarre le suivi d'une nouvelle piste."""
+        """
+        Démarre le suivi d'une nouvelle piste détectée sur une station.
+        
+        Cette méthode initialise le suivi d'une nouvelle piste, en enregistrant
+        le moment exact où la piste a commencé à être diffusée. Cette information
+        est cruciale pour calculer précisément la durée totale de diffusion.
+        
+        Args:
+            track: Objet Track représentant la piste détectée
+            station_id: ID de la station radio
+            features: Caractéristiques audio extraites
+            
+        Returns:
+            Dict contenant les informations sur la piste détectée
+        """
         try:
+            # Enregistrer le moment exact de début de la diffusion
             start_time = datetime.utcnow()
+            
+            # Initialiser le suivi avec une durée initiale de 0
             self.current_tracks[station_id] = {
                 "track": track,
+                "track_id": track.id,
                 "start_time": start_time,
-                "play_duration": timedelta(seconds=features.get("play_duration", 0)),
+                "last_update_time": start_time,  # Important pour le calcul du temps réel
+                "play_duration": timedelta(seconds=0),  # On commence à 0, pas avec la durée de l'échantillon
                 "features": features
             }
             
+            # Récupérer le nom de l'artiste de manière sécurisée
+            artist_name = "Inconnu"
+            if track.artist:
+                artist_name = track.artist.name
+            
+            # Enregistrer cette détection dans les logs
+            self.logger.info(
+                f"Nouvelle piste détectée sur la station {station_id}: "
+                f"Track ID {track.id}, Titre: {track.title}, "
+                f"Artiste: {artist_name}, "
+                f"Début de diffusion: {start_time.isoformat()}"
+            )
+            
             return {
                 "track_id": track.id,
+                "track_title": track.title,
+                "artist": artist_name,  # Utiliser "artist" au lieu de "artist_name"
                 "start_time": start_time.isoformat(),
                 "confidence": features.get("confidence", 0)
             }
             
         except Exception as e:
-            self.logger.error(f"Erreur lors du démarrage de la détection: {str(e)}")
-            return {}
+            self.logger.error(f"Erreur lors du démarrage du suivi de piste: {str(e)}")
+            return {"error": str(e)}
     
     def _update_station_track_stats(self, station_id: int, track_id: int, play_duration: timedelta):
-        """Met à jour les statistiques de diffusion."""
+        """
+        Met à jour les statistiques de diffusion pour une piste sur une station spécifique.
+        
+        Cette méthode est responsable de la mise à jour des statistiques cumulatives
+        de diffusion dans la table `station_track_stats`. Elle est appelée par la méthode
+        `_record_play_time` après chaque détection d'une piste. Cette fonctionnalité est
+        essentielle pour le suivi précis des statistiques de diffusion, en particulier
+        pour les pistes identifiées par leur code ISRC.
+        
+        Le processus comprend:
+        1. Recherche des statistiques existantes pour la paire station-piste
+        2. Si des statistiques existent:
+           - Incrémentation du compteur de diffusions
+           - Ajout de la durée de lecture au total existant
+           - Mise à jour de la date de dernière diffusion
+        3. Si aucune statistique n'existe:
+           - Création d'un nouvel enregistrement avec les valeurs initiales
+        
+        Args:
+            station_id (int): ID de la station radio.
+            track_id (int): ID de la piste détectée.
+            play_duration (timedelta): Durée de lecture sous forme d'objet timedelta.
+            
+        Raises:
+            Exception: Si une erreur survient lors de la mise à jour, la transaction
+                      est annulée et l'erreur est journalisée.
+                      
+        Note:
+            Cette méthode est cruciale pour maintenir l'intégrité des statistiques
+            de diffusion et éviter la duplication des données grâce à la contrainte
+            d'unicité sur les codes ISRC.
+        """
         try:
             stats = self.db_session.query(StationTrackStats).filter_by(
                 station_id=station_id,
@@ -810,6 +1075,182 @@ class TrackManager:
             logger.error(f"[TRACK_MANAGER] Traceback: {traceback.format_exc()}")
             return None
     
+    def _validate_isrc(self, isrc: str) -> bool:
+        """
+        Valide un code ISRC selon le format standard international.
+        
+        Cette méthode utilise la fonction validate_isrc_util du module utils.validators
+        pour vérifier si un code ISRC respecte le format standard. Un ISRC valide
+        est essentiel pour maintenir l'intégrité des données et exploiter la
+        contrainte d'unicité dans la base de données.
+        
+        Format ISRC: CC-XXX-YY-NNNNN
+        - CC: Code pays (2 lettres)
+        - XXX: Code du propriétaire (3 caractères alphanumériques)
+        - YY: Année de référence (2 chiffres)
+        - NNNNN: Code de désignation (5 chiffres)
+        
+        Args:
+            isrc (str): Code ISRC à valider. Doit être une chaîne de 12 caractères
+                       après normalisation (sans tirets).
+            
+        Returns:
+            bool: True si le format est valide, False sinon.
+            
+        Examples:
+            >>> track_manager._validate_isrc("FRXXX0123456")
+            True
+            >>> track_manager._validate_isrc("FR-XXX-01-23456")  # Avec tirets (normalisé en interne)
+            True
+            >>> track_manager._validate_isrc("INVALID")
+            False
+        """
+        is_valid, _ = validate_isrc_util(isrc)
+        return is_valid
+
+    async def _find_track_by_isrc(self, isrc: str, source: str, play_duration: float = 0, station_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """
+        Méthode commune pour rechercher une piste par son code ISRC et mettre à jour ses statistiques.
+        
+        Cette méthode interne est utilisée par les différentes méthodes de détection
+        (AcoustID, AudD, etc.) pour rechercher une piste existante par son ISRC et
+        mettre à jour ses statistiques de lecture si nécessaire. Elle exploite la
+        contrainte d'unicité des ISRC pour éviter les doublons dans la base de données.
+        
+        Le processus comprend:
+        1. Validation du format ISRC
+        2. Recherche de la piste dans la base de données
+        3. Mise à jour des statistiques de lecture si une durée est fournie
+        4. Construction d'un dictionnaire de résultat standardisé
+        
+        Args:
+            isrc (str): Code ISRC à rechercher. Sera normalisé automatiquement.
+            source (str): Source de la détection ('acoustid', 'audd', etc.).
+            play_duration (float, optional): Durée de lecture en secondes. Défaut à 0.
+            station_id (Optional[int], optional): ID de la station. Défaut à None.
+            
+        Returns:
+            Optional[Dict[str, Any]]: Dictionnaire contenant les informations de la piste
+                                     avec les clés suivantes:
+                - track: Dictionnaire avec les détails de la piste
+                - confidence: Niveau de confiance (1.0 pour les correspondances ISRC)
+                - source: Source de la détection (passée en paramètre)
+                - detection_method: "isrc_match"
+                
+                Retourne None si aucune piste n'est trouvée avec cet ISRC ou si l'ISRC est invalide.
+        """
+        if not isrc:
+            return None
+        
+        # Normaliser l'ISRC (supprimer les tirets, mettre en majuscules)
+        normalized_isrc = isrc.replace('-', '').upper()
+        
+        # Vérifier la validité du format ISRC
+        if not self._validate_isrc(normalized_isrc):
+            return None
+        
+        # Rechercher la piste par ISRC
+        existing_track = self.db_session.query(Track).filter(Track.isrc == normalized_isrc).first()
+        
+        if not existing_track:
+            return None
+        
+        # Récupérer l'artiste
+        artist = self.db_session.query(Artist).filter(Artist.id == existing_track.artist_id).first()
+        artist_name_from_db = artist.name if artist else "Unknown Artist"
+        
+        # Mettre à jour les statistiques si station_id est fourni
+        if station_id and play_duration > 0:
+            self._record_play_time(station_id, existing_track.id, play_duration)
+        
+        self.logger.info(f"Found existing track with ISRC {isrc}: {existing_track.title} by {artist_name_from_db}")
+        
+        # Retourner les informations de la piste existante
+        return {
+            "track": {
+                "id": existing_track.id,
+                "title": existing_track.title,
+                "artist": artist_name_from_db,
+                "album": existing_track.album,
+                "isrc": existing_track.isrc,
+                "label": existing_track.label,
+                "release_date": existing_track.release_date
+            },
+            "confidence": 1.0,  # Confiance maximale pour les correspondances ISRC
+            "source": source,
+            "detection_method": source,
+            "play_duration": play_duration
+        }
+
+    async def find_track_by_isrc(self, isrc: str) -> Optional[Dict[str, Any]]:
+        """
+        Recherche une piste par son code ISRC dans la base de données.
+        
+        Cette méthode est essentielle pour exploiter la contrainte d'unicité des ISRC
+        dans le système. Elle normalise d'abord le code ISRC fourni, vérifie sa validité,
+        puis interroge la base de données pour trouver une correspondance exacte.
+        
+        Si une piste est trouvée, la méthode retourne un dictionnaire contenant les
+        informations de la piste avec un niveau de confiance maximal (1.0), car les
+        correspondances ISRC sont considérées comme fiables à 100%.
+        
+        Args:
+            isrc (str): Code ISRC à rechercher. Peut contenir des tirets qui seront
+                        automatiquement supprimés lors de la normalisation.
+            
+        Returns:
+            Optional[Dict[str, Any]]: Dictionnaire contenant les informations de la piste
+                                     avec les clés suivantes:
+                - track: Dictionnaire avec les détails de la piste (id, title, artist, album, isrc, etc.)
+                - confidence: Niveau de confiance de la correspondance (1.0 pour les ISRC)
+                - source: Source de la détection ("database")
+                - detection_method: Méthode de détection utilisée ("isrc_match")
+                
+                Retourne None si aucune piste n'est trouvée avec cet ISRC ou si l'ISRC est invalide.
+                
+        Examples:
+            >>> result = await track_manager.find_track_by_isrc("FRXXX0123456")
+            >>> if result:
+            ...     print(f"Piste trouvée: {result['track']['title']} par {result['track']['artist']}")
+            ... else:
+            ...     print("Aucune piste trouvée avec cet ISRC")
+        """
+        if not isrc:
+            return None
+        
+        # Normaliser l'ISRC (supprimer les tirets, mettre en majuscules)
+        normalized_isrc = isrc.replace('-', '').upper()
+        
+        # Vérifier la validité du format ISRC
+        if not self._validate_isrc(normalized_isrc):
+            self.logger.warning(f"Format ISRC invalide: {isrc}")
+            return None
+        
+        # Rechercher la piste par ISRC
+        existing_track = self.db_session.query(Track).filter(Track.isrc == normalized_isrc).first()
+        
+        if not existing_track:
+            return None
+        
+        # Récupérer l'artiste
+        artist = self.db_session.query(Artist).filter(Artist.id == existing_track.artist_id).first()
+        artist_name = artist.name if artist else "Unknown Artist"
+        
+        return {
+            "track": {
+                "id": existing_track.id,
+                "title": existing_track.title,
+                "artist": artist_name,
+                "album": existing_track.album,
+                "isrc": existing_track.isrc,
+                "label": existing_track.label,
+                "release_date": existing_track.release_date
+            },
+            "confidence": 1.0,  # Confiance maximale pour les correspondances ISRC
+            "source": "database",
+            "detection_method": "isrc_match"
+        }
+
     async def find_acoustid_match(self, audio_features: Dict[str, Any], station_id=None) -> Optional[Dict[str, Any]]:
         """
         Recherche une correspondance avec le service AcoustID.
@@ -845,10 +1286,14 @@ class TrackManager:
             artist_name = result.get("artist", "Unknown Artist")
             album = result.get("album", "Unknown Album")
             
-            # Extraire l'ISRC
+            # Extraire l'ISRC et valider son format
             isrc = result.get("isrc")
-            if isrc:
-                self.logger.info(f"ISRC found in AcoustID result: {isrc}")
+            if isrc and isinstance(isrc, str) and len(isrc) == 12 and isrc.isalnum():
+                self.logger.info(f"Valid ISRC found in AcoustID result: {isrc}")
+            else:
+                if isrc:
+                    self.logger.warning(f"Invalid ISRC format found in AcoustID result: {isrc}")
+                isrc = None
             
             # Extraire le label
             label = result.get("label")
@@ -870,7 +1315,13 @@ class TrackManager:
             elif "duration" in result:
                 play_duration = result["duration"]
             
-            # Créer ou récupérer la piste
+            # Si nous avons un ISRC valide, vérifier d'abord si une piste avec cet ISRC existe déjà
+            if isrc:
+                existing_track_result = await self._find_track_by_isrc(isrc, "acoustid", play_duration, station_id)
+                if existing_track_result:
+                    return existing_track_result
+            
+            # Si aucune piste existante n'a été trouvée par ISRC, créer ou récupérer la piste
             try:
                 # Utiliser _get_or_create_track pour créer ou récupérer la piste
                 track = await self._get_or_create_track(
@@ -888,63 +1339,34 @@ class TrackManager:
                 )
                 
                 if not track:
-                    self.logger.error(f"Failed to get or create track for AcoustID match for station {station_id}")
+                    self.logger.error(f"Failed to create or get track: {title} by {artist_name}")
                     return None
                 
-                # Mettre à jour les champs manquants si nécessaire
-                updated = False
-                if isrc and not track.isrc:
-                    track.isrc = isrc
-                    updated = True
-                    self.logger.info(f"Updated track with ISRC: {isrc}")
+                # Démarrer la détection de piste
+                detection_result = self._start_track_detection(track, station_id, audio_features)
                 
-                if label and not track.label:
-                    track.label = label
-                    updated = True
-                
-                if release_date and not track.release_date:
-                    track.release_date = release_date
-                    updated = True
-                
-                if fingerprint and not track.fingerprint:
-                    track.fingerprint = fingerprint
-                    updated = True
-                
-                if updated:
-                    track.updated_at = datetime.utcnow()
-                    self.db_session.flush()
-                    self.logger.info(f"Updated existing track: {title} by {artist_name} (ISRC: {isrc})")
-                
-                # Record play time if station_id is provided
-                if station_id:
-                    self._record_play_time(station_id, track.id, play_duration)
-                
-                # Return result with enhanced information
+                # Créer le résultat final avec la structure attendue
                 return {
                     "track": {
+                        "id": track.id,
                         "title": title,
                         "artist": artist_name,
                         "album": album,
-                        "id": track.id,
                         "isrc": isrc,
                         "label": label,
-                        "release_date": release_date,
-                        "fingerprint": fingerprint[:20] + "..." if fingerprint else None  # Truncated for logging
+                        "release_date": release_date
                     },
-                    "confidence": result.get("confidence", 0.7),
+                    "confidence": result.get("confidence", 0.8),
                     "source": "acoustid",
                     "detection_method": "acoustid",
                     "play_duration": play_duration
                 }
             except Exception as e:
-                self.logger.error(f"Error finding AcoustID match: {e}")
-                import traceback
-                self.logger.error(f"Traceback: {traceback.format_exc()}")
+                self.logger.error(f"Error creating or getting track: {str(e)}")
                 return None
+                
         except Exception as e:
-            self.logger.error(f"Error in AcoustID detection: {e}")
-            import traceback
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            self.logger.error(f"Error in find_acoustid_match: {str(e)}")
             return None
     
     async def find_musicbrainz_match(self, metadata, station_id=None):
@@ -1102,60 +1524,88 @@ class TrackManager:
             self.logger.info(f"Detecting with AudD for station_id={station_id}")
             result = await self.audd_service.detect_track_with_retry(audio_data, max_retries=3)
             
-            if not result:
+            if not result or not result.get("success", False):
                 self.logger.info("No AudD match found")
                 return None
             
             # Extraire les informations de base
-            title = result.get("title", "Unknown Track")
-            artist_name = result.get("artist", "Unknown Artist")
-            album = result.get("album", "Unknown Album")
+            detection_data = result.get("detection", {})
+            title = detection_data.get("title", "Unknown Track")
+            artist_name = detection_data.get("artist", "Unknown Artist")
+            album = detection_data.get("album", "Unknown Album")
             
             # Extraire l'ISRC - vérifier plusieurs sources possibles
             isrc = None
+            isrc_sources = []
+            
             # Vérifier dans le résultat principal
-            if "isrc" in result:
-                isrc = result["isrc"]
-                self.logger.info(f"ISRC found in main result: {isrc}")
+            if "isrc" in detection_data:
+                isrc_sources.append(("main", detection_data["isrc"]))
             
             # Vérifier dans Apple Music
-            elif "apple_music" in result and result["apple_music"]:
-                if "isrc" in result["apple_music"]:
-                    isrc = result["apple_music"]["isrc"]
-                    self.logger.info(f"ISRC found in Apple Music: {isrc}")
+            if "apple_music" in detection_data and detection_data["apple_music"] and "isrc" in detection_data["apple_music"]:
+                isrc_sources.append(("apple_music", detection_data["apple_music"]["isrc"]))
             
             # Vérifier dans Spotify
-            elif "spotify" in result and result["spotify"]:
-                if "external_ids" in result["spotify"] and "isrc" in result["spotify"]["external_ids"]:
-                    isrc = result["spotify"]["external_ids"]["isrc"]
-                    self.logger.info(f"ISRC found in Spotify: {isrc}")
+            if "spotify" in detection_data and detection_data["spotify"] and "external_ids" in detection_data["spotify"] and "isrc" in detection_data["spotify"]["external_ids"]:
+                isrc_sources.append(("spotify", detection_data["spotify"]["external_ids"]["isrc"]))
             
             # Vérifier dans Deezer
-            elif "deezer" in result and result["deezer"]:
-                if "isrc" in result["deezer"]:
-                    isrc = result["deezer"]["isrc"]
-                    self.logger.info(f"ISRC found in Deezer: {isrc}")
+            if "deezer" in detection_data and detection_data["deezer"] and "isrc" in detection_data["deezer"]:
+                isrc_sources.append(("deezer", detection_data["deezer"]["isrc"]))
+            
+            # Prendre le premier ISRC valide
+            for source, value in isrc_sources:
+                # Valider le format ISRC (12 caractères alphanumériques)
+                if value and isinstance(value, str) and len(value) == 12 and value.isalnum():
+                    isrc = value
+                    self.logger.info(f"Valid ISRC found in {source}: {isrc}")
+                    break
+            
+            if isrc:
+                self.logger.info(f"Using ISRC: {isrc} for track: {title} by {artist_name}")
+            else:
+                self.logger.warning(f"No valid ISRC found for track: {title} by {artist_name}")
             
             # Extraire le label - vérifier plusieurs sources possibles
             label = None
-            if "label" in result:
-                label = result["label"]
-                self.logger.info(f"Label found in main result: {label}")
-            elif "apple_music" in result and result["apple_music"] and "label" in result["apple_music"]:
-                label = result["apple_music"]["label"]
-                self.logger.info(f"Label found in Apple Music: {label}")
-            elif "spotify" in result and result["spotify"] and "label" in result["spotify"]:
-                label = result["spotify"]["label"]
-                self.logger.info(f"Label found in Spotify: {label}")
+            label_sources = []
+            
+            if "label" in detection_data:
+                label_sources.append(("main", detection_data["label"]))
+            
+            if "apple_music" in detection_data and detection_data["apple_music"] and "label" in detection_data["apple_music"]:
+                label_sources.append(("apple_music", detection_data["apple_music"]["label"]))
+            
+            if "spotify" in detection_data and detection_data["spotify"] and "label" in detection_data["spotify"]:
+                label_sources.append(("spotify", detection_data["spotify"]["label"]))
+            
+            # Prendre le premier label valide
+            for source, value in label_sources:
+                if value and isinstance(value, str):
+                    label = value
+                    self.logger.info(f"Label found in {source}: {label}")
+                    break
             
             # Extraire la date de sortie
             release_date = None
-            if "release_date" in result:
-                release_date = result["release_date"]
-            elif "apple_music" in result and result["apple_music"] and "release_date" in result["apple_music"]:
-                release_date = result["apple_music"]["release_date"]
-            elif "spotify" in result and result["spotify"] and "release_date" in result["spotify"]:
-                release_date = result["spotify"]["release_date"]
+            release_date_sources = []
+            
+            if "release_date" in detection_data:
+                release_date_sources.append(("main", detection_data["release_date"]))
+            
+            if "apple_music" in detection_data and detection_data["apple_music"] and "release_date" in detection_data["apple_music"]:
+                release_date_sources.append(("apple_music", detection_data["apple_music"]["release_date"]))
+            
+            if "spotify" in detection_data and detection_data["spotify"] and "release_date" in detection_data["spotify"]:
+                release_date_sources.append(("spotify", detection_data["spotify"]["release_date"]))
+            
+            # Prendre la première date de sortie valide
+            for source, value in release_date_sources:
+                if value and isinstance(value, str):
+                    release_date = value
+                    self.logger.info(f"Release date found in {source}: {release_date}")
+                    break
             
             # Extraire l'empreinte digitale
             fingerprint = None
@@ -1167,8 +1617,13 @@ class TrackManager:
             if "duration" in audio_features:
                 play_duration = audio_features["duration"]
             
-            # Créer ou récupérer la piste
-            track_info = result
+            # Si nous avons un ISRC valide, vérifier d'abord si une piste avec cet ISRC existe déjà
+            if isrc:
+                existing_track_result = await self._find_track_by_isrc(isrc, "audd", play_duration, station_id)
+                if existing_track_result:
+                    return existing_track_result
+            
+            # Si aucune piste existante n'a été trouvée par ISRC, créer ou récupérer la piste
             try:
                 # Utiliser _get_or_create_track pour créer ou récupérer la piste
                 track = await self._get_or_create_track(
@@ -1186,50 +1641,21 @@ class TrackManager:
                 )
                 
                 if not track:
-                    self.logger.error(f"Failed to get or create track for AudD match for station {station_id}")
+                    self.logger.error(f"Failed to create or get track: {title} by {artist_name}")
                     return None
                 
-                # Mettre à jour les champs manquants si nécessaire
-                updated = False
-                if isrc and not track.isrc:
-                    track.isrc = isrc
-                    updated = True
-                    self.logger.info(f"Updated track with ISRC: {isrc}")
-                
-                if label and not track.label:
-                    track.label = label
-                    updated = True
-                
-                if release_date and not track.release_date:
-                    track.release_date = release_date
-                    updated = True
-                
-                if fingerprint and not track.fingerprint:
-                    track.fingerprint = fingerprint
-                    updated = True
-                
-                if updated:
-                    track.updated_at = datetime.utcnow()
-                    self.db_session.flush()
-                    self.logger.info(f"Updated existing track: {title} by {artist_name} (ISRC: {isrc})")
-                
-                # Record play time if station_id is provided
-                if station_id:
-                    self._record_play_time(station_id, track.id, play_duration)
-                
-                # Return result with enhanced information
+                # Créer le résultat final avec la structure attendue
                 return {
                     "track": {
+                        "id": track.id,
                         "title": title,
                         "artist": artist_name,
                         "album": album,
-                        "id": track.id,
                         "isrc": isrc,
                         "label": label,
-                        "release_date": release_date,
-                        "fingerprint": fingerprint[:20] + "..." if fingerprint else None  # Truncated for logging
+                        "release_date": release_date
                     },
-                    "confidence": 0.8,
+                    "confidence": detection_data.get("confidence", 0.8),
                     "source": "audd",
                     "detection_method": "audd",
                     "play_duration": play_duration
@@ -1247,18 +1673,45 @@ class TrackManager:
 
     def _record_play_time(self, station_id: int, track_id: int, play_duration: float):
         """
-        Record the exact play time of a track on a station.
+        Enregistre le temps de lecture exact d'une piste sur une station et met à jour les statistiques.
+        
+        Cette méthode interne est cruciale pour maintenir des statistiques précises de lecture
+        pour chaque piste. Elle crée un nouvel enregistrement de détection dans la table
+        `track_detections` et met à jour les statistiques cumulatives dans la table
+        `station_track_stats`. Cette fonctionnalité est particulièrement importante pour
+        les pistes identifiées par leur code ISRC, car elle permet de consolider toutes
+        les statistiques de lecture pour une même piste, même si elle est détectée par
+        différentes méthodes.
+        
+        Le processus comprend:
+        1. Vérification de l'existence de la station
+        2. Création d'un nouvel enregistrement de détection
+        3. Mise à jour des statistiques cumulatives via _update_station_track_stats
+        4. Validation des changements dans la base de données
         
         Args:
-            station_id: ID of the radio station
-            track_id: ID of the track
-            play_duration: Duration of play in seconds
+            station_id (int): ID de la station radio qui diffuse la piste.
+            track_id (int): ID de la piste détectée.
+            play_duration (float): Durée de lecture en secondes.
+            
+        Raises:
+            Exception: Si une erreur survient lors de l'enregistrement, la transaction
+                      est annulée et l'erreur est journalisée.
+                      
+        Examples:
+            >>> self._record_play_time(1, 42, 180.5)  # Enregistre 3 minutes de lecture
         """
         try:
             # Get the station
             station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
             if not station:
                 self.logger.warning(f"Station with ID {station_id} not found")
+                return
+            
+            # Get the track
+            track = self.db_session.query(Track).filter(Track.id == track_id).first()
+            if not track:
+                self.logger.warning(f"Track with ID {track_id} not found")
                 return
             
             # Create a new track detection record
@@ -1274,6 +1727,32 @@ class TrackManager:
             
             # Update station track stats
             self._update_station_track_stats(station_id, track_id, timedelta(seconds=play_duration))
+            
+            # Use StatsUpdater to update all statistics
+            try:
+                # Create a detection result dictionary
+                detection_result = {
+                    "track_id": track_id,
+                    "confidence": 0.8,
+                    "detection_method": "audd"
+                }
+                
+                # Initialize StatsUpdater if not already done
+                from backend.utils.analytics.stats_updater import StatsUpdater
+                stats_updater = StatsUpdater(self.db_session)
+                
+                # Update all stats
+                stats_updater.update_all_stats(
+                    detection_result=detection_result,
+                    station_id=station_id,
+                    track=track,
+                    play_duration=timedelta(seconds=play_duration)
+                )
+                
+                self.logger.info(f"Updated all stats for track ID {track_id} on station ID {station_id}")
+            except Exception as stats_error:
+                self.logger.error(f"Error updating stats: {stats_error}")
+                # Continue with the rest of the method even if stats update fails
             
             self.db_session.commit()
             self.logger.info(f"Recorded play time for track ID {track_id} on station ID {station_id}: {play_duration} seconds")

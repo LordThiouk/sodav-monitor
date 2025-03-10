@@ -304,7 +304,6 @@ class MusicDetector:
                             track = Track(
                                 title=track_title,
                                 artist_id=artist.id,
-                                artist_name=track_artist,
                                 album=track_info.get("album", "Unknown Album"),
                                 duration=track_info.get("duration", 0),
                                 fingerprint=track_info.get("fingerprint", ""),

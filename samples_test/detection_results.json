@@ -1,1 +1,93 @@
-[]
+[
+  {
+    "success": true,
+    "detection": {
+      "track_id": 19,
+      "start_time": "2025-03-09T23:08:39.256843",
+      "confidence": 0
+    },
+    "source": "acoustid",
+    "processing_time": 7.1767799854278564,
+    "file_path": "samples_test/Dakar_Musique_20250309_023521.mp3",
+    "file_size": 352800,
+    "detection_finalized": true
+  },
+  {
+    "success": true,
+    "detection": {
+      "track_id": 18,
+      "start_time": "2025-03-09T23:08:38.984105",
+      "confidence": 0
+    },
+    "source": "acoustid",
+    "processing_time": 3.088521957397461,
+    "file_path": "samples_test/Dakar_Musique_20250309_023319.mp3",
+    "file_size": 355600,
+    "detection_finalized": true
+  },
+  {
+    "success": true,
+    "detection": {
+      "track_id": 19,
+      "start_time": "2025-03-09T23:08:37.172896",
+      "confidence": 1.0
+    },
+    "source": "local",
+    "processing_time": 0.08156204223632812,
+    "file_path": "samples_test/Dakar_Musique_20250309_023146.mp3",
+    "file_size": 350048,
+    "detection_finalized": true
+  },
+  {
+    "success": true,
+    "detection": {
+      "track_id": 17,
+      "start_time": "2025-03-09T23:08:47.384150",
+      "confidence": 0
+    },
+    "source": "acoustid",
+    "processing_time": 8.120991945266724,
+    "file_path": "samples_test/Dakar_Musique_20250309_023420.mp3",
+    "file_size": 357000,
+    "detection_finalized": true
+  },
+  {
+    "success": true,
+    "detection": {
+      "track_id": 19,
+      "start_time": "2025-03-09T23:08:44.567368",
+      "confidence": 0
+    },
+    "source": "acoustid",
+    "processing_time": 4.1064019203186035,
+    "file_path": "samples_test/Dakar_Musique_20250309_023217.mp3",
+    "file_size": 358400,
+    "detection_finalized": true
+  },
+  {
+    "success": true,
+    "detection": {
+      "track_id": 19,
+      "start_time": "2025-03-09T23:08:45.651823",
+      "confidence": 0
+    },
+    "source": "acoustid",
+    "processing_time": 3.9746358394622803,
+    "file_path": "samples_test/Dakar_Musique_20250309_023349.mp3",
+    "file_size": 357000,
+    "detection_finalized": true
+  },
+  {
+    "success": true,
+    "detection": {
+      "track_id": 18,
+      "start_time": "2025-03-09T23:08:50.358076",
+      "confidence": 0
+    },
+    "source": "acoustid",
+    "processing_time": 2.9721531867980957,
+    "file_path": "samples_test/Dakar_Musique_20250309_023248.mp3",
+    "file_size": 358400,
+    "detection_finalized": true
+  }
+]
