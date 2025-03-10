@@ -4,6 +4,32 @@ Ce document retrace les principales modifications apportées à la structure du 
 
 ## Dernières Modifications
 
+### 09/03/2025 - Implémentation de la Contrainte d'Unicité ISRC
+
+#### 1. Ajout de la Contrainte d'Unicité sur l'ISRC
+
+- **Problème identifié** : Possibilité d'avoir plusieurs pistes avec le même code ISRC dans la base de données, entraînant des doublons et des statistiques incorrectes.
+- **Solution** :
+  - Création d'un script de migration `backend/models/migrations/add_isrc_unique_constraint.py` pour nettoyer les doublons existants et ajouter une contrainte d'unicité
+  - Modification des méthodes de détection pour vérifier d'abord si une piste avec le même ISRC existe déjà
+  - Mise à jour des statistiques de lecture pour les pistes existantes au lieu de créer des doublons
+
+#### 2. Amélioration des Méthodes de Détection
+
+- **Problème identifié** : Les méthodes de détection ne vérifiaient pas systématiquement l'existence de pistes avec le même ISRC.
+- **Solution** :
+  - Modification de la méthode `find_acoustid_match` pour vérifier d'abord l'existence d'une piste avec le même ISRC
+  - Modification de la méthode `find_audd_match` pour adopter la même approche
+  - Uniformisation du format de retour des deux méthodes pour faciliter leur utilisation
+
+#### 3. Mise à jour de la Documentation
+
+- **Problème identifié** : Documentation insuffisante sur l'utilisation de l'ISRC comme identifiant principal.
+- **Solution** :
+  - Création du document `docs/migrations/isrc_unique_constraint.md` pour expliquer en détail la migration
+  - Mise à jour du document `docs/REORGANISATION.md` pour inclure les informations sur les changements récents
+  - Mise à jour du document `docs/data_storage.md` pour refléter l'importance de l'ISRC dans le stockage des données
+
 ### 08/03/2025 - Amélioration de la Réutilisation des Empreintes Digitales
 
 #### 1. Modification de l'AudioProcessor

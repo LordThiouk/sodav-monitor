@@ -2,7 +2,7 @@
 
 import logging
 from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import asyncio
 import numpy as np
@@ -459,4 +459,48 @@ class AudioProcessor:
             log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Error detecting music: {str(e)}")
             import traceback
             log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Traceback: {traceback.format_exc()}")
-            return {"error": str(e)} 
+            return {"error": str(e)}
+
+    async def _update_stats(self, station_id: int, track_id: int, play_duration: float):
+        """
+        Met à jour les statistiques après une détection réussie.
+        
+        Cette méthode utilise le StatsUpdater pour mettre à jour toutes les statistiques
+        pertinentes, y compris les statistiques de piste, d'artiste et de station.
+        
+        Args:
+            station_id: ID de la station radio
+            track_id: ID de la piste détectée
+            play_duration: Durée de lecture en secondes
+            
+        Returns:
+            None
+        """
+        try:
+            # Convertir la durée de lecture en timedelta
+            play_duration_td = timedelta(seconds=play_duration)
+            
+            # Récupérer la piste
+            track = self.db.query(Track).filter(Track.id == track_id).first()
+            if not track:
+                log_with_category(logger, "AUDIO_PROCESSOR", "warning", f"Track with ID {track_id} not found, cannot update stats")
+                return
+                
+            # Créer un dictionnaire de résultat de détection pour StatsUpdater
+            detection_result = {
+                "track_id": track_id,
+                "confidence": 0.8,  # Valeur par défaut
+                "detection_method": "audd"  # Méthode par défaut
+            }
+            
+            # Utiliser le StatsUpdater pour mettre à jour toutes les statistiques
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", 
+                f"Updating stats for track_id={track_id}, station_id={station_id}, play_duration={play_duration} seconds")
+            
+            self.stats_updater.update_all_stats(detection_result, station_id, track, play_duration_td)
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", "Stats updated successfully")
+            
+        except Exception as e:
+            log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Error updating stats: {str(e)}")
+            import traceback
+            log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Traceback: {traceback.format_exc()}") 

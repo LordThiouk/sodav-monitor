@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, Tuple
 from datetime import datetime
 import re
 import logging
@@ -109,4 +109,88 @@ def validate_subscription_frequency(frequency: Union[ReportType, str, None]) -> 
         return isinstance(frequency, ReportType)
     except Exception as e:
         logger.error(f"Error validating subscription frequency: {str(e)}")
-        return False 
+        return False
+
+def validate_isrc(isrc: str) -> Tuple[bool, Optional[str]]:
+    """
+    Valide et normalise un code ISRC.
+    
+    Format ISRC: CC-XXX-YY-NNNNN
+    - CC: Code pays (2 lettres)
+    - XXX: Code du propriétaire (3 caractères alphanumériques)
+    - YY: Année de référence (2 chiffres)
+    - NNNNN: Code de désignation (5 chiffres)
+    
+    Args:
+        isrc: Code ISRC à valider.
+        
+    Returns:
+        Tuple contenant:
+        - Un booléen indiquant si l'ISRC est valide.
+        - L'ISRC normalisé si valide, None sinon.
+        
+    Examples:
+        >>> validate_isrc("FR-Z03-14-00123")
+        (True, "FRZ0314000123")
+        >>> validate_isrc("XX-123-45-6789")
+        (False, None)
+    """
+    if not isrc or not isinstance(isrc, str):
+        logger.warning(f"ISRC invalide (type incorrect ou vide): {isrc}")
+        return False, None
+    
+    # Supprimer les tirets et les espaces, mettre en majuscules
+    normalized_isrc = re.sub(r'[\s-]', '', isrc).upper()
+    
+    # Vérifier la longueur
+    if len(normalized_isrc) != 12:
+        logger.warning(f"ISRC invalide (longueur incorrecte): {isrc} -> {normalized_isrc}")
+        return False, None
+    
+    # Vérifier le format
+    pattern = r'^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$'
+    if not re.match(pattern, normalized_isrc):
+        logger.warning(f"ISRC invalide (format incorrect): {isrc} -> {normalized_isrc}")
+        return False, None
+    
+    # Vérifier le code pays (doit être un code ISO valide)
+    country_code = normalized_isrc[:2]
+    valid_country_codes = [
+        'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AW', 'AX', 'AZ',
+        'BA', 'BB', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BL', 'BM', 'BN', 'BO', 'BQ', 'BR', 'BS',
+        'BT', 'BV', 'BW', 'BY', 'BZ', 'CA', 'CC', 'CD', 'CF', 'CG', 'CH', 'CI', 'CK', 'CL', 'CM', 'CN',
+        'CO', 'CR', 'CU', 'CV', 'CW', 'CX', 'CY', 'CZ', 'DE', 'DJ', 'DK', 'DM', 'DO', 'DZ', 'EC', 'EE',
+        'EG', 'EH', 'ER', 'ES', 'ET', 'FI', 'FJ', 'FK', 'FM', 'FO', 'FR', 'GA', 'GB', 'GD', 'GE', 'GF',
+        'GG', 'GH', 'GI', 'GL', 'GM', 'GN', 'GP', 'GQ', 'GR', 'GS', 'GT', 'GU', 'GW', 'GY', 'HK', 'HM',
+        'HN', 'HR', 'HT', 'HU', 'ID', 'IE', 'IL', 'IM', 'IN', 'IO', 'IQ', 'IR', 'IS', 'IT', 'JE', 'JM',
+        'JO', 'JP', 'KE', 'KG', 'KH', 'KI', 'KM', 'KN', 'KP', 'KR', 'KW', 'KY', 'KZ', 'LA', 'LB', 'LC',
+        'LI', 'LK', 'LR', 'LS', 'LT', 'LU', 'LV', 'LY', 'MA', 'MC', 'MD', 'ME', 'MF', 'MG', 'MH', 'MK',
+        'ML', 'MM', 'MN', 'MO', 'MP', 'MQ', 'MR', 'MS', 'MT', 'MU', 'MV', 'MW', 'MX', 'MY', 'MZ', 'NA',
+        'NC', 'NE', 'NF', 'NG', 'NI', 'NL', 'NO', 'NP', 'NR', 'NU', 'NZ', 'OM', 'PA', 'PE', 'PF', 'PG',
+        'PH', 'PK', 'PL', 'PM', 'PN', 'PR', 'PS', 'PT', 'PW', 'PY', 'QA', 'RE', 'RO', 'RS', 'RU', 'RW',
+        'SA', 'SB', 'SC', 'SD', 'SE', 'SG', 'SH', 'SI', 'SJ', 'SK', 'SL', 'SM', 'SN', 'SO', 'SR', 'SS',
+        'ST', 'SV', 'SX', 'SY', 'SZ', 'TC', 'TD', 'TF', 'TG', 'TH', 'TJ', 'TK', 'TL', 'TM', 'TN', 'TO',
+        'TR', 'TT', 'TV', 'TW', 'TZ', 'UA', 'UG', 'UM', 'US', 'UY', 'UZ', 'VA', 'VC', 'VE', 'VG', 'VI',
+        'VN', 'VU', 'WF', 'WS', 'YE', 'YT', 'ZA', 'ZM', 'ZW'
+    ]
+    
+    if country_code not in valid_country_codes:
+        logger.warning(f"ISRC invalide (code pays incorrect): {country_code}")
+        return False, None
+    
+    # Vérifier l'année (doit être entre 00 et 99)
+    year_code = normalized_isrc[5:7]
+    try:
+        year = int(year_code)
+        if year < 0 or year > 99:
+            logger.warning(f"ISRC invalide (année incorrecte): {year_code}")
+            return False, None
+    except ValueError:
+        logger.warning(f"ISRC invalide (année non numérique): {year_code}")
+        return False, None
+    
+    # Formater l'ISRC avec des tirets pour l'affichage (optionnel)
+    formatted_isrc = f"{normalized_isrc[:2]}-{normalized_isrc[2:5]}-{normalized_isrc[5:7]}-{normalized_isrc[7:]}"
+    logger.debug(f"ISRC valide: {isrc} -> {normalized_isrc} (formaté: {formatted_isrc})")
+    
+    return True, normalized_isrc 

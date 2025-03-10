@@ -163,7 +163,7 @@ class Track(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     artist_id = Column(Integer, ForeignKey("artists.id"))
-    isrc = Column(String, index=True)
+    isrc = Column(String(12), unique=True, index=True)
     label = Column(String)
     album = Column(String)
     duration = Column(Interval)

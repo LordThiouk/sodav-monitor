@@ -1,6 +1,27 @@
-# Tests du Système SODAV Monitor
+# Tests
 
-Ce dossier contient la documentation des tests pour le système SODAV Monitor.
+Ce dossier contient la documentation relative aux tests du projet SODAV Monitor.
+
+## Stratégie de Test
+
+- **testing_strategy.md** : Documentation détaillée sur la stratégie de test
+- **test_coverage.md** : Objectifs et mesures de couverture de test
+
+## Tests Unitaires
+
+- **unit_testing_guide.md** : Guide pour écrire des tests unitaires
+- **isrc_uniqueness_test.md** : Tests pour la contrainte d'unicité ISRC
+
+## Tests d'Intégration
+
+- **integration_testing.md** : Documentation spécifique pour les tests d'intégration
+- **api_integration_tests.md** : Tests d'intégration pour les API
+
+## Tests de Détection
+
+- **detection_testing_guide.md** : Guide pour tester le système de détection
+- **test_acoustid_detection.md** : Tests pour la détection via AcoustID
+- **test_audd_detection.md** : Tests pour la détection via AudD
 
 ## Tests de Détection Musicale
 

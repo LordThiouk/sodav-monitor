@@ -564,3 +564,147 @@ tests/api/
 - Performance benchmarks must meet targets
 - Code coverage must remain above 90%
 - No regression in existing functionality
+
+## Tests de Contraintes
+
+### Test de la Contrainte d'Unicité ISRC
+
+La contrainte d'unicité sur la colonne ISRC de la table `tracks` est un élément critique pour maintenir l'intégrité des données. Des tests spécifiques ont été développés pour vérifier son bon fonctionnement.
+
+#### Structure des Tests
+```
+tests/
+└── test_isrc_uniqueness.py    # Tests de la contrainte d'unicité ISRC
+```
+
+#### Stratégies de Test
+1. **Test d'Unicité**
+   - Vérifier que la base de données n'accepte pas deux pistes avec le même ISRC
+   - Tester la levée d'exceptions appropriées (IntegrityError)
+   - Vérifier le comportement de rollback en cas d'erreur
+   
+   ```python
+   def test_isrc_uniqueness_constraint(self):
+       # Créer une première piste avec un ISRC
+       track1 = Track(title="Test Track 1", artist_id=self.artist.id, isrc="FR1234567890")
+       self.db_session.add(track1)
+       self.db_session.commit()
+       
+       # Tenter de créer une deuxième piste avec le même ISRC
+       track2 = Track(title="Test Track 2", artist_id=self.artist.id, isrc="FR1234567890")
+       self.db_session.add(track2)
+       
+       # Vérifier que la contrainte d'unicité est appliquée
+       with self.assertRaises(IntegrityError):
+           self.db_session.commit()
+   ```
+
+2. **Test de Détection avec ISRC**
+   - Vérifier que les méthodes de détection (`find_acoustid_match`, `find_audd_match`) utilisent correctement l'ISRC pour retrouver les pistes existantes
+   - Tester avec des ISRC simulés
+   - Vérifier que les pistes existantes sont correctement retrouvées
+   
+   ```python
+   async def test_acoustid_match_with_isrc(self):
+       # Créer une piste avec un ISRC unique
+       test_isrc = f"FR{uuid.uuid4().hex[:10].upper()}"
+       track = Track(title="Test Track", artist_id=self.artist.id, isrc=test_isrc)
+       self.db_session.add(track)
+       self.db_session.commit()
+       
+       # Simuler un résultat AcoustID avec le même ISRC
+       acoustid_result = {"recordings": [{"isrc": [test_isrc]}]}
+       
+       # Vérifier que la méthode retrouve la piste existante
+       result = await self.track_manager.find_acoustid_match(audio_features, acoustid_result)
+       self.assertEqual(result['track']['id'], track.id)
+       self.assertEqual(result['confidence'], 1.0)  # Confiance maximale pour une correspondance ISRC
+   ```
+
+3. **Test d'Intégration avec les Services de Détection**
+   - Tester l'intégration complète avec les services de détection
+   - Vérifier que les statistiques de lecture sont correctement mises à jour pour les pistes existantes
+   - Tester avec des fichiers audio réels
+
+#### Résultats
+- Contrainte d'unicité correctement appliquée
+- Méthodes de détection utilisant efficacement l'ISRC
+- Statistiques de lecture correctement mises à jour
+- Pas de création de doublons dans la base de données
+
+Pour plus de détails sur ces tests, voir le document `docs/tests/isrc_uniqueness_test.md`.
+
+# Stratégie de Test
+
+Ce document décrit la stratégie de test pour le projet SODAV Monitor.
+
+## Organisation des Tests
+
+Tous les tests sont situés dans le dossier `backend/tests/`. Les tests sont organisés par fonctionnalité et suivent la convention de nommage `test_<nom_de_la_fonction>.py`.
+
+## Types de Tests
+
+### Tests Unitaires
+
+Les tests unitaires testent des composants individuels de l'application. Ils sont rapides à exécuter et permettent de vérifier que chaque composant fonctionne correctement de manière isolée.
+
+Exemples de tests unitaires :
+- `test_isrc_uniqueness.py` : Teste la contrainte d'unicité des codes ISRC
+- `test_stats_updater.py` : Teste la classe StatsUpdater pour la mise à jour des statistiques
+
+### Tests d'Intégration
+
+Les tests d'intégration testent l'interaction entre plusieurs composants de l'application. Ils sont plus lents à exécuter mais permettent de vérifier que les composants fonctionnent correctement ensemble.
+
+Exemples de tests d'intégration :
+- `test_api_endpoints.py` : Teste les endpoints de l'API
+- `test_stats_integration.py` : Teste l'intégration entre les différentes classes pour la mise à jour des statistiques
+
+### Tests de Bout en Bout
+
+Les tests de bout en bout testent l'application dans son ensemble, du début à la fin d'un processus. Ils sont les plus lents à exécuter mais permettent de vérifier que l'application fonctionne correctement dans son ensemble.
+
+Exemples de tests de bout en bout :
+- `test_detection_pipeline.py` : Teste le pipeline de détection complet
+
+## Couverture de Test
+
+L'objectif est d'atteindre une couverture de test d'au moins 90% pour le code de production. Les parties critiques du code, comme le pipeline de détection et la mise à jour des statistiques, devraient avoir une couverture de 100%.
+
+## Exécution des Tests
+
+Pour exécuter tous les tests :
+
+```bash
+pytest backend/tests/
+```
+
+Pour exécuter un test spécifique :
+
+```bash
+pytest backend/tests/test_isrc_uniqueness.py
+```
+
+Pour exécuter les tests avec couverture :
+
+```bash
+pytest --cov=backend backend/tests/
+```
+
+## Tests Récemment Ajoutés
+
+### Tests de Mise à Jour des Statistiques
+
+Deux nouveaux tests ont été ajoutés pour vérifier que les statistiques sont correctement mises à jour après une détection :
+
+1. **Test Unitaire** : `test_stats_updater.py`
+   - Teste la classe `StatsUpdater` de manière isolée
+   - Vérifie que les méthodes de mise à jour des statistiques fonctionnent correctement
+   - Utilise des mocks pour simuler la base de données
+
+2. **Test d'Intégration** : `test_stats_integration.py`
+   - Teste l'intégration entre `TrackManager`, `AudioProcessor` et `StatsUpdater`
+   - Vérifie que les statistiques sont correctement mises à jour après une détection
+   - Utilise une base de données SQLite en mémoire pour les tests
+
+Ces tests ont été ajoutés suite à la découverte de problèmes dans la mise à jour des statistiques, où les statistiques n'étaient pas correctement mises à jour après une détection réussie. Les problèmes ont été documentés dans `docs/troubleshooting/stats_update_issues.md`.

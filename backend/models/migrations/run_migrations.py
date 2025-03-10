@@ -15,8 +15,8 @@ def run_migrations():
         alembic_cfg = Config(os.path.join(migrations_dir, "alembic.ini"))
         alembic_cfg.set_main_option("script_location", migrations_dir)
         
-        # Run the migration to our latest merge revision
-        command.upgrade(alembic_cfg, "20240321_006")
+        # Run the migration to our latest revision
+        command.upgrade(alembic_cfg, "20250303_025434")
         print("✅ Migrations completed successfully")
         
     except Exception as e:
