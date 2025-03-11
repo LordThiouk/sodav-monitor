@@ -1,4 +1,8 @@
 ---
+description: 
+globs: 
+---
+---
 description: Règles pour les Tests Unitaires sur Cursor AI (sodav-monitor)
 globs: *
 ---

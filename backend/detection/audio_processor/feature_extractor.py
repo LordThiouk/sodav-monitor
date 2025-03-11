@@ -9,6 +9,8 @@ import io
 from datetime import datetime
 from backend.utils.logging_config import setup_logging
 from backend.logs.log_manager import LogManager
+import scipy
+from scipy import signal
 
 # Initialize logging
 log_manager = LogManager()
@@ -118,43 +120,49 @@ class FeatureExtractor:
             mfccs = librosa.feature.mfcc(
                 y=audio_mono, 
                 sr=self.sample_rate,
-                n_mfcc=13,
+                n_mfcc=20,
                 n_fft=self.n_fft,
                 hop_length=self.hop_length
             )
-            mfcc_mean = np.mean(mfccs, axis=1).tolist()
-        except Exception as e:
-            logger.error(f"Error extracting MFCCs: {str(e)}")
-            mfcc_mean = [0] * 13  # Valeurs par défaut en cas d'erreur
-        
-        # Extraire les caractéristiques de chroma (représentation des hauteurs musicales)
-        try:
+            mfcc_mean = np.mean(mfccs, axis=1)
+            
+            # Extraire les caractéristiques Chroma
             chroma = librosa.feature.chroma_stft(
                 y=audio_mono, 
                 sr=self.sample_rate,
                 n_fft=self.n_fft,
                 hop_length=self.hop_length
             )
-            chroma_mean = np.mean(chroma, axis=1).tolist()
-        except Exception as e:
-            logger.error(f"Error extracting chroma features: {str(e)}")
-            chroma_mean = [0] * 12  # Valeurs par défaut en cas d'erreur
-        
-        # Extraire le centroïde spectral (brillance du son)
-        try:
+            chroma_mean = np.mean(chroma, axis=1)
+            
+            # Extraire le centroïde spectral
             spectral_centroid = librosa.feature.spectral_centroid(
                 y=audio_mono, 
                 sr=self.sample_rate,
                 n_fft=self.n_fft,
                 hop_length=self.hop_length
             )
-            spectral_centroid_mean = float(np.mean(spectral_centroid))
-        except Exception as e:
-            logger.error(f"Error extracting spectral centroid: {str(e)}")
-            spectral_centroid_mean = 0.0  # Valeur par défaut en cas d'erreur
-        
-        # Détecter le tempo et la force rythmique
-        try:
+            spectral_centroid_mean = np.mean(spectral_centroid)
+            
+            # Extraire le contraste spectral
+            spectral_contrast = librosa.feature.spectral_contrast(
+                y=audio_mono, 
+                sr=self.sample_rate,
+                n_fft=self.n_fft,
+                hop_length=self.hop_length
+            )
+            
+            # Extraire le Mel-spectrogramme
+            mel_spectrogram = librosa.feature.melspectrogram(
+                y=audio_mono, 
+                sr=self.sample_rate,
+                n_mels=self.n_mels,
+                n_fft=self.n_fft,
+                hop_length=self.hop_length,
+                window=scipy.signal.windows.hann if hasattr(scipy.signal, 'windows') else scipy.signal.hann
+            )
+            
+            # Calculer le tempo
             onset_env = librosa.onset.onset_strength(
                 y=audio_mono, 
                 sr=self.sample_rate
@@ -163,40 +171,17 @@ class FeatureExtractor:
                 onset_envelope=onset_env, 
                 sr=self.sample_rate
             )
-            rhythm_strength = float(np.mean(onset_env))
-        except Exception as e:
-            logger.error(f"Error detecting tempo: {str(e)}")
-            tempo = 0.0
-            rhythm_strength = 0.0  # Valeurs par défaut en cas d'erreur
-        
-        # Calculer l'empreinte digitale audio (simulée ici)
-        fingerprint = self._calculate_fingerprint(audio_mono)
-        
-        # Extract mel spectrogram
-        try:
-            mel_spectrogram = librosa.feature.melspectrogram(
-                y=audio_mono,
-                sr=self.sample_rate,
-                n_fft=self.n_fft,
-                hop_length=self.hop_length,
-                n_mels=self.n_mels
-            )
-        except Exception as e:
-            logger.error(f"Error extracting mel spectrogram: {str(e)}")
-            mel_spectrogram = np.zeros((self.n_mels, 10))  # Default value
             
-        # Extract spectral contrast
-        try:
-            spectral_contrast = librosa.feature.spectral_contrast(
-                y=audio_mono,
-                sr=self.sample_rate,
-                n_fft=self.n_fft,
-                hop_length=self.hop_length
-            )
-        except Exception as e:
-            logger.error(f"Error extracting spectral contrast: {str(e)}")
-            spectral_contrast = np.zeros((7, 10))  # Default value
+            # Calculer la force rythmique
+            rhythm_strength = self._calculate_rhythm_strength(mel_spectrogram)
             
+            # Calculer l'empreinte digitale
+            fingerprint = self._calculate_fingerprint(audio_mono)
+            
+        except Exception as e:
+            logger.error(f"Error extracting features: {e}")
+            raise ValueError(f"Error extracting features: {e}")
+        
         # Prepare features for is_music method
         music_detection_features = {
             "mel_spectrogram": mel_spectrogram,
@@ -211,6 +196,7 @@ class FeatureExtractor:
         # Assembler toutes les caractéristiques
         features = {
             "play_duration": play_duration,
+            "duration": play_duration,  # Ajouter la durée sous le nom 'duration' pour compatibilité
             "mfcc_mean": mfcc_mean,
             "chroma_mean": chroma_mean,
             "spectral_centroid_mean": spectral_centroid_mean,
@@ -221,7 +207,7 @@ class FeatureExtractor:
             "confidence": music_confidence
         }
         
-        logger.debug(f"Extracted features with play_duration: {play_duration:.2f} seconds")
+        logger.debug(f"Extracted features with duration: {play_duration:.2f} seconds")
         
         return features
     

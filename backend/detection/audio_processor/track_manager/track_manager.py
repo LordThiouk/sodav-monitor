@@ -66,11 +66,16 @@ class TrackManager:
         try:
             log_with_category(logger, "TRACK_MANAGER", "info", f"Processing track for station ID: {station_id}")
             
+            # Extraire la durée des caractéristiques
+            duration = features.get("duration", features.get("play_duration", 0))
+            
             # 1. Rechercher une correspondance locale
             result = await self.track_finder.find_local_match(features)
             if result:
                 log_with_category(logger, "TRACK_MANAGER", "info", 
                                  f"Found local match: {result['track']['title']} by {result['track']['artist']}")
+                # Ajouter la durée au résultat
+                result["duration"] = duration
                 return self.stats_recorder.record_detection(result, station_id)
             
             # 2. Si aucune correspondance locale n'est trouvée, vérifier si un ISRC est disponible
@@ -80,6 +85,8 @@ class TrackManager:
                 if isrc_result:
                     log_with_category(logger, "TRACK_MANAGER", "info", 
                                      f"Found match by ISRC: {isrc_result['track']['title']} by {isrc_result['track']['artist']}")
+                    # Ajouter la durée au résultat
+                    isrc_result["duration"] = duration
                     return self.stats_recorder.record_detection(isrc_result, station_id)
             
             # 3. Si toujours aucune correspondance, essayer les services externes
@@ -99,50 +106,37 @@ class TrackManager:
                 track = await self.track_creator.get_or_create_track(
                     title=track_info.get("title", "Unknown Track"),
                     artist_id=artist_id,
-                    album=track_info.get("album", "Unknown Album"),
+                    album=track_info.get("album"),
                     isrc=track_info.get("isrc"),
-                    label=track_info.get("label"),
-                    release_date=track_info.get("release_date"),
-                    duration=track_info.get("duration", 0)
+                    release_date=track_info.get("release_date")
                 )
                 
                 if not track:
                     log_with_category(logger, "TRACK_MANAGER", "error", "Failed to create track")
                     return {"error": "Failed to create track"}
                 
-                # Enregistrer la détection
-                return self.stats_recorder.start_track_detection(track, station_id, {
+                # Enregistrer l'empreinte digitale si disponible
+                fingerprint = features.get("fingerprint")
+                if fingerprint:
+                    await self.fingerprint_handler.store_fingerprint(track.id, fingerprint)
+                
+                # Préparer le résultat pour l'enregistrement des statistiques
+                detection_result = {
+                    "track": {
+                        "id": track.id,
+                        "title": track.title,
+                        "artist": track_info.get("artist", "Unknown Artist")
+                    },
                     "confidence": external_result.get("confidence", 0.8),
-                    "detection_method": external_result.get("detection_method", "external")
-                })
+                    "method": external_result.get("method", "external"),
+                    "duration": duration  # Ajouter la durée au résultat
+                }
+                
+                return self.stats_recorder.record_detection(detection_result, station_id)
             
-            # 4. Si toujours aucune correspondance, créer une piste inconnue
-            log_with_category(logger, "TRACK_MANAGER", "info", "No match found, creating unknown track")
-            
-            artist_id = await self.track_creator.get_or_create_artist("Unknown Artist")
-            if not artist_id:
-                log_with_category(logger, "TRACK_MANAGER", "error", "Failed to create artist")
-                return {"error": "Failed to create artist"}
-            
-            # Extraire la durée des caractéristiques si disponible
-            duration = features.get("duration", 0)
-            
-            track = await self.track_creator.get_or_create_track(
-                title="Unknown Track",
-                artist_id=artist_id,
-                album="Unknown Album",
-                duration=duration
-            )
-            
-            if not track:
-                log_with_category(logger, "TRACK_MANAGER", "error", "Failed to create track")
-                return {"error": "Failed to create track"}
-            
-            # Démarrer le suivi de la piste inconnue
-            return self.stats_recorder.start_track_detection(track, station_id, {
-                "confidence": 0.5,
-                "detection_method": "unknown"
-            })
+            # 4. Si aucune correspondance n'est trouvée, retourner une erreur
+            log_with_category(logger, "TRACK_MANAGER", "warning", "No match found for track")
+            return {"error": "No match found for track"}
             
         except Exception as e:
             log_with_category(logger, "TRACK_MANAGER", "error", f"Error processing track: {e}")

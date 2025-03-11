@@ -1,0 +1,75 @@
+---
+description: Pour tester le play duration tu dois reproduire tous le cycle detection en utilisant tous les composants nécéssaire, pas de simulations ou de mocks, on doit connaitre le temps de jeu éxacte des sons sur les stations.
+globs: *
+---
+Pour tester le play duration tu dois reproduire tous le cycle detection en utilisant tous les composants nécéssaire, pas de simulations ou de mocks, on doit connaitre le temps de jeu éxacte des sons sur les stations.
+
+L’objectif est d’avoir une mesure **précise et fiable** de la durée de diffusion de chaque musique détectée sur une station de radio.  
+
+---
+
+### **📌 1. Détection et Suivi en Temps Réel**
+✅ **Démarrer un timer** lorsqu'un son est détecté.  
+✅ **Vérifier en continu** si le même son est toujours joué.  
+✅ **Arrêter le timer** lorsque le son change ou que le silence est détecté.  
+✅ **Enregistrer la durée de lecture exacte** dans `play_duration`.  
+
+---
+
+### **📌 2. Priorisation des Détections**
+L'algorithme suit ces étapes pour chaque son détecté :  
+1️⃣ **Détection locale** → Vérifier si le son est déjà enregistré avec son empreinte (`fingerprint`).  
+2️⃣ **Détection via MusicBrainz** → Si échec local, interroger la base externe.  
+3️⃣ **Détection via Audd.io** → Dernier recours pour identifier la musique.  
+
+---
+
+### **📌 3. Conditions de Fin d’un Son**
+Un son est considéré comme **terminé** lorsque :  
+✔ **Un autre son est détecté** (nouvelle empreinte `fingerprint`).  
+✔ **Un silence est détecté** (ex. absence d’audio sur 2-3 sec).  
+✔ **Le flux change** (ex. changement de programme radio).  
+
+---
+
+### **📌 4. Données Enregistrées pour Chaque Détection**
+À chaque détection, les informations suivantes doivent être **mises à jour** :  
+✔ `track_id` → Identifiant unique de la musique.  
+✔ `station_id` → Identifiant de la station de radio.  
+✔ `confidence` → Niveau de confiance de la détection.  
+✔ `detected_at` → Timestamp de début.  
+✔ `play_duration` → Durée exacte du son joué.  
+✔ `fingerprint` & `fingerprint_raw` → Empreinte acoustique pour future comparaison.  
+
+---
+
+### **📌 5. Mise à Jour Automatique des Statistiques**
+Chaque nouvelle détection doit :  
+🔄 **Mettre à jour `TrackStats`** → Nombre de lectures, durée totale, dernière détection.  
+🔄 **Mettre à jour `StationStats`** → Temps total de musique joué par station.  
+🔄 **Mettre à jour `ArtistStats`** → Durée cumulée par artiste.  
+
+---
+
+### **📌 6. Gestion des Cas Particuliers**
+⚠ **Si une coupure de flux est détectée** → Enregistrer l’arrêt du son et ignorer la coupure.  
+⚠ **Si un son redémarre après une pause courte** → Fusionner les lectures si elles sont à moins de **5 secondes** d’intervalle.  
+⚠ **Si un son non identifié est joué plusieurs fois** → Sauvegarder l’empreinte pour une future reconnaissance.  
+
+---
+
+### **🚀 Application des Règles**
+✔ **Implémenter ces règles dans `TrackDetection` et `TrackStats`.**  
+✔ **Intégrer un test automatisé pour vérifier que `play_duration` est exact.**  
+✔ **Synchroniser avec Cursor AI pour assurer leur application.**  
+ 4. Tests de Résilience et Performance
+✅ Tester la robustesse de la détection en simulant :
+
+Changements de flux radio (ex: passage d’un son à un autre)
+Détections multiples simultanées
+Temps de réponse de l’algorithme
+✅ Vérifier que le système ne crée pas de doublons en cas de détection rapprochée du même son.
+
+---
+
+🎯 **Objectif Final** : Avoir des **données précises et exploitables** pour l’analyse du temps de diffusion des musiques sur chaque station en évitant les erreurs et doublons. 🚀

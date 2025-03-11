@@ -22,11 +22,20 @@ backend/tests/integration/
 ├── api/                     # API integration tests
 │   └── test_api_integration.py
 ├── detection/               # Detection system integration tests
-│   └── test_detection_integration.py
+│   ├── test_detection_integration.py
+│   └── test_track_manager_system.py  # Track Manager system integration tests
 ├── analytics/               # Analytics system integration tests
 │   └── test_analytics_integration.py
 ├── conftest.py              # Shared fixtures for integration tests
 └── README.md                # Documentation for integration tests
+```
+
+Additionally, component-level integration tests are located in their respective module directories:
+
+```
+backend/tests/detection/audio_processor/
+├── test_track_manager_integration.py  # Track Manager component integration tests
+└── ...
 ```
 
 ## Test Fixtures
@@ -41,6 +50,162 @@ Integration tests use fixtures defined in `conftest.py` to set up the test envir
 ## Test Data
 
 Integration tests create test data in the database as needed. This data is cleaned up after the tests are run to avoid polluting the database.
+
+## Track Manager Integration Tests
+
+The Track Manager has been refactored into multiple specialized components, requiring comprehensive integration testing to ensure these components work together correctly.
+
+### Integration Testing Approach
+
+The Track Manager integration tests are organized into two levels:
+
+1. **Component Integration Tests**: Verify interactions between the different classes of the Track Manager
+2. **System Integration Tests**: Verify interactions of the Track Manager with the database and other system components
+
+### Component Integration Tests
+
+Component integration tests are located in `backend/tests/detection/audio_processor/test_track_manager_integration.py` and focus on verifying that the different classes of the Track Manager interact correctly with each other. These tests use mocks to isolate the tests from external dependencies like the database.
+
+Key test cases include:
+
+- **test_track_creation_integration**: Verifies the integration between TrackManager and TrackCreator for track creation
+- **test_local_detection_integration**: Verifies the integration between TrackManager and TrackFinder for local detection
+- **test_isrc_detection_integration**: Verifies the integration for ISRC-based detection
+- **test_external_detection_integration**: Verifies the integration with external detection services
+- **test_fingerprint_integration**: Verifies the integration with the fingerprint handler
+- **test_stats_recording_integration**: Verifies the integration with the statistics recorder
+- **test_full_detection_pipeline_integration**: Verifies the complete detection pipeline
+
+#### Example Component Integration Test
+
+```python
+@pytest.mark.asyncio
+async def test_local_detection_integration(mock_db_session, mock_track, mock_features):
+    """
+    Test the integration between TrackManager and TrackFinder for local detection.
+    
+    This test verifies that the TrackManager correctly delegates to TrackFinder
+    for local track detection and then to StatsRecorder for recording the detection.
+    """
+    # Configure the mocks
+    track_finder = MagicMock(spec=TrackFinder)
+    track_finder.find_local_match = AsyncMock(return_value={
+        "track": {
+            "id": 1,
+            "title": "Test Track",
+            "artist": "Test Artist"
+        },
+        "confidence": 0.9,
+        "method": "local"
+    })
+    
+    # ... other mocks ...
+    
+    # Create the TrackManager with mocked components
+    track_manager = TrackManager(db_session=mock_db_session)
+    
+    # Call the method under test
+    result = await track_manager.process_track(mock_features, station_id=1)
+    
+    # Verify the correct methods were called
+    track_finder.find_local_match.assert_called_once_with(mock_features)
+    stats_recorder.record_detection.assert_called_once()
+    
+    # Verify the result
+    assert result["success"] is True
+    assert result["track_id"] == 1
+```
+
+### System Integration Tests
+
+System integration tests are located in `backend/tests/integration/detection/test_track_manager_system.py` and focus on verifying that the Track Manager works correctly with real database interactions and other system components. These tests use real database sessions and only mock external services like AcoustID and AudD.
+
+Key test cases include:
+
+- **test_local_detection_system**: Tests local detection with real database interactions
+- **test_isrc_detection_system**: Tests ISRC-based detection with real database interactions
+- **test_external_detection_system**: Tests external detection with real database interactions
+- **test_stats_update_system**: Tests that statistics are updated correctly after detection
+- **test_full_detection_pipeline_system**: Tests the complete detection pipeline with real components
+
+#### Example System Integration Test
+
+```python
+@pytest.mark.asyncio
+async def test_isrc_detection_system(self, db_session: Session, test_station: RadioStation, 
+                                    test_track: Track, test_features: dict):
+    """
+    Test the ISRC-based detection with real database interactions.
+    
+    This test:
+    1. Creates a real track with ISRC in the database
+    2. Configures the TrackManager to find this track by ISRC
+    3. Verifies that the detection is properly recorded
+    """
+    # Create a TrackManager instance
+    track_manager = TrackManager(db_session)
+    
+    # Add the ISRC to the features
+    features = test_features.copy()
+    features["isrc"] = test_track.isrc
+    
+    # Mock the find_local_match to fail
+    with patch('backend.detection.audio_processor.track_manager.track_finder.TrackFinder.find_local_match', 
+              new_callable=AsyncMock) as mock_find_local:
+        mock_find_local.return_value = None
+        
+        # Process the track
+        result = await track_manager.process_track(features, station_id=test_station.id)
+        
+        # Verify the result
+        assert result["success"] is True
+        assert "track_id" in result
+        assert "detection_id" in result
+        
+        # Verify the detection was recorded in the database
+        detection = db_session.query(TrackDetection).filter(
+            TrackDetection.id == result["detection_id"]
+        ).first()
+        
+        assert detection is not None
+        assert detection.track_id == test_track.id
+        assert detection.station_id == test_station.id
+        assert detection.method == "isrc"
+```
+
+### Running Track Manager Integration Tests
+
+To run the component integration tests:
+
+```bash
+cd backend
+python -m pytest tests/detection/audio_processor/test_track_manager_integration.py -v
+```
+
+To run the system integration tests:
+
+```bash
+cd backend
+python -m pytest tests/integration/detection/test_track_manager_system.py -v
+```
+
+To run all Track Manager integration tests:
+
+```bash
+cd backend
+python -m pytest tests/detection/audio_processor/test_track_manager_integration.py tests/integration/detection/test_track_manager_system.py -v
+```
+
+### Troubleshooting Track Manager Integration Tests
+
+Common issues with Track Manager integration tests include:
+
+1. **Mocking Issues**: Ensure that all necessary methods are properly mocked and return appropriate values
+2. **Database Connection Issues**: Verify that the database session is properly configured
+3. **Asynchronous Test Issues**: Make sure all async tests are properly decorated with `@pytest.mark.asyncio`
+4. **Component Initialization**: Ensure that the TrackManager is initialized correctly with the appropriate dependencies
+
+If tests are failing, check the logs for specific error messages and verify that the test environment is properly set up.
 
 ## Model and Schema Considerations
 
@@ -92,6 +257,17 @@ Detection system integration tests verify that the detection system works correc
 
 1. **Detection Pipeline Test**: Tests the complete detection pipeline, including creating a sample audio, processing the audio through the feature extractor, processing the features through the track manager, and verifying the detection is saved in the database.
 2. **Hierarchical Detection Test**: Tests the hierarchical detection process, including trying local detection, MusicBrainz detection, and Audd detection.
+3. **Play Duration Tracking Test**: Tests the tracking of play duration for songs on stations, ensuring that the system captures and records the exact duration of each song played on each station. 
+
+   Ces tests suivent le cycle complet de détection en utilisant des données réelles de stations de radio sénégalaises. Ils vérifient que :
+   - La durée exacte de lecture est capturée à partir des flux audio
+   - La durée est correctement enregistrée dans la base de données
+   - Les statistiques sont mises à jour avec les durées précises
+   - Les durées peuvent varier entre différentes stations
+
+   Une amélioration majeure récente est la capacité de capturer l'audio jusqu'à ce que le son s'arrête naturellement, en détectant les silences ou les changements significatifs dans le contenu audio. Cette approche garantit que la durée exacte de chaque morceau est mesurée, du début jusqu'à la fin naturelle, sans se limiter à une durée prédéfinie.
+
+   Pour plus de détails, voir [Play Duration Integration Testing](play_duration_integration_testing.md).
 
 ### Analytics System Integration Tests
 

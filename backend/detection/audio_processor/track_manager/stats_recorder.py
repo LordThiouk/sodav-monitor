@@ -361,15 +361,76 @@ class StatsRecorder:
                 log_with_category(logger, "STATS_RECORDER", "error", f"Track with ID {track_id} not found")
                 return {"error": f"Track with ID {track_id} not found"}
             
+            # Extraire la durée du résultat de détection
+            duration = detection_result.get("duration", 0)
+            
             # Terminer la piste en cours si elle existe
             self.end_current_track(station_id)
             
-            # Démarrer le suivi de la nouvelle piste
-            return self.start_track_detection(track, station_id, {
-                "confidence": detection_result.get("confidence", 0.8),
-                "detection_method": detection_result.get("detection_method", "unknown")
-            })
+            # Créer un enregistrement de détection
+            detection = TrackDetection(
+                track_id=track.id,
+                station_id=station_id,
+                detected_at=datetime.utcnow(),
+                confidence=detection_result.get("confidence", 0.8),
+                method=detection_result.get("method", "unknown"),
+                play_duration=duration  # Utiliser la durée extraite
+            )
+            self.db_session.add(detection)
+            
+            # Mettre à jour les statistiques de la station
+            station_track_stats = self.db_session.query(StationTrackStats).filter(
+                StationTrackStats.station_id == station_id,
+                StationTrackStats.track_id == track.id
+            ).first()
+            
+            if not station_track_stats:
+                # Créer de nouvelles statistiques si elles n'existent pas
+                station_track_stats = StationTrackStats(
+                    station_id=station_id,
+                    track_id=track.id,
+                    detection_count=1,
+                    total_play_duration=duration,
+                    last_detected_at=datetime.utcnow()
+                )
+                self.db_session.add(station_track_stats)
+            else:
+                # Mettre à jour les statistiques existantes
+                station_track_stats.detection_count += 1
+                station_track_stats.total_play_duration += duration
+                station_track_stats.last_detected_at = datetime.utcnow()
+            
+            # Valider les changements
+            self.db_session.commit()
+            
+            # Récupérer l'artiste
+            artist = self.db_session.query(Artist).filter(Artist.id == track.artist_id).first()
+            artist_name = artist.name if artist else "Unknown Artist"
+            
+            log_with_category(logger, "STATS_RECORDER", "info", 
+                             f"Recorded detection: {track.title} by {artist_name} on station ID {station_id} with duration {duration:.2f}s")
+            
+            # Retourner les informations de la détection
+            return {
+                "success": True,
+                "track_id": track.id,
+                "detection_id": detection.id,
+                "track": {
+                    "title": track.title,
+                    "artist": artist_name,
+                    "album": track.album,
+                    "isrc": track.isrc
+                },
+                "detection": {
+                    "time": detection.detected_at.isoformat(),
+                    "confidence": detection.confidence,
+                    "method": detection.method,
+                    "duration": duration  # Inclure la durée dans le résultat
+                },
+                "station_id": station_id
+            }
             
         except Exception as e:
             log_with_category(logger, "STATS_RECORDER", "error", f"Error recording detection: {e}")
+            self.db_session.rollback()
             return {"error": str(e)} 

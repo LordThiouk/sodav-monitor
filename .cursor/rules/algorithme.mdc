@@ -4,7 +4,7 @@ globs: *
 ---
 #### 🎧 **1. Identification du Type de Contenu**
 - Analyser le flux audio pour déterminer si le contenu est :
-  - 🎶 **Musique** : Continuer le processus de détection, utilise /api/channels/detect-music pour la detection.
+  - 🎶 **Musique** : Continuer le processus de détection, utilise /api/detect-music-all pour la detection.
   - 🎙️ **Speech** : Ignorer la détection, enregistrer seulement les métadonnées de la diffusion.
 
 --- Ne confond pas ACOUSTID_API_KEY et AUDD_API_KEY c'est deux services distincts, pour la detection assure toi que les deux soient fournis
