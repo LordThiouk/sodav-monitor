@@ -46,6 +46,9 @@ jobs:
         docker exec sodav-backend pip install --no-cache-dir PyJWT python-jose
         
         echo "Installation des dépendances de validation..."
+        # Installer typing-extensions d'abord pour éviter les conflits
+        docker exec sodav-backend pip install --no-cache-dir typing-extensions>=4.5.0 --force-reinstall
+        
         # Installer pydantic et pydantic-settings avec des versions compatibles
         docker exec sodav-backend pip install --no-cache-dir pydantic==1.10.8
         docker exec sodav-backend pip install --no-cache-dir pydantic-settings==0.2.5 python-multipart email-validator python-dotenv
