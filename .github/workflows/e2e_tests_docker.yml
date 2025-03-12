@@ -35,15 +35,30 @@ jobs:
     
     - name: Install required packages for tests
       run: |
-        # Installer les dépendances à partir du fichier requirements.txt
-        docker exec sodav-backend bash -c "cd /app && pip install -r requirements.txt"
+        # Installer les dépendances par petits groupes pour éviter les problèmes de mémoire
+        echo "Installation des dépendances de base..."
+        docker exec sodav-backend pip install --no-cache-dir pytest pytest-asyncio pytest-html
         
-        # Installer les packages supplémentaires nécessaires pour les tests
-        docker exec sodav-backend pip install pytest pytest-asyncio pytest-html httpx PyJWT python-jose pydantic-settings python-multipart aiofiles email-validator aiohttp
+        echo "Installation des dépendances HTTP..."
+        docker exec sodav-backend pip install --no-cache-dir httpx aiohttp
         
-        # Installer une version spécifique de coverage compatible avec pytest-cov
-        docker exec sodav-backend pip uninstall -y coverage pytest-cov
-        docker exec sodav-backend pip install coverage==7.2.7 pytest-cov==4.1.0 pytest-mock
+        echo "Installation des dépendances d'authentification..."
+        docker exec sodav-backend pip install --no-cache-dir PyJWT python-jose
+        
+        echo "Installation des dépendances de validation..."
+        docker exec sodav-backend pip install --no-cache-dir pydantic-settings python-multipart email-validator
+        
+        echo "Installation des dépendances de base de données..."
+        docker exec sodav-backend pip install --no-cache-dir sqlalchemy psycopg2-binary redis
+        
+        echo "Installation des dépendances FastAPI..."
+        docker exec sodav-backend pip install --no-cache-dir fastapi uvicorn aiofiles
+        
+        echo "Installation des dépendances de test spécifiques..."
+        docker exec sodav-backend pip install --no-cache-dir coverage==7.2.7 pytest-cov==4.1.0 pytest-mock
+        
+        # Créer le répertoire pour les résultats de test
+        docker exec sodav-backend mkdir -p /app/test_results
     
     - name: Run detection workflow test
       run: |
