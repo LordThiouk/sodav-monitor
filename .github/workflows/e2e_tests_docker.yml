@@ -300,42 +300,6 @@ jobs:
         docker exec sodav-backend bash -c "cd /app && python -m pyflakes backend/detection/audio_processor/core.py"
       continue-on-error: true
     
-    - name: Run detection workflow test
-      run: |
-        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_detection_workflow -v --log-cli-level=INFO --html=/app/test_results/detection_workflow_report.html"
-      continue-on-error: true
-    
-    - name: Run report generation test
-      run: |
-        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_report_generation -v --log-cli-level=INFO --html=/app/test_results/report_generation_report.html"
-      continue-on-error: true
-    
-    - name: Run play duration accuracy test
-      run: |
-        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_play_duration_accuracy -v --log-cli-level=INFO --html=/app/test_results/play_duration_report.html"
-      continue-on-error: true
-    
-    - name: Run end-to-end workflow test
-      run: |
-        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_end_to_end_workflow -v --log-cli-level=INFO --html=/app/test_results/end_to_end_workflow_report.html"
-      continue-on-error: true
-    
-    - name: Create test results directory
-      run: mkdir -p test_results
-    
-    - name: Copy test results from container
-      run: |
-        docker cp sodav-backend:/app/test_results/. ./test_results/
-    
-    - name: Upload test results
-      uses: actions/upload-artifact@v4
-      with:
-        name: e2e-test-reports
-        path: test_results/
-    
-    - name: Stop Docker containers
-      run: docker compose down
-    
     - name: Fix settings.py for pydantic 1.10.8 compatibility
       run: |
         # Créer un script pour corriger le fichier settings.py
@@ -390,4 +354,40 @@ jobs:
     - name: Check settings.py after fix
       run: |
         docker exec sodav-backend bash -c "cd /app && python -c 'from backend.core.config.settings import get_settings; print(get_settings())'"
-      continue-on-error: true 
+      continue-on-error: true
+    
+    - name: Run detection workflow test
+      run: |
+        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_detection_workflow -v --log-cli-level=INFO --html=/app/test_results/detection_workflow_report.html"
+      continue-on-error: true
+    
+    - name: Run report generation test
+      run: |
+        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_report_generation -v --log-cli-level=INFO --html=/app/test_results/report_generation_report.html"
+      continue-on-error: true
+    
+    - name: Run play duration accuracy test
+      run: |
+        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_play_duration_accuracy -v --log-cli-level=INFO --html=/app/test_results/play_duration_report.html"
+      continue-on-error: true
+    
+    - name: Run end-to-end workflow test
+      run: |
+        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_end_to_end_workflow -v --log-cli-level=INFO --html=/app/test_results/end_to_end_workflow_report.html"
+      continue-on-error: true
+    
+    - name: Create test results directory
+      run: mkdir -p test_results
+    
+    - name: Copy test results from container
+      run: |
+        docker cp sodav-backend:/app/test_results/. ./test_results/
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-test-reports
+        path: test_results/
+    
+    - name: Stop Docker containers
+      run: docker compose down 
