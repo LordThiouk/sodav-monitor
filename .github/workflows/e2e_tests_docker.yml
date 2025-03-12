@@ -46,14 +46,15 @@ jobs:
         docker exec sodav-backend pip install --no-cache-dir PyJWT python-jose
         
         echo "Installation des dépendances de validation..."
-        # Ne pas installer de versions spécifiques de pydantic pour utiliser celles du conteneur
-        docker exec sodav-backend pip install --no-cache-dir python-multipart email-validator python-dotenv
+        # Installer pydantic et pydantic-settings avec des versions compatibles
+        docker exec sodav-backend pip install --no-cache-dir pydantic==1.10.8
+        docker exec sodav-backend pip install --no-cache-dir pydantic-settings==0.2.5 python-multipart email-validator python-dotenv
         
         echo "Installation des dépendances de base de données..."
         docker exec sodav-backend pip install --no-cache-dir sqlalchemy psycopg2-binary redis
         
         echo "Installation des dépendances FastAPI..."
-        docker exec sodav-backend pip install --no-cache-dir fastapi uvicorn aiofiles
+        docker exec sodav-backend pip install --no-cache-dir fastapi==0.95.2 uvicorn aiofiles
         
         echo "Installation des dépendances d'analyse de données..."
         docker exec sodav-backend pip install --no-cache-dir pandas numpy
@@ -63,6 +64,11 @@ jobs:
         
         # Créer le répertoire pour les résultats de test
         docker exec sodav-backend mkdir -p /app/test_results
+    
+    - name: Check for indentation errors
+      run: |
+        docker exec sodav-backend bash -c "cd /app && python -m pyflakes backend/detection/audio_processor/core.py"
+      continue-on-error: true
     
     - name: Run detection workflow test
       run: |
