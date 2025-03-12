@@ -8,7 +8,10 @@ import asyncio
 import numpy as np
 import io
 from scipy.io.wavfile import write as write_wav
+import io
+from scipy.io.wavfile import write as write_wav
 from backend.models.models import RadioStation, Track, TrackDetection
+from backend.utils.logging_config import setup_logging, log_with_category
 from backend.utils.logging_config import setup_logging, log_with_category
 from backend.utils.analytics.stats_updater import StatsUpdater
 from .stream_handler import StreamHandler
@@ -43,7 +46,9 @@ class AudioProcessor:
         self.stats_updater = StatsUpdater(db_session)
         
         log_with_category(logger, "AUDIO_PROCESSOR", "info", f"AudioProcessor initialized with sample_rate={sample_rate}")
+        log_with_category(logger, "AUDIO_PROCESSOR", "info", f"AudioProcessor initialized with sample_rate={sample_rate}")
         
+    async def process_stream(self, audio_data: np.ndarray, station_id: Optional[int] = None, features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     async def process_stream(self, audio_data: np.ndarray, station_id: Optional[int] = None, features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Traite un segment audio pour détecter la présence de musique.
@@ -57,6 +62,7 @@ class AudioProcessor:
         Args:
             audio_data: Données audio sous forme de tableau numpy
             station_id: ID de la station (optionnel)
+            features: Caractéristiques audio pré-calculées (optionnel)
             features: Caractéristiques audio pré-calculées (optionnel)
             
         Returns:
@@ -100,16 +106,50 @@ class AudioProcessor:
                 log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Stored raw audio in features: {len(raw_audio)} bytes")
                 
             log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Features extracted: {features.keys()}")
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Processing audio stream for station_id={station_id}")
+            
+            # 1. Extraire les caractéristiques audio si elles ne sont pas fournies
+            if features is None:
+                features = self.feature_extractor.extract_features(audio_data)
+                
+                # Stocker les données audio brutes dans les caractéristiques
+                # Convertir le tableau numpy en bytes pour pouvoir l'envoyer aux services externes
+                
+                # Créer un buffer en mémoire
+                buffer = io.BytesIO()
+                
+                # Normaliser les données audio si nécessaire
+                if audio_data.dtype != np.int16:
+                    audio_data_normalized = audio_data * 32767 / np.max(np.abs(audio_data))
+                    audio_data_normalized = audio_data_normalized.astype(np.int16)
+                else:
+                    audio_data_normalized = audio_data
+                
+                # Écrire les données audio au format WAV dans le buffer
+                write_wav(buffer, 44100, audio_data_normalized)
+                
+                # Récupérer les bytes du buffer
+                buffer.seek(0)
+                raw_audio = buffer.getvalue()
+                
+                # Stocker les données audio brutes dans les caractéristiques
+                features["raw_audio"] = raw_audio
+                log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Stored raw audio in features: {len(raw_audio)} bytes")
+                
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Features extracted: {features.keys()}")
             
             # Récupérer la durée de lecture
             play_duration = features.get("play_duration", 0.0)
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Play duration: {play_duration} seconds")
             log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Play duration: {play_duration} seconds")
             
             # Vérifier si c'est de la musique
             is_music = features.get("is_music", False)
             log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Is music: {is_music}")
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Is music: {is_music}")
             
             if not is_music:
+                log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Speech detected for station_id={station_id}")
                 log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Speech detected for station_id={station_id}")
                 return {
                     "type": "speech",
@@ -121,8 +161,10 @@ class AudioProcessor:
             # 2. Détection hiérarchique
             # a) Détection locale
             log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Attempting local detection for station_id={station_id}")
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Attempting local detection for station_id={station_id}")
             local_match = await self.track_manager.find_local_match(features)
             if local_match:
+                log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Local match found: {local_match}")
                 log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Local match found: {local_match}")
                 # Ajouter la durée de lecture au résultat
                 local_match["play_duration"] = play_duration
@@ -130,6 +172,7 @@ class AudioProcessor:
                     "type": "music",
                     "source": "local",
                     "confidence": local_match["confidence"],
+                    "track": local_match,
                     "track": local_match,
                     "station_id": station_id,
                     "play_duration": play_duration
@@ -150,11 +193,57 @@ class AudioProcessor:
             musicbrainz_match = await self.track_manager.find_musicbrainz_match(features)
             if musicbrainz_match:
                 log_with_category(logger, "AUDIO_PROCESSOR", "info", f"MusicBrainz metadata match found: {musicbrainz_match}")
+            # b) Détection MusicBrainz par métadonnées
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Local match not found, attempting MusicBrainz metadata detection for station_id={station_id}")
+            
+            # Extraire les métadonnées si disponibles
+            metadata = {}
+            if hasattr(audio_data, "metadata") and audio_data.metadata:
+                metadata = audio_data.metadata
+            
+            # Ajouter les métadonnées aux caractéristiques
+            features["metadata"] = metadata
+            
+            # Tenter la détection par métadonnées
+            musicbrainz_match = await self.track_manager.find_musicbrainz_match(features)
+            if musicbrainz_match:
+                log_with_category(logger, "AUDIO_PROCESSOR", "info", f"MusicBrainz metadata match found: {musicbrainz_match}")
                 # Ajouter la durée de lecture au résultat
+                musicbrainz_match["play_duration"] = play_duration
                 musicbrainz_match["play_duration"] = play_duration
                 return {
                     "type": "music",
                     "source": "musicbrainz",
+                    "confidence": musicbrainz_match["confidence"],
+                    "track": musicbrainz_match["track"],
+                    "station_id": station_id,
+                    "play_duration": play_duration
+                }
+            
+            # c) Détection AcoustID
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", f"MusicBrainz metadata match not found, attempting AcoustID detection for station_id={station_id}")
+            acoustid_match = await self.track_manager.find_acoustid_match(features)
+            if acoustid_match:
+                log_with_category(logger, "AUDIO_PROCESSOR", "info", f"AcoustID match found: {acoustid_match}")
+                # Ajouter la durée de lecture au résultat
+                acoustid_match["play_duration"] = play_duration
+                
+                # S'assurer que les changements sont validés dans la base de données
+                if not station_id and hasattr(self.track_manager, 'db_session'):
+                    try:
+                        # Vérifier si la session a des changements en attente
+                        if self.track_manager.db_session.dirty or self.track_manager.db_session.new:
+                            self.track_manager.db_session.commit()
+                            log_with_category(logger, "AUDIO_PROCESSOR", "info", "Committed changes to database after AcoustID detection")
+                    except Exception as e:
+                        log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Error committing changes: {e}")
+                        self.track_manager.db_session.rollback()
+                
+                return {
+                    "type": "music",
+                    "source": "acoustid",
+                    "confidence": acoustid_match["confidence"],
+                    "track": acoustid_match["track"],
                     "confidence": musicbrainz_match["confidence"],
                     "track": musicbrainz_match["track"],
                     "station_id": station_id,
@@ -191,11 +280,26 @@ class AudioProcessor:
             
             # d) Détection AudD
             log_with_category(logger, "AUDIO_PROCESSOR", "info", f"AcoustID match not found, attempting AudD detection for station_id={station_id}")
+            # d) Détection AudD
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", f"AcoustID match not found, attempting AudD detection for station_id={station_id}")
             audd_match = await self.track_manager.find_audd_match(features)
             if audd_match:
                 log_with_category(logger, "AUDIO_PROCESSOR", "info", f"AudD match found: {audd_match}")
+                log_with_category(logger, "AUDIO_PROCESSOR", "info", f"AudD match found: {audd_match}")
                 # Ajouter la durée de lecture au résultat
                 audd_match["play_duration"] = play_duration
+                
+                # S'assurer que les changements sont validés dans la base de données
+                if not station_id and hasattr(self.track_manager, 'db_session'):
+                    try:
+                        # Vérifier si la session a des changements en attente
+                        if self.track_manager.db_session.dirty or self.track_manager.db_session.new:
+                            self.track_manager.db_session.commit()
+                            log_with_category(logger, "AUDIO_PROCESSOR", "info", "Committed changes to database after AudD detection")
+                    except Exception as e:
+                        log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Error committing changes: {e}")
+                        self.track_manager.db_session.rollback()
+                
                 
                 # S'assurer que les changements sont validés dans la base de données
                 if not station_id and hasattr(self.track_manager, 'db_session'):
@@ -219,9 +323,11 @@ class AudioProcessor:
             
             # Aucune correspondance trouvée
             log_with_category(logger, "AUDIO_PROCESSOR", "info", f"No match found for station_id={station_id}")
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", f"No match found for station_id={station_id}")
             return {
                 "type": "music",
                 "source": "unknown",
+                "confidence": 0.0,
                 "confidence": 0.0,
                 "station_id": station_id,
                 "play_duration": play_duration
@@ -230,9 +336,13 @@ class AudioProcessor:
             log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Error processing audio stream: {e}")
             import traceback
             log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Traceback: {traceback.format_exc()}")
+            log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Error processing audio stream: {e}")
+            import traceback
+            log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Traceback: {traceback.format_exc()}")
             return {
                 "type": "error",
                 "error": str(e),
+                "station_id": station_id
                 "station_id": station_id
             }
     
@@ -247,12 +357,14 @@ class AudioProcessor:
         """
         try:
             log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Starting monitoring for station_id={station_id}")
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Starting monitoring for station_id={station_id}")
             return await self.station_monitor.start_monitoring(
                 self.stream_handler,
                 self.feature_extractor,
                 self.track_manager
             )
         except Exception as e:
+            log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Error starting monitoring: {str(e)}")
             log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Error starting monitoring: {str(e)}")
             return False
     
@@ -267,8 +379,10 @@ class AudioProcessor:
         """
         try:
             log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Stopping monitoring for station_id={station_id}")
+            log_with_category(logger, "AUDIO_PROCESSOR", "info", f"Stopping monitoring for station_id={station_id}")
             return await self.station_monitor.stop_monitoring()
         except Exception as e:
+            log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Error stopping monitoring: {str(e)}")
             log_with_category(logger, "AUDIO_PROCESSOR", "error", f"Error stopping monitoring: {str(e)}")
             return False
     
@@ -279,6 +393,7 @@ class AudioProcessor:
             True if memory usage is acceptable
         """
         # TODO: Implement memory usage check
+        log_with_category(logger, "AUDIO_PROCESSOR", "debug", "Checking memory usage")
         log_with_category(logger, "AUDIO_PROCESSOR", "debug", "Checking memory usage")
         return True
 

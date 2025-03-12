@@ -20,8 +20,10 @@ from backend.detection.audio_processor.stream_handler import StreamHandler
 from backend.detection.audio_processor.track_manager import TrackManager
 from backend.detection.external.musicbrainz_recognizer import MusicBrainzRecognizer
 from backend.utils.logging_config import setup_logging, log_with_category
+from backend.utils.logging_config import setup_logging, log_with_category
 
 # Configure logging
+logger = setup_logging(__name__)
 logger = setup_logging(__name__)
 
 class MusicDetector:
@@ -50,6 +52,8 @@ class MusicDetector:
         self.max_concurrent_stations = 5
         
         log_with_category(logger, "DETECTION", "info", "MusicDetector initialized")
+        
+        log_with_category(logger, "DETECTION", "info", "MusicDetector initialized")
     
     async def detect_music_from_station(self, station_id: int) -> Dict[str, Any]:
         """
@@ -67,12 +71,14 @@ class MusicDetector:
             
             if not station:
                 log_with_category(logger, "DETECTION", "error", f"Station with ID {station_id} not found")
+                log_with_category(logger, "DETECTION", "error", f"Station with ID {station_id} not found")
                 return {
                     "status": "error",
                     "message": f"Station with ID {station_id} not found"
                 }
             
             if not station.is_active:
+                log_with_category(logger, "DETECTION", "warning", f"Station {station.name} is not active")
                 log_with_category(logger, "DETECTION", "warning", f"Station {station.name} is not active")
                 return {
                     "status": "error",
@@ -86,11 +92,20 @@ class MusicDetector:
                     "message": f"Station {station.name} has no stream URL"
                 }
             
+            if not station.stream_url:
+                log_with_category(logger, "DETECTION", "error", f"Station {station.name} has no stream URL")
+                return {
+                    "status": "error",
+                    "message": f"Station {station.name} has no stream URL"
+                }
+            
             # Get audio data from stream
+            log_with_category(logger, "DETECTION", "info", f"Getting audio data from {station.name} ({station.stream_url})")
             log_with_category(logger, "DETECTION", "info", f"Getting audio data from {station.name} ({station.stream_url})")
             audio_bytes = await self.stream_handler.get_audio_data(station.stream_url)
             
             if audio_bytes is None or len(audio_bytes) == 0:
+                log_with_category(logger, "DETECTION", "error", f"[DETECTION] Failed to get audio data from {station.name}")
                 log_with_category(logger, "DETECTION", "error", f"[DETECTION] Failed to get audio data from {station.name}")
                 return {
                     "status": "error",
@@ -99,12 +114,18 @@ class MusicDetector:
             
             log_with_category(logger, "DETECTION", "info", f"[DETECTION] Successfully retrieved {len(audio_bytes)} bytes of audio data from {station.name}")
             
+            log_with_category(logger, "DETECTION", "info", f"[DETECTION] Successfully retrieved {len(audio_bytes)} bytes of audio data from {station.name}")
+            
             # Process the audio file
+            result = await self.process_audio_file(audio_bytes, station_id)
+            log_with_category(logger, "DETECTION", "info", f"[DETECTION] Processing result for {station.name}: {result}")
+            return result
             result = await self.process_audio_file(audio_bytes, station_id)
             log_with_category(logger, "DETECTION", "info", f"[DETECTION] Processing result for {station.name}: {result}")
             return result
             
         except Exception as e:
+            log_with_category(logger, "DETECTION", "error", f"[DETECTION] Error detecting music from station {station_id}: {str(e)}")
             log_with_category(logger, "DETECTION", "error", f"[DETECTION] Error detecting music from station {station_id}: {str(e)}")
             return {
                 "status": "error",
@@ -129,6 +150,7 @@ class MusicDetector:
             
             if not stations:
                 log_with_category(logger, "DETECTION", "warning", "No active stations found")
+                log_with_category(logger, "DETECTION", "warning", "No active stations found")
                 return {
                     "status": "success",
                     "message": "No active stations found",
@@ -145,6 +167,7 @@ class MusicDetector:
             
             # Process stations concurrently
             log_with_category(logger, "DETECTION", "info", f"Processing {len(stations)} stations concurrently")
+            log_with_category(logger, "DETECTION", "info", f"Processing {len(stations)} stations concurrently")
             tasks = [self.detect_music_from_station(station.id) for station in stations]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
@@ -152,6 +175,7 @@ class MusicDetector:
             processed_results = []
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
+                    log_with_category(logger, "DETECTION", "error", f"Error processing station {stations[i].name}: {result}")
                     log_with_category(logger, "DETECTION", "error", f"Error processing station {stations[i].name}: {result}")
                     processed_results.append({
                         "station_id": stations[i].id,
@@ -173,6 +197,7 @@ class MusicDetector:
             }
             
         except Exception as e:
+            log_with_category(logger, "DETECTION", "error", f"Error detecting music from all stations: {e}")
             log_with_category(logger, "DETECTION", "error", f"Error detecting music from all stations: {e}")
             return {
                 "status": "error",
@@ -197,6 +222,7 @@ class MusicDetector:
             # Get station name if station_id is provided
             station_name = None
             station = None
+            station = None
             if station_id:
                 station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
                 if station:
@@ -213,10 +239,12 @@ class MusicDetector:
                         audio_array = np.mean(audio_array, axis=1)
             except Exception as sf_error:
                 log_with_category(logger, "DETECTION", "warning", f"SoundFile failed to load audio: {sf_error}. Trying librosa...")
+                log_with_category(logger, "DETECTION", "warning", f"SoundFile failed to load audio: {sf_error}. Trying librosa...")
                 try:
                     # Try librosa as a fallback
                     audio_array, sample_rate = librosa.load(io.BytesIO(audio_data), sr=None)
                 except Exception as librosa_error:
+                    log_with_category(logger, "DETECTION", "error", f"Both SoundFile and librosa failed to load audio: {librosa_error}")
                     log_with_category(logger, "DETECTION", "error", f"Both SoundFile and librosa failed to load audio: {librosa_error}")
                     return {
                         "status": "error",
@@ -226,10 +254,13 @@ class MusicDetector:
             # Process audio data
             if station_name:
                 log_with_category(logger, "DETECTION", "info", f"Processing audio data from {station_name}")
+                log_with_category(logger, "DETECTION", "info", f"Processing audio data from {station_name}")
             else:
+                log_with_category(logger, "DETECTION", "info", "Processing audio file")
                 log_with_category(logger, "DETECTION", "info", "Processing audio file")
                 
             result = await self.audio_processor.process_stream(audio_array)
+            log_with_category(logger, "DETECTION", "info", f"Audio processing result: {result}")
             log_with_category(logger, "DETECTION", "info", f"Audio processing result: {result}")
             
             # Prepare response with station info if available
@@ -251,20 +282,25 @@ class MusicDetector:
             if result.get("type") == "speech":
                 if station_name:
                     log_with_category(logger, "DETECTION", "info", f"Speech detected on {station_name}")
+                    log_with_category(logger, "DETECTION", "info", f"Speech detected on {station_name}")
                     response["message"] = f"Speech detected on {station_name}"
                 else:
+                    log_with_category(logger, "DETECTION", "info", "Speech detected in audio file")
                     log_with_category(logger, "DETECTION", "info", "Speech detected in audio file")
                     response["message"] = "Speech detected in audio file"
             
             elif result.get("type") == "music":
+                log_with_category(logger, "DETECTION", "info", f"Result structure: {result}")
                 log_with_category(logger, "DETECTION", "info", f"Result structure: {result}")
                 track_title = result.get("track", {}).get("title", "Unknown")
                 track_artist = result.get("track", {}).get("artist", "Unknown")
                 
                 if station_name:
                     log_with_category(logger, "DETECTION", "info", f"Music detected on {station_name}: {track_title} by {track_artist}")
+                    log_with_category(logger, "DETECTION", "info", f"Music detected on {station_name}: {track_title} by {track_artist}")
                     response["message"] = f"Music detected on {station_name}"
                 else:
+                    log_with_category(logger, "DETECTION", "info", f"Music detected in audio file: {track_title} by {track_artist}")
                     log_with_category(logger, "DETECTION", "info", f"Music detected in audio file: {track_title} by {track_artist}")
                     response["message"] = "Music detected in audio file"
                 
@@ -347,14 +383,17 @@ class MusicDetector:
             else:
                 if station_name:
                     log_with_category(logger, "DETECTION", "warning", f"Unknown content detected on {station_name}")
+                    log_with_category(logger, "DETECTION", "warning", f"Unknown content detected on {station_name}")
                     response["message"] = f"Unknown content detected on {station_name}"
                 else:
+                    log_with_category(logger, "DETECTION", "warning", "Unknown content detected in audio file")
                     log_with_category(logger, "DETECTION", "warning", "Unknown content detected in audio file")
                     response["message"] = "Unknown content detected in audio file"
             
             return response
             
         except Exception as e:
+            log_with_category(logger, "DETECTION", "error", f"Error processing audio file: {str(e)}")
             log_with_category(logger, "DETECTION", "error", f"Error processing audio file: {str(e)}")
             return {
                 "status": "error",

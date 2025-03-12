@@ -28,6 +28,7 @@ from backend.routers.detections import router as detections_router
 from backend.routers.metrics import router as metrics_router
 from backend.models.database import init_db, get_db
 from backend.core.config import get_settings, PATHS
+from backend.core.config import get_settings, PATHS
 from backend.utils.redis_config import init_redis_pool
 from backend.utils.auth import get_current_user
 from backend.utils.radio import fetch_and_save_senegal_stations
@@ -157,6 +158,7 @@ async def lifespan(app: FastAPI):
                     detection_task = asyncio.create_task(run_detection_service(interval=300))
                     logger.info("Automatic detection service started successfully")
                 else:
+                    logger.warning("No active stations found for music detection")
                     logger.warning("No active stations found for music detection")
             else:
                 logger.warning("No stations found, skipping music detection")

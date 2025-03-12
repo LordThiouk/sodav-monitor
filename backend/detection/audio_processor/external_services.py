@@ -1,6 +1,7 @@
 """
 External music recognition services integration for SODAV Monitor.
 Handles AcoustID and Audd API integration.
+Handles AcoustID and Audd API integration.
 """
 
 import logging
@@ -8,10 +9,14 @@ import os
 import subprocess
 import json
 import tempfile
+import subprocess
+import json
+import tempfile
 from typing import Dict, Any, Optional
 import requests
 import musicbrainzngs
 import aiohttp
+from backend.utils.logging_config import setup_logging, log_with_category, LOG_CATEGORIES
 from backend.utils.logging_config import setup_logging, log_with_category, LOG_CATEGORIES
 from .audio_analysis import AudioAnalyzer
 from sqlalchemy.orm import Session
@@ -346,6 +351,8 @@ class AcoustIDService:
         Args:
             artist: Artist name
             title: Track title
+            artist: Artist name
+            title: Track title
             
         Returns:
             Dict containing track information or None if no match found
@@ -391,7 +398,46 @@ class AcoustIDService:
         except musicbrainzngs.WebServiceError as e:
             logger.error(f"MusicBrainz API error: {str(e)}")
             raise ExternalServiceError(f"MusicBrainz API error: {str(e)}")
+            logger.info(f"Searching for track: {title} by {artist}")
+            
+            # Initialiser MusicBrainz
+            musicbrainzngs.set_useragent(
+                os.getenv('MUSICBRAINZ_APP_NAME', "SODAV Monitor"),
+                os.getenv('MUSICBRAINZ_VERSION', "1.0"),
+                os.getenv('MUSICBRAINZ_CONTACT', "https://sodav.sn")
+            )
+            
+            # Rechercher la piste dans MusicBrainz
+            query = f"recording:\"{title}\" AND artist:\"{artist}\""
+            logger.info(f"MusicBrainz query: {query}")
+            
+            result = musicbrainzngs.search_recordings(query=query, limit=5)
+            
+            if not result or not result.get('recording-list'):
+                logger.info(f"No results found for {title} by {artist}")
+                return None
+            
+            # Extraire les informations de la première piste trouvée
+            recording = result['recording-list'][0]
+            
+            logger.info(f"Found recording: {recording.get('title')} by {recording.get('artist-credit-phrase')}")
+            
+            # Construire le résultat
+            return {
+                "title": recording.get('title', title),
+                "artist": recording.get('artist-credit-phrase', artist),
+                "album": recording.get('release-list', [{}])[0].get('title', "Unknown Album") if recording.get('release-list') else "Unknown Album",
+                "confidence": 0.7,  # Valeur par défaut pour les recherches par métadonnées
+                "source": "musicbrainz",
+                "id": recording.get('id', "")
+            }
+            
+        except musicbrainzngs.WebServiceError as e:
+            logger.error(f"MusicBrainz API error: {str(e)}")
+            raise ExternalServiceError(f"MusicBrainz API error: {str(e)}")
         except Exception as e:
+            logger.error(f"Unexpected error in MusicBrainz search: {str(e)}")
+            raise ExternalServiceError(f"Unexpected error in MusicBrainz search: {str(e)}")
             logger.error(f"Unexpected error in MusicBrainz search: {str(e)}")
             raise ExternalServiceError(f"Unexpected error in MusicBrainz search: {str(e)}")
     
@@ -650,10 +696,12 @@ MusicBrainzService = AcoustIDService
 
 class AuddService:
     """Service for AudD music recognition."""
+    """Service for AudD music recognition."""
     
     def __init__(self, api_key: str, base_url: str = "https://api.audd.io"):
         self.api_key = api_key
         self.base_url = base_url
+    
     
     async def detect_track(self, audio_data: bytes) -> Optional[Dict[str, Any]]:
         """
@@ -746,8 +794,98 @@ class AuddService:
     async def detect_track_with_url(self, url: str) -> Optional[Dict[str, Any]]:
         """
         Detect a track using Audd API with a URL instead of raw audio data.
+        Detect track using AudD service.
         
         Args:
+            audio_data: Audio data as bytes
+            
+        Returns:
+            Dictionary with track information or None if not found
+        """
+        try:
+            # Prepare the audio data for sending
+            audio_file = io.BytesIO(audio_data)
+            
+            data = {
+                'api_token': self.api_key,
+                'return': 'spotify,apple_music,musicbrainz,deezer'
+            }
+            
+            files = {
+                'file': ('audio.mp3', audio_file, 'audio/mpeg')
+            }
+            
+            log_with_category(logger, "AUDD", "info", f"Sending audio data to AudD API: {len(audio_data)} bytes")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.base_url, data=data, files=files) as response:
+                    # Log response status
+                    log_with_category(logger, "AUDD", "info", f"AudD response status: {response.status}")
+                    
+                    if response.status != 200:
+                        error_text = await response.text()
+                        log_with_category(logger, "AUDD", "error", f"AudD error: {error_text}")
+                        return None
+                    
+                    result = await response.json()
+                    
+                    # Log complete response for debugging
+                    log_with_category(logger, "AUDD", "debug", f"AudD complete response: {json.dumps(result)}")
+                    
+                    # Check if track is found
+                    if "result" not in result or not result["result"]:
+                        log_with_category(logger, "AUDD", "info", "No AudD results found")
+                        return None
+                    
+                    # Extract track information
+                    track_data = result["result"]
+                    
+                    # Log track details
+                    log_with_category(logger, "AUDD", "info", f"AudD found track: {track_data.get('title', 'Unknown')} by {track_data.get('artist', 'Unknown')}")
+                    
+                    # Create result dictionary
+                    detection_result = {
+                        "title": track_data.get("title", "Unknown Track"),
+                        "artist": track_data.get("artist", "Unknown Artist"),
+                        "album": track_data.get("album", "Unknown Album"),
+                        "release_date": track_data.get("release_date"),
+                        "label": track_data.get("label"),
+                        "isrc": track_data.get("isrc"),
+                        "confidence": 0.8,  # AudD doesn't provide confidence, so we use a default value
+                        "source": "audd"
+                    }
+                    
+                    # Add external IDs if available
+                    if "spotify" in track_data:
+                        spotify_data = track_data["spotify"]
+                        detection_result["spotify_id"] = spotify_data.get("id")
+                        
+                        # Add additional Spotify data if available
+                        if "album" in spotify_data and "release_date" not in detection_result:
+                            detection_result["release_date"] = spotify_data["album"].get("release_date")
+                    
+                    if "musicbrainz" in track_data:
+                        musicbrainz_data = track_data["musicbrainz"]
+                        detection_result["musicbrainz_id"] = musicbrainz_data.get("id")
+                    
+                    if "deezer" in track_data:
+                        deezer_data = track_data["deezer"]
+                        detection_result["deezer_id"] = deezer_data.get("id")
+                    
+                    log_with_category(logger, "AUDD", "info", f"AudD detection result: {detection_result['title']} by {detection_result['artist']}")
+                    
+                    return detection_result
+        
+        except Exception as e:
+            log_with_category(logger, "AUDD", "error", f"Error detecting track with AudD: {str(e)}")
+            return None
+    
+    async def detect_track_with_url(self, url: str) -> Optional[Dict[str, Any]]:
+        """
+        Detect a track using Audd API with a URL instead of raw audio data.
+        
+        Args:
+            url: URL of the audio file to analyze
             url: URL of the audio file to analyze
             
         Returns:
@@ -757,6 +895,13 @@ class AuddService:
             ExternalServiceError: If API request fails
         """
         try:
+            data = {
+                "api_token": self.api_key,
+                "url": url,
+                "return": "apple_music,spotify"
+            }
+            
+            logger.info(f"Sending URL request to AudD API: {url}")
             data = {
                 "api_token": self.api_key,
                 "url": url,
@@ -777,7 +922,11 @@ class AuddService:
                     result = await response.json()
                     logger.info(f"AudD API response: {result}")
                     
+                    logger.info(f"AudD API response: {result}")
+                    
                     if result.get("status") == "error":
+                        error_msg = result.get("error", {}).get("error_message", "Unknown error")
+                        raise ExternalServiceError(f"Audd API error: {error_msg}")
                         error_msg = result.get("error", {}).get("error_message", "Unknown error")
                         raise ExternalServiceError(f"Audd API error: {error_msg}")
                     
@@ -786,6 +935,12 @@ class AuddService:
                     
                     track = result["result"]
                     return {
+                        "title": track.get("title", "Unknown"),
+                        "artist": track.get("artist", "Unknown Artist"),
+                        "album": track.get("album", "Unknown Album"),
+                        "confidence": 0.8,  # Default confidence for URL-based detection
+                        "source": "audd",
+                        "id": track.get("song_link", "")
                         "title": track.get("title", "Unknown"),
                         "artist": track.get("artist", "Unknown Artist"),
                         "album": track.get("album", "Unknown Album"),
@@ -854,8 +1009,36 @@ class AuddService:
                 logger.warning(f"Audd URL detection failed (attempt {attempt + 1}): {str(e)}")
                 await asyncio.sleep(retry_delay * (attempt + 1))
         return None
+    
+    async def detect_track_with_url_retry(
+        self, 
+        url: str, 
+        max_retries: int = 3,
+        retry_delay: float = 1.0
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect a track with URL and automatic retry on failure.
+        
+        Args:
+            url: URL of the audio file to analyze
+            max_retries: Maximum number of retry attempts
+            retry_delay: Delay between retries in seconds
+            
+        Returns:
+            Dict containing track information or None if no match found
+        """
+        for attempt in range(max_retries):
+            try:
+                return await self.detect_track_with_url(url)
+            except ExternalServiceError as e:
+                if attempt == max_retries - 1:
+                    raise
+                logger.warning(f"Audd URL detection failed (attempt {attempt + 1}): {str(e)}")
+                await asyncio.sleep(retry_delay * (attempt + 1))
+        return None
 
 class ExternalServiceHandler:
+    def __init__(self, db_session: Session, audd_api_key: Optional[str] = None, acoustid_api_key: Optional[str] = None):
     def __init__(self, db_session: Session, audd_api_key: Optional[str] = None, acoustid_api_key: Optional[str] = None):
         """Initialize external services handler.
         
@@ -863,9 +1046,11 @@ class ExternalServiceHandler:
             db_session: Database session
             audd_api_key: Optional API key for Audd service
             acoustid_api_key: Optional API key for AcoustID service
+            acoustid_api_key: Optional API key for AcoustID service
         """
         self.db_session = db_session
         self.audd_api_key = audd_api_key or os.getenv('AUDD_API_KEY')
+        self.acoustid_api_key = acoustid_api_key or os.getenv('ACOUSTID_API_KEY')
         self.acoustid_api_key = acoustid_api_key or os.getenv('ACOUSTID_API_KEY')
         self.audio_analyzer = AudioAnalyzer()
         self.initialized = False
@@ -890,11 +1075,16 @@ class ExternalServiceHandler:
             os.getenv('MUSICBRAINZ_APP_NAME', "SODAV Monitor"),
             os.getenv('MUSICBRAINZ_VERSION', "1.0"),
             os.getenv('MUSICBRAINZ_CONTACT', "https://sodav.sn")
+            os.getenv('MUSICBRAINZ_APP_NAME', "SODAV Monitor"),
+            os.getenv('MUSICBRAINZ_VERSION', "1.0"),
+            os.getenv('MUSICBRAINZ_CONTACT', "https://sodav.sn")
         )
         
         self.initialized = True
         logger.info("ExternalServiceHandler initialized successfully")
         
+    async def recognize_with_acoustid(self, audio_data: bytes, max_retries: int = 3) -> Optional[Dict[str, Any]]:
+        """Recognize music using AcoustID.
     async def recognize_with_acoustid(self, audio_data: bytes, max_retries: int = 3) -> Optional[Dict[str, Any]]:
         """Recognize music using AcoustID.
         
@@ -909,12 +1099,17 @@ class ExternalServiceHandler:
             logger.warning("Cannot recognize with AcoustID: ACOUSTID_API_KEY not found")
             return None
             
+        if not self.acoustid_api_key:
+            logger.warning("Cannot recognize with AcoustID: ACOUSTID_API_KEY not found")
+            return None
+            
         retries = 0
         while retries <= max_retries:
             try:
                 # Extract audio features
                 features = self.audio_analyzer.extract_features(audio_data)
                 
+                # Search AcoustID/MusicBrainz
                 # Search AcoustID/MusicBrainz
                 result = musicbrainzngs.search_recordings(
                     query=f"duration:{int(features['duration'])}",
@@ -925,11 +1120,13 @@ class ExternalServiceHandler:
                     return None
                     
                 recording = result['recording-list'][0]
+                recording = result['recording-list'][0]
                 return {
                     'title': recording['title'],
                     'artist': recording['artist-credit'][0]['name'],
                     'duration': recording['duration'] / 1000.0,
                     'confidence': 0.7,
+                    'source': 'acoustid'
                     'source': 'acoustid'
                 }
                 
@@ -938,6 +1135,7 @@ class ExternalServiceHandler:
                     retries += 1
                     await asyncio.sleep(1)  # Wait before retrying
                     continue
+                logger.error(f"Error recognizing with AcoustID: {str(e)}, caused by: {e.__cause__}")
                 logger.error(f"Error recognizing with AcoustID: {str(e)}, caused by: {e.__cause__}")
                 return None
             except Exception as e:
