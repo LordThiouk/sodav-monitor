@@ -283,3 +283,48 @@ Le workflow CI exécute les étapes suivantes :
 5. Téléchargement des rapports de couverture vers Codecov
 
 Pour visualiser les résultats des tests CI, consultez l'onglet "Actions" du dépôt GitHub.
+
+## Tests Docker
+
+Pour exécuter les tests end-to-end dans l'environnement Docker de développement, nous avons créé plusieurs scripts PowerShell dans le répertoire `scripts/docker_tests/`.
+
+### Scripts disponibles
+
+1. `scripts/docker_tests/run_tests_in_docker.ps1` - Exécute tous les tests end-to-end
+2. `scripts/docker_tests/run_detection_test_in_docker.ps1` - Exécute uniquement le test de workflow de détection
+3. `scripts/docker_tests/run_report_test_in_docker.ps1` - Exécute uniquement le test de génération de rapport
+4. `scripts/docker_tests/run_play_duration_test_in_docker.ps1` - Exécute uniquement le test de précision de durée de lecture
+5. `scripts/docker_tests/run_end_to_end_workflow_test_in_docker.ps1` - Exécute uniquement le test de workflow end-to-end
+
+### Exécution des tests
+
+Assurez-vous que Docker Desktop est en cours d'exécution, puis exécutez l'un des scripts ci-dessus. Par exemple :
+
+```powershell
+.\scripts\docker_tests\run_detection_test_in_docker.ps1
+```
+
+Pour plus d'informations, consultez le fichier [README_DOCKER_TESTS.md](scripts/docker_tests/README_DOCKER_TESTS.md).
+
+## Tests avec GitHub Actions
+
+Si vous n'avez pas assez d'espace de stockage sur votre ordinateur pour exécuter Docker localement, vous pouvez utiliser GitHub Actions pour exécuter les tests end-to-end dans un environnement hébergé.
+
+### Configuration
+
+1. Configurez les secrets GitHub pour vos clés API :
+   - `ACOUSTID_API_KEY`
+   - `AUDD_API_KEY`
+
+2. Accédez à l'onglet "Actions" de votre dépôt GitHub
+3. Sélectionnez le workflow "End-to-End Tests in Docker"
+4. Cliquez sur "Run workflow"
+
+### Avantages
+
+- Aucune installation locale requise
+- Exécution dans un environnement isolé et propre
+- Ressources de calcul fournies par GitHub
+- Résultats des tests facilement accessibles
+
+Pour plus d'informations, consultez [Tests E2E avec GitHub Actions](docs/tests/github_actions_e2e_tests.md).

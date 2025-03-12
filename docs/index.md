@@ -63,6 +63,9 @@
 - [Test de Détection AcoustID](tests/test_acoustid_detection.md)
 - [Test de Détection AudD](tests/test_audd_detection.md)
 - [Guide de Test de Détection](tests/detection_testing_guide.md)
+- [Tests End-to-End (E2E)](tests/end_to_end_testing.md)
+- [Environnement de Test Production](tests/production_test_environment.md)
+- [Tests E2E avec GitHub Actions](tests/github_actions_e2e_tests.md)
 
 ## Résolution des Problèmes
 - [Résolution des Problèmes](troubleshooting/README.md)
@@ -75,6 +78,10 @@
 ## Mises à Jour Récentes
 
 ### Mars 2025
+
+- ✅ **Tests E2E avec GitHub Actions** : Un nouveau workflow GitHub Actions a été mis en place pour exécuter les tests end-to-end sans nécessiter d'installation Docker locale. Voir [Tests E2E avec GitHub Actions](tests/github_actions_e2e_tests.md) pour les instructions détaillées.
+
+- ✅ **Environnement de test production** : Un nouvel environnement de test qui reproduit fidèlement les conditions de production a été mis en place, permettant de tester complètement les services de détection externes (AcoustID et AudD). Voir [Environnement de Test Production](tests/production_test_environment.md) pour les instructions détaillées.
 
 - ✅ **Amélioration majeure du suivi du temps de diffusion** : Le système a été amélioré pour distinguer clairement entre la durée d'échantillon audio et la durée réelle de diffusion. Cette distinction est primordiale pour le calcul précis des redevances. Voir [Suivi de la Durée de Lecture](performance/play_duration_tracking.md) et [Problèmes de Mise à Jour des Statistiques](troubleshooting/stats_update_issues.md) pour plus de détails.
 

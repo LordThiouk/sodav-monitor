@@ -1,0 +1,74 @@
+name: End-to-End Tests in Docker
+
+on:
+  workflow_dispatch:  # Permet de déclencher manuellement le workflow
+  schedule:
+    - cron: '0 0 * * 1'  # Exécute chaque lundi à minuit
+
+jobs:
+  e2e_tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Build and start Docker containers
+      run: |
+        docker-compose -f docker-compose.yml up -d
+      env:
+        ACOUSTID_API_KEY: ${{ secrets.ACOUSTID_API_KEY }}
+        AUDD_API_KEY: ${{ secrets.AUDD_API_KEY }}
+    
+    - name: Wait for containers to be ready
+      run: |
+        echo "Waiting for containers to be ready..."
+        sleep 30
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-asyncio pytest-html
+    
+    - name: Install required packages for tests
+      run: |
+        docker exec sodav-backend pip install pytest pytest-asyncio pytest-html sqlalchemy fastapi uvicorn redis psycopg2-binary
+    
+    - name: Run detection workflow test
+      run: |
+        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_detection_workflow -v --log-cli-level=INFO --html=/app/test_results/detection_workflow_report.html"
+      continue-on-error: true
+    
+    - name: Run report generation test
+      run: |
+        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_report_generation -v --log-cli-level=INFO --html=/app/test_results/report_generation_report.html"
+      continue-on-error: true
+    
+    - name: Run play duration accuracy test
+      run: |
+        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_play_duration_accuracy -v --log-cli-level=INFO --html=/app/test_results/play_duration_report.html"
+      continue-on-error: true
+    
+    - name: Run end-to-end workflow test
+      run: |
+        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_end_to_end_workflow -v --log-cli-level=INFO --html=/app/test_results/end_to_end_workflow_report.html"
+      continue-on-error: true
+    
+    - name: Create test results directory
+      run: mkdir -p test_results
+    
+    - name: Copy test results from container
+      run: |
+        docker cp sodav-backend:/app/test_results/. ./test_results/
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      with:
+        name: e2e-test-reports
+        path: test_results/
+    
+    - name: Stop Docker containers
+      run: docker-compose down 
