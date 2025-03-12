@@ -215,24 +215,67 @@ jobs:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            # Corriger la duplication de "station_id" et l'import de ConfigDict
-            fixed_content = re.sub(
-                r'"station_id": station_id\s+"station_id": station_id,\s+from pydantic import ConfigDict',
-                '"station_id": station_id',
-                content
-            )
+            # Approche plus directe pour corriger la syntaxe du dictionnaire
+            # Rechercher le bloc de code problématique
+            error_pattern = re.compile(r'return \{[^}]*"station_id": station_id[^}]*\}', re.DOTALL)
+            match = error_pattern.search(content)
+            
+            if match:
+                error_block = match.group(0)
+                print(f"Bloc problématique trouvé: {error_block}")
+                
+                # Corriger le bloc en supprimant les lignes problématiques et en reformatant correctement
+                corrected_block = "return {\n                \"type\": \"error\",\n                \"error\": str(e),\n                \"station_id\": station_id\n            }"
+                content = content.replace(error_block, corrected_block)
+                print("Bloc corrigé")
+            else:
+                print("Aucun bloc problématique trouvé avec l'expression régulière")
+                
+                # Approche alternative: correction ligne par ligne
+                lines = content.split('\n')
+                fixed_lines = []
+                in_error_block = False
+                has_station_id = False
+                
+                for line in lines:
+                    # Détecter le début du bloc d'erreur
+                    if "return {" in line:
+                        in_error_block = True
+                        fixed_lines.append(line)
+                    # Détecter la ligne station_id
+                    elif in_error_block and "\"station_id\": station_id" in line:
+                        if not has_station_id:
+                            # Première occurrence de station_id
+                            has_station_id = True
+                            fixed_lines.append(line)
+                        # Ignorer les occurrences suivantes
+                    # Détecter l'import de ConfigDict
+                    elif "from pydantic import ConfigDict" in line:
+                        # Ignorer cette ligne
+                        print(f"Ligne d'import ConfigDict ignorée: {line}")
+                    # Détecter la fin du bloc d'erreur
+                    elif in_error_block and "}" in line:
+                        in_error_block = False
+                        has_station_id = False
+                        fixed_lines.append(line)
+                    else:
+                        fixed_lines.append(line)
+                
+                content = '\n'.join(fixed_lines)
+                print("Correction ligne par ligne effectuée")
             
             # Vérifier s'il y a d'autres références à ConfigDict
-            if 'ConfigDict' in fixed_content:
+            if 'ConfigDict' in content:
                 # Remplacer ConfigDict par un commentaire explicatif
-                fixed_content = fixed_content.replace(
+                content = content.replace(
                     'ConfigDict',
                     '# ConfigDict n\'est pas disponible dans pydantic 1.10.8'
                 )
+                print("Références à ConfigDict remplacées")
             
             # Écrire le fichier corrigé
             with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(fixed_content)
+                f.write(content)
             
             print(f"Correction de l'erreur ConfigDict terminée pour {file_path}")
 
