@@ -334,4 +334,60 @@ jobs:
         path: test_results/
     
     - name: Stop Docker containers
-      run: docker compose down 
+      run: docker compose down
+    
+    - name: Fix settings.py for pydantic 1.10.8 compatibility
+      run: |
+        # Créer un script pour corriger le fichier settings.py
+        cat > fix_settings.py << 'EOF'
+        #!/usr/bin/env python3
+        import sys
+        import re
+
+        def fix_settings_file(file_path):
+            print(f"Correction du fichier {file_path} pour compatibilité avec pydantic 1.10.8")
+            
+            # Lire le fichier
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Remplacer l'import de pydantic_settings
+            content = content.replace(
+                "from pydantic_settings import BaseSettings, SettingsConfigDict",
+                "from pydantic import BaseSettings"
+            )
+            
+            # Remplacer l'utilisation de SettingsConfigDict par Config
+            content = re.sub(
+                r'model_config = SettingsConfigDict\((.*?)\)',
+                r'class Config:\n        env_file = ".env"\n        env_file_encoding = "utf-8"\n        case_sensitive = True\n        extra = "allow"  # Allow extra fields',
+                content,
+                flags=re.DOTALL
+            )
+            
+            # Écrire le fichier corrigé
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            print(f"Correction terminée pour {file_path}")
+
+        if __name__ == "__main__":
+            if len(sys.argv) != 2:
+                print("Usage: python fix_settings.py <file_path>")
+                sys.exit(1)
+            
+            file_path = sys.argv[1]
+            fix_settings_file(file_path)
+        EOF
+        
+        # Copier le script dans le conteneur
+        docker cp fix_settings.py sodav-backend:/app/
+        
+        # Exécuter le script dans le conteneur
+        docker exec sodav-backend python /app/fix_settings.py /app/backend/core/config/settings.py
+      continue-on-error: true
+    
+    - name: Check settings.py after fix
+      run: |
+        docker exec sodav-backend bash -c "cd /app && python -c 'from backend.core.config.settings import get_settings; print(get_settings())'"
+      continue-on-error: true 
