@@ -1,0 +1,71 @@
+---
+description: 🎯Règles pour Tester Tout le Système et Mesurer sa Performance avec de Vraies Données
+globs: *
+---
+
+
+L’objectif est de **tester l’ensemble du système**, incluant la **détection, le stockage, la mise à jour des statistiques et la performance** en utilisant **de vraies données audio et stations de radio.**  
+
+---
+
+## **📌 1. Tests Fonctionnels Globaux**
+Les tests doivent couvrir **toutes les fonctionnalités clés** :
+
+### **🎵 Détection de Musique**
+✅ Tester la **détection locale** avec empreintes existantes (`fingerprint`).  
+✅ Tester la **détection via MusicBrainz** lorsque la détection locale échoue.  
+✅ Tester la **détection via Audd.io** en dernier recours.  
+
+### **⏳ Durée de Lecture**
+✅ Vérifier que `play_duration` correspond **exactement** à la durée de lecture réelle.  
+✅ S’assurer que les interruptions (pubs, silences) **ne faussent pas la durée**.  
+✅ Comparer la durée calculée avec un **timestamp de référence**.  
+
+### **📊 Mise à Jour des Statistiques**
+✅ Tester la mise à jour des **statistiques des musiques** (`TrackStats`).  
+✅ Vérifier que `StationStats` reflète **le temps total de musique joué par station**.  
+✅ Vérifier la cohérence de `ArtistStats` sur plusieurs jours.  
+✅ Confirmer que `AnalyticsData` stocke bien **le taux de détection** et la **confiance moyenne**.  
+
+### **📜 Génération de Rapports**
+✅ Vérifier qu’un **rapport complet** (`Report`) est bien généré avec toutes les données.  
+✅ Tester l’export des fichiers CSV avec toutes les informations requises.  
+✅ Vérifier que les **subscriptions envoient bien les rapports périodiques**.  
+
+---
+
+## **📌 2. Tests de Performance et Scalabilité**
+**🎯 Objectif : Mesurer la rapidité et l’efficacité du système sous forte charge.**
+
+### **🔄 Test de Scalabilité**
+✅ Simuler **100+ stations de radio en simultané**.  
+✅ Vérifier si le **temps moyen de détection** reste inférieur à **5 sec** par échantillon.  
+✅ Observer l’impact de **1000+ détections en une heure** sur la base de données.  
+
+### **🕒 Temps de Traitement**
+✅ Mesurer la **latence moyenne** de détection (objectif < 2 sec).  
+✅ Vérifier le **temps d’enregistrement des empreintes** en base.  
+✅ Optimiser les requêtes SQL pour éviter les **goulots d’étranglement**.  
+
+### **📡 Fiabilité des Flux Radio**
+✅ Vérifier que le **système continue de fonctionner** en cas de coupure temporaire.  
+✅ Tester le comportement en cas de **flux radio non disponible**.  
+
+---
+
+## **📌 3. Automatisation des Tests**
+✅ **Exécuter des tests unitaires** sur toutes les fonctions critiques (`pytest`).  
+✅ **Mettre en place des tests d’intégration** pour valider l’ensemble du pipeline.  
+✅ **Utiliser des logs détaillés** pour détecter les erreurs en cas d’échec de test.  
+✅ **Comparer les données détectées avec une base de référence** pour valider les résultats.  
+
+---
+
+### **🚀 Application des Règles**
+✔ **Implémenter ces règles dans Cursor AI** pour tester chaque commit.  
+✔ **Générer des logs de performance et les analyser automatiquement**.  
+✔ **S’assurer que toutes les mises à jour de données sont cohérentes**.  
+
+---
+
+🎯 **Objectif Final** : **Garantir la fiabilité du système** avec de **vraies stations et musiques**, tout en optimisant ses performances sous forte charge. 🚀
