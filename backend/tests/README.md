@@ -83,47 +83,87 @@ Les tests d'intégration vérifient l'interaction entre différents composants d
   - Tests de charge et de stress pour les composants critiques
   - Benchmarks pour les opérations intensives
 
+### 3. Tests End-to-End (E2E)
+
+Les tests end-to-end vérifient le fonctionnement complet du système dans des conditions réelles :
+
+- **integration/** : Tests d'intégration et end-to-end
+  - `test_end_to_end.py` : Tests end-to-end complets du système
+  - **detection/** : Tests d'intégration de détection
+    - `test_play_duration_real_data.py` : Tests de durée de lecture avec des données réelles
+    - `test_continuous_play_duration.py` : Tests de durée de lecture continue
+    - `test_real_data_detection.py` : Tests de détection avec des données réelles
+  - **api/** : Tests d'intégration API
+  - **analytics/** : Tests d'intégration des analyses
+
+Pour plus d'informations sur les tests end-to-end, consultez [README_E2E_TESTS.md](integration/README_E2E_TESTS.md).
+
 ## Exécution des Tests
 
-### Exécuter tous les tests
+### Tests Unitaires
 
 ```bash
-python -m pytest
+# Exécuter tous les tests unitaires
+python -m pytest backend/tests/ -v
+
+# Exécuter un test spécifique
+python -m pytest backend/tests/detection/test_track_manager.py -v
 ```
 
-### Exécuter des tests spécifiques
+### Tests d'Intégration
 
 ```bash
-# Tests unitaires
-python -m pytest backend/tests/api/
-python -m pytest backend/tests/detection/
+# Exécuter tous les tests d'intégration
+python -m pytest backend/tests/integration/ -v
 
-# Tests d'intégration
-python -m pytest backend/tests/integration/
-
-# Tests de performance
-python -m pytest backend/tests/performance/
+# Exécuter un test d'intégration spécifique
+python -m pytest backend/tests/integration/detection/test_detection_integration.py -v
 ```
 
-### Exécuter un test spécifique
+### Tests End-to-End
 
 ```bash
-python -m pytest backend/tests/api/test_detections_api.py::TestDetectionsAPI::test_get_detections
+# Exécuter tous les tests end-to-end
+python -m pytest backend/tests/integration/test_end_to_end.py -v
+
+# Exécuter un test end-to-end spécifique
+python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_detection_workflow -v
+
+# Exécuter avec sortie de logs
+python -m pytest backend/tests/integration/test_end_to_end.py -v --log-cli-level=INFO
 ```
 
-## Fixtures
+## Couverture des Tests
 
-Les fixtures partagées sont définies dans les fichiers `conftest.py` à différents niveaux :
+Pour générer un rapport de couverture des tests :
 
-- `backend/tests/conftest.py` : Fixtures globales pour tous les tests
-- `backend/tests/integration/conftest.py` : Fixtures spécifiques aux tests d'intégration
-- `backend/tests/detection/conftest.py` : Fixtures spécifiques aux tests de détection
-- etc.
+```bash
+# Générer un rapport de couverture
+python -m pytest --cov=backend backend/tests/
+
+# Générer un rapport HTML détaillé
+python -m pytest --cov=backend --cov-report=html backend/tests/
+```
+
+Le rapport HTML sera disponible dans le répertoire `htmlcov/`.
 
 ## Bonnes Pratiques
 
 1. **Isolation** : Chaque test doit être indépendant des autres
-2. **Mocking** : Utiliser des mocks pour les services externes
-3. **Nommage** : Suivre la convention `test_<fonctionnalité>.py`
-4. **Documentation** : Documenter clairement l'objectif de chaque test
-5. **Couverture** : Viser une couverture de code d'au moins 90% 
+2. **Mocks** : Utiliser des mocks pour les dépendances externes
+3. **Fixtures** : Utiliser des fixtures pour partager la configuration
+4. **Nommage** : Suivre la convention de nommage `test_<fonction_testée>.py`
+5. **Documentation** : Documenter les tests complexes
+6. **Couverture** : Viser une couverture de code d'au moins 90%
+7. **Données de Test** : Utiliser des données de test réalistes
+8. **Performance** : Optimiser les tests pour qu'ils s'exécutent rapidement
+
+## Tests avec Données Réelles
+
+Pour les tests nécessitant des données réelles (comme les tests de détection musicale), nous utilisons :
+
+1. **Fichiers Audio de Test** : Stockés dans `backend/tests/data/audio/`
+2. **Flux Radio Réels** : Stations de radio sénégalaises accessibles via Internet
+3. **Empreintes Digitales** : Empreintes digitales pré-calculées pour les tests
+
+Pour les tests end-to-end, nous utilisons des stations de radio sénégalaises réelles pour garantir des conditions de test authentiques. 

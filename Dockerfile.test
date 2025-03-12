@@ -1,0 +1,42 @@
+FROM python:3.9-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libavcodec-extra \
+    libsndfile1 \
+    portaudio19-dev \
+    libchromaprint-dev \
+    libchromaprint-tools \
+    libasound2-dev \
+    postgresql-client \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install additional audio packages
+RUN pip install --no-cache-dir pyaudio soundfile librosa chromaprint acoustid pydub pytest-html
+
+# Copy application code
+COPY . .
+
+# Set environment variables
+ENV PYTHONPATH=/app
+
+# Create directories for test data and results
+RUN mkdir -p test_audio_samples test_results
+
+# Create test script for external services
+COPY scripts/test_external_services.py .
+
+# Command to run tests
+CMD ["python", "-m", "pytest", "backend/tests/integration/test_end_to_end.py", "-v", "--log-cli-level=INFO"] 

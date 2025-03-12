@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: sodav_test
+      POSTGRES_PASSWORD: sodav_test_password
+      POSTGRES_DB: sodav_test
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sodav_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:6
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://sodav_test:sodav_test_password@db/sodav_test
+      - REDIS_URL=redis://redis:6379/0
+      - ACOUSTID_API_KEY=${ACOUSTID_API_KEY}
+      - AUDD_API_KEY=${AUDD_API_KEY}
+      - MUSICBRAINZ_API_KEY=${MUSICBRAINZ_API_KEY}
+      - LOG_LEVEL=INFO
+    volumes:
+      - .:/app
+      - test_results:/app/test_results
+    command: >
+      bash -c "
+        python -m alembic upgrade head &&
+        python generate_test_data.py &&
+        python -m pytest backend/tests/integration/test_end_to_end.py -v --log-cli-level=INFO --html=test_results/e2e_test_report.html
+      "
+
+volumes:
+  postgres_data:
+  test_results: 

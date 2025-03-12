@@ -72,8 +72,8 @@ class FeatureExtractor:
             rhythm_strength = self._calculate_rhythm_strength(features["mel_spectrogram"])
             features["rhythm_strength"] = rhythm_strength
             
-            # Calcule la confiance globale
-            features["confidence"] = self._calculate_confidence(features)
+            # We don't need to calculate confidence here as it's already calculated in extract_features
+            # features["confidence"] = self._calculate_confidence(features)
             
             return features
             
@@ -204,7 +204,11 @@ class FeatureExtractor:
             "rhythm_strength": rhythm_strength,
             "fingerprint": fingerprint,
             "is_music": is_music_result,
-            "confidence": music_confidence
+            "confidence": music_confidence,
+            "mel_spectrogram": mel_spectrogram,
+            "mfcc": mfccs,
+            "spectral_contrast": spectral_contrast,
+            "chroma": chroma
         }
         
         logger.debug(f"Extracted features with duration: {play_duration:.2f} seconds")
