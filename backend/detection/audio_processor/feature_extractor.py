@@ -11,12 +11,10 @@ import scipy
 import soundfile as sf
 from scipy import signal
 
-from backend.logs.log_manager import LogManager
 from backend.utils.logging_config import setup_logging
 
 # Initialize logging
-log_manager = LogManager()
-logger = log_manager.get_logger("detection.audio_processor.feature_extractor")
+logger = setup_logging("detection.audio_processor.feature_extractor")
 
 
 class FeatureExtractor:

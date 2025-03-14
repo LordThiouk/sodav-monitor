@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, Optional
 from backend.core.config import get_settings
 
 # Define logging categories for different parts of the application
-LOG_CATEGORIES = {
+LOG_CATEGORIES: Dict[str, str] = {
     "DETECTION": "Detection",
     "API": "API",
     "DATABASE": "Database",
@@ -55,7 +55,7 @@ def setup_logging(
 
     # File handler if specified
     if log_file or settings.LOG_FILE:
-        file_path = Path(log_file or settings.LOG_FILE)
+        file_path = Path(log_file or settings.LOG_FILE or "logs/app.log")
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
         file_handler = RotatingFileHandler(
@@ -77,6 +77,7 @@ def log_with_category(logger: logging.Logger, category: str) -> Callable:
     Returns:
         Callable: A decorator function
     """
+
     def decorator(func: Callable) -> Callable:
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             logger.debug(f"[{category}] Calling {func.__name__}")
@@ -86,5 +87,7 @@ def log_with_category(logger: logging.Logger, category: str) -> Callable:
             except Exception as e:
                 logger.error(f"[{category}] Error in {func.__name__}: {str(e)}")
                 raise
+
         return wrapper
+
     return decorator
