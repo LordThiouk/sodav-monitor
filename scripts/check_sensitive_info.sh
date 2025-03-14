@@ -83,18 +83,18 @@ FOUND_SENSITIVE=false
 
 for pattern in "${PATTERNS[@]}"; do
     echo "Recherche du motif: $pattern"
-    
+
     # Construire la commande de base
     CMD="grep -r -i \"$pattern\" $EXCLUDE_CMD $INCLUDE_CMD ."
-    
+
     # Ajouter les motifs à ignorer
     for ignore in "${IGNORE_PATTERNS[@]}"; do
         CMD="$CMD | grep -v -E \"$ignore\""
     done
-    
+
     # Exécuter la commande et capturer le résultat
     RESULT=$(eval "$CMD" 2>/dev/null || true)
-    
+
     if [ -n "$RESULT" ]; then
         echo "⚠️  Motif potentiellement sensible trouvé: $pattern"
         echo "$RESULT"
@@ -111,4 +111,4 @@ if [ "$FOUND_SENSITIVE" = true ]; then
 else
     echo "✅ Aucune information sensible n'a été trouvée dans le code."
     exit 0
-fi 
+fi
