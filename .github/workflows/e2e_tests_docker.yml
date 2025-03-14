@@ -2,6 +2,8 @@ name: E2E Tests with Docker
 
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [run-all-tests]
   schedule:
     - cron: '0 0 * * 1'  # Run every Monday at midnight
   push:
@@ -22,6 +24,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.ref || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

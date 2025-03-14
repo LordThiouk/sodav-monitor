@@ -2,15 +2,17 @@ name: E2E Tests with Pydantic Compatibility
 
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [run-all-tests]
   push:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
     paths:
       - 'backend/**'
       - 'tests/**'
       - 'requirements.txt'
       - '.github/workflows/e2e_tests_pydantic_compat.yml'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
     paths:
       - 'backend/**'
       - 'tests/**'
@@ -36,7 +38,7 @@ jobs:
           --health-retries 5
 
       redis:
-        image: redis
+        image: redis:6
         ports:
           - 6379:6379
         options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
@@ -44,6 +46,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.ref || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -67,9 +71,10 @@ jobs:
           cat > backend/utils/pydantic_compat.py << 'EOL'
           """
           Compatibility layer for Pydantic v1 to v2 features.
+          This module provides compatibility functions for Pydantic v1 to v2 features.
           """
-          from typing import Any, Callable, Dict, Type, TypeVar
           from functools import wraps
+          from typing import Any, Callable, Dict, Type, TypeVar
           from pydantic import BaseModel
 
           T = TypeVar("T", bound=BaseModel)

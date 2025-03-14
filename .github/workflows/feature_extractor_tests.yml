@@ -10,6 +10,8 @@ on:
     paths:
       - 'backend/detection/audio_processor/feature_extractor.py'
       - 'backend/tests/**/test_feature_extractor.py'
+  repository_dispatch:
+    types: [run-all-tests]
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
@@ -40,6 +42,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.ref || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5

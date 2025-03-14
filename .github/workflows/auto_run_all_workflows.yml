@@ -9,6 +9,10 @@ on:
   pull_request:
     branches: [ main, master, develop, feature/** ]  # Run on PRs to main, master, develop, and feature branches
 
+permissions:
+  contents: read
+  actions: write  # Required for triggering other workflows
+
 jobs:
   trigger-workflows:
     runs-on: ubuntu-latest
@@ -18,29 +22,13 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all history for all branches and tags
 
-      - name: Trigger E2E Tests with Docker
-        uses: benc-uk/workflow-dispatch@v1
+      # Instead of using workflow_dispatch, we'll use repository_dispatch
+      - name: Create repository dispatch event
+        uses: peter-evans/repository-dispatch@v2
         with:
-          workflow: E2E Tests with Docker
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Trigger E2E Tests Local
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          workflow: E2E Tests Local
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Trigger E2E Tests with Pydantic Compatibility
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          workflow: E2E Tests with Pydantic Compatibility
-          token: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Trigger Feature Extractor Tests
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          workflow: Feature Extractor Tests
-          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: run-all-tests
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
 
   run-tests:
     runs-on: ubuntu-latest
