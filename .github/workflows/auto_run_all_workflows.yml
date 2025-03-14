@@ -14,21 +14,8 @@ permissions:
   actions: write  # Required for triggering other workflows
 
 jobs:
-  trigger-workflows:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch all history for all branches and tags
-
-      # Instead of using workflow_dispatch, we'll use repository_dispatch
-      - name: Create repository dispatch event
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          event-type: run-all-tests
-          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
+  # We'll remove the trigger-workflows job since it's failing due to permission issues
+  # and the workflows are already triggered by the push event
 
   run-tests:
     runs-on: ubuntu-latest
@@ -113,9 +100,9 @@ jobs:
           }
         continue-on-error: true
 
-      - name: Run unit tests
+      - name: Run backend tests
         run: |
-          python -m pytest backend/tests/unit/ -v
+          python -m pytest backend/tests/ -v
         env:
           PYTHONPATH: .
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sodav_dev
@@ -125,9 +112,9 @@ jobs:
           ACOUSTID_API_KEY: test_acoustid_key
           AUDD_API_KEY: test_audd_key
 
-      - name: Run integration tests
+      - name: Run E2E tests
         run: |
-          python -m pytest backend/tests/integration/ -v
+          python -m pytest tests/e2e/ -v
         env:
           PYTHONPATH: .
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sodav_dev

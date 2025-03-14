@@ -77,7 +77,7 @@ jobs:
 
       - name: Run feature extractor tests
         run: |
-          python -m pytest backend/tests/unit/detection/audio_processor/test_feature_extractor.py -v --cov=backend.detection.audio_processor.feature_extractor --cov-report=xml:coverage-reports/coverage.xml
+          python -m pytest backend/tests/detection/audio_processor/test_feature_extractor.py -v --cov=backend.detection.audio_processor.feature_extractor --cov-report=xml:coverage-reports/coverage.xml
         env:
           PYTHONPATH: .
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sodav_dev
