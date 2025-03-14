@@ -26,10 +26,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Install Docker Compose V2
+        run: |
+          # Docker Compose is now a plugin in Docker CLI
+          docker compose version || {
+            echo "Docker Compose V2 not available, installing..."
+            mkdir -p ~/.docker/cli-plugins/
+            curl -SL https://github.com/docker/compose/releases/download/v2.23.3/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose
+            chmod +x ~/.docker/cli-plugins/docker-compose
+            docker compose version
+          }
+
       - name: Build and start Docker containers
         run: |
-          docker-compose -f docker-compose.yml build
-          docker-compose -f docker-compose.yml up -d
+          docker compose -f docker-compose.yml build
+          docker compose -f docker-compose.yml up -d
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -55,7 +66,7 @@ jobs:
       - name: Stop Docker containers
         if: always()
         run: |
-          docker-compose -f docker-compose.yml down
+          docker compose -f docker-compose.yml down
 
       - name: Upload test results
         if: always()
