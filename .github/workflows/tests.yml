@@ -223,9 +223,9 @@ jobs:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sodav_dev
         REDIS_URL: redis://localhost:6379/0
         API_V1_STR: /api/v1
-        SECRET_KEY: test_secret_key
-        ACOUSTID_API_KEY: test_acoustid_key
-        AUDD_API_KEY: test_audd_key
+        SECRET_KEY: ${{ secrets.SECRET_KEY || 'test_secret_key' }}
+        ACOUSTID_API_KEY: ${{ secrets.ACOUSTID_API_KEY || 'test_acoustid_key' }}
+        AUDD_API_KEY: ${{ secrets.AUDD_API_KEY || 'test_audd_key' }}
 
     - name: Run integration tests
       run: |
@@ -235,9 +235,9 @@ jobs:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sodav_dev
         REDIS_URL: redis://localhost:6379/0
         API_V1_STR: /api/v1
-        SECRET_KEY: test_secret_key
-        ACOUSTID_API_KEY: test_acoustid_key
-        AUDD_API_KEY: test_audd_key
+        SECRET_KEY: ${{ secrets.SECRET_KEY || 'test_secret_key' }}
+        ACOUSTID_API_KEY: ${{ secrets.ACOUSTID_API_KEY || 'test_acoustid_key' }}
+        AUDD_API_KEY: ${{ secrets.AUDD_API_KEY || 'test_audd_key' }}
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
