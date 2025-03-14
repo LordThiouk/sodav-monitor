@@ -2,135 +2,51 @@
 
 Ce répertoire contient tous les tests pour le backend du projet SODAV Monitor.
 
-## Structure des Tests
+## Nouvelle Organisation des Tests
 
-Les tests sont organisés selon les principes suivants :
+Les tests sont maintenant organisés en deux catégories principales :
 
-### 1. Tests Unitaires
+### 1. Tests Unitaires (`unit/`)
 
-Les tests unitaires vérifient le fonctionnement isolé de composants spécifiques :
+Les tests unitaires sont organisés par module et testent des composants individuels de manière isolée :
 
-- **analytics/** : Tests des fonctionnalités d'analyse
-  - `test_analytics.py` : Tests de base des fonctionnalités d'analyse
-  - `test_analytics_manager.py` : Tests du gestionnaire d'analyses
-  - `test_generate_detections.py` : Tests de génération de données de détection
-  - `test_generate_test_report.py` : Tests de génération de rapports
+- `logs/` : Tests pour le système de journalisation
+- `utils/` : Tests pour les utilitaires
+- `models/` : Tests pour les modèles de données
+- `detection/` : Tests pour la détection musicale
+- `analytics/` : Tests pour les analyses et statistiques
+- `core/` : Tests pour les fonctionnalités de base
+- `api/` : Tests pour les endpoints API
 
-- **api/** : Tests des endpoints API
-  - `test_detections_api.py` : Tests des endpoints de détection
-  - `test_music_detection_api.py` : Tests des endpoints de détection musicale
-  - `test_analytics_api.py` : Tests des endpoints d'analyse
-  - `test_reports_api.py` : Tests des endpoints de rapports
-  - `test_reports_router.py` : Tests du routeur de rapports réorganisé
-  - `test_websocket.py` : Tests de communication WebSocket
-  - `test_api_performance.py` : Tests de performance des endpoints API
+### 2. Tests d'Intégration (`integration/`)
 
-- **auth/** : Tests d'authentification
-  - `test_auth.py` : Tests des fonctionnalités d'authentification
+Les tests d'intégration vérifient l'interaction entre plusieurs composants :
 
-- **detection/** : Tests de détection musicale
-  - `test_detection.py` : Tests de la fonctionnalité principale de détection
-  - `test_track_manager.py` : Tests de gestion des pistes
-  - `test_station_monitor.py` : Tests de surveillance des stations
-  - `test_stream_handler.py` : Tests de gestion des flux
-  - `test_feature_extractor.py` : Tests d'extraction de caractéristiques
-  - `test_fingerprint.py` : Tests d'empreintes digitales audio
-  - **audio_processor/** : Tests du processeur audio
-    - `test_core.py` : Tests de la fonctionnalité de base du processeur audio
-    - `test_stream_handler.py` : Tests de gestion des flux
-    - `test_feature_extractor.py` : Tests d'extraction de caractéristiques
-    - `test_audio_analysis.py` : Tests des algorithmes d'analyse audio
-    - `test_local_detection.py` : Tests de détection locale d'empreintes
-    - `test_external_services.py` : Tests des services de reconnaissance musicale externes
-    - `test_hierarchical_detection.py` : Tests du pipeline de détection hiérarchique
-    - `test_external_integration.py` : Tests d'intégration avec des services externes
-    - `test_performance.py` : Tests de performance pour le traitement audio
-  - **external/** : Tests des services externes
-    - `test_external_services.py` : Tests des fonctionnalités générales des services externes
-    - `test_musicbrainz_recognizer.py` : Tests d'intégration MusicBrainz/AcoustID
-
-- **reports/** : Tests de génération de rapports
-  - `test_reports.py` : Tests de la fonctionnalité de base des rapports
-  - `test_generator.py` : Tests du générateur de rapports
-  - `test_report_generator.py` : Tests de génération de rapports
-  - `test_subscription_handler.py` : Tests de gestion des abonnements aux rapports
-
-- **utils/** : Tests des utilitaires
-  - `test_auth.py` : Tests des utilitaires d'authentification
-  - `test_redis_config.py` : Tests de configuration Redis
-  - `test_validators.py` : Tests des validateurs de données
-  - `test_file_manager.py` : Tests des utilitaires de gestion de fichiers
-  - `test_logging_config.py` : Tests de configuration de journalisation
-
-### 2. Tests d'Intégration
-
-Les tests d'intégration vérifient l'interaction entre différents composants du système :
-
-- **integration/** : Tests d'intégration
-  - **api/** : Tests d'intégration des endpoints API
-    - `test_api_endpoints.py` : Tests de tous les endpoints API
-    - `test_api_integration.py` : Tests d'intégration de l'API avec d'autres composants
-  - **detection/** : Tests d'intégration du système de détection
-    - `test_detection_integration.py` : Tests d'intégration de base pour la détection
-    - `test_detection_pipeline.py` : Tests du pipeline complet de détection
-  - **analytics/** : Tests d'intégration du système d'analyse
-    - `test_analytics_integration.py` : Tests d'intégration de base pour l'analyse
-    - `test_analytics_pipeline.py` : Tests du pipeline complet d'analyse
-
-### 3. Tests de Performance
-
-- **performance/** : Tests de performance
-  - Tests de charge et de stress pour les composants critiques
-  - Benchmarks pour les opérations intensives
-
-### 3. Tests End-to-End (E2E)
-
-Les tests end-to-end vérifient le fonctionnement complet du système dans des conditions réelles :
-
-- **integration/** : Tests d'intégration et end-to-end
-  - `test_end_to_end.py` : Tests end-to-end complets du système
-  - **detection/** : Tests d'intégration de détection
-    - `test_play_duration_real_data.py` : Tests de durée de lecture avec des données réelles
-    - `test_continuous_play_duration.py` : Tests de durée de lecture continue
-    - `test_real_data_detection.py` : Tests de détection avec des données réelles
-  - **api/** : Tests d'intégration API
-  - **analytics/** : Tests d'intégration des analyses
-
-Pour plus d'informations sur les tests end-to-end, consultez [README_E2E_TESTS.md](integration/README_E2E_TESTS.md).
+- `analytics/` : Tests d'intégration pour les analyses
+- `detection/` : Tests d'intégration pour la détection
+- `api/` : Tests d'intégration pour les API
+- `test_end_to_end.py` : Tests de bout en bout du système complet
 
 ## Exécution des Tests
 
-### Tests Unitaires
-
+### Exécuter tous les tests
 ```bash
-# Exécuter tous les tests unitaires
-python -m pytest backend/tests/ -v
-
-# Exécuter un test spécifique
-python -m pytest backend/tests/detection/test_track_manager.py -v
+python -m pytest
 ```
 
-### Tests d'Intégration
-
+### Exécuter uniquement les tests unitaires
 ```bash
-# Exécuter tous les tests d'intégration
-python -m pytest backend/tests/integration/ -v
-
-# Exécuter un test d'intégration spécifique
-python -m pytest backend/tests/integration/detection/test_detection_integration.py -v
+python -m pytest tests/unit/
 ```
 
-### Tests End-to-End
-
+### Exécuter uniquement les tests d'intégration
 ```bash
-# Exécuter tous les tests end-to-end
-python -m pytest backend/tests/integration/test_end_to_end.py -v
+python -m pytest tests/integration/
+```
 
-# Exécuter un test end-to-end spécifique
-python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_detection_workflow -v
-
-# Exécuter avec sortie de logs
-python -m pytest backend/tests/integration/test_end_to_end.py -v --log-cli-level=INFO
+### Exécuter les tests d'un module spécifique
+```bash
+python -m pytest tests/unit/logs/
 ```
 
 ## Couverture des Tests
