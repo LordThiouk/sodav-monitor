@@ -1,14 +1,24 @@
 """Test suite for the SODAV Monitor backend.
 
 Structure:
-- analytics/: Tests for analytics and statistics
-- api/: API endpoint tests
-- core/: Core functionality tests
-- detection/: Music detection tests
-  - audio_processor/: Audio processing tests
-  - external/: External service tests
-- reports/: Report generation tests
-- utils/: Utility function tests
+- unit/: Tests unitaires
+  - analytics/: Tests des fonctionnalités d'analyse
+  - api/: Tests des endpoints API
+  - auth/: Tests d'authentification
+  - core/: Tests des fonctionnalités de base
+  - detection/: Tests de détection musicale
+  - logs/: Tests du système de journalisation
+  - models/: Tests des modèles de données
+  - performance/: Tests de performance
+  - reports/: Tests de génération de rapports
+  - stream_handler/: Tests de gestion des flux
+  - utils/: Tests des utilitaires
+
+- integration/: Tests d'intégration
+  - analytics/: Tests d'intégration des analyses
+  - api/: Tests d'intégration des API
+  - detection/: Tests d'intégration de détection
+  - test_end_to_end.py: Tests de bout en bout
 """
 
 # Import only what's needed for basic test setup
