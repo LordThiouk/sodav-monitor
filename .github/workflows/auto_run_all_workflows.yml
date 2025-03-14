@@ -3,15 +3,18 @@ name: Auto Run All Workflows
 on:
   push:
     branches: [ '**' ]  # Run on all branches
+    paths-ignore:
+      - '**.md'  # Ignore markdown files
+      - 'docs/**'  # Ignore documentation updates
   pull_request:
-    branches: [ main, develop, feature/** ]  # Run on PRs to main, develop, and feature branches
+    branches: [ main, master, develop, feature/** ]  # Run on PRs to main, master, develop, and feature branches
 
 jobs:
   trigger-workflows:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Fetch all history for all branches and tags
 
@@ -32,6 +35,12 @@ jobs:
         with:
           workflow: E2E Tests with Pydantic Compatibility
           token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Trigger Feature Extractor Tests
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: Feature Extractor Tests
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   run-tests:
     runs-on: ubuntu-latest
@@ -51,17 +60,17 @@ jobs:
           --health-retries 5
 
       redis:
-        image: redis
+        image: redis:6
         ports:
           - 6379:6379
         options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
