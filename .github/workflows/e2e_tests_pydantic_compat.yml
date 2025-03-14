@@ -96,6 +96,13 @@ jobs:
           ConfigDict = dict
           EOL
 
+      - name: Fix log_manager import
+        run: |
+          mkdir -p backend/logs/backend/logs
+          cp backend/logs/log_manager.py backend/logs/backend/logs/
+          touch backend/logs/backend/logs/__init__.py
+          touch backend/logs/backend/__init__.py
+
       - name: Run pre-commit hooks (non-blocking)
         run: |
           pre-commit install
