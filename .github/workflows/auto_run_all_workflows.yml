@@ -1,14 +1,40 @@
-name: Run E2E Tests on Push
+name: Auto Run All Workflows
 
 on:
   push:
     branches: [ '**' ]  # Run on all branches
-  workflow_dispatch:    # Allow manual triggering
+  pull_request:
+    branches: [ main, develop, feature/** ]  # Run on PRs to main, develop, and feature branches
 
 jobs:
-  e2e-tests:
+  trigger-workflows:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for all branches and tags
 
+      - name: Trigger E2E Tests with Docker
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: E2E Tests with Docker
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger E2E Tests Local
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: E2E Tests Local
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger E2E Tests with Pydantic Compatibility
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: E2E Tests with Pydantic Compatibility
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  run-tests:
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:13
@@ -32,10 +58,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
           cache: 'pip'
@@ -86,34 +112,29 @@ jobs:
           pre-commit install
           pre-commit run --all-files || echo "Pre-commit hooks completed with warnings"
 
-      - name: Start backend server
+      - name: Run unit tests
         run: |
-          # Start the backend server in the background
-          python -m backend.main &
-          # Wait for the server to start
-          sleep 10
+          python -m pytest backend/tests/unit/ -v
         env:
           PYTHONPATH: .
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sodav_dev
           REDIS_URL: redis://localhost:6379/0
           API_V1_STR: /api/v1
           SECRET_KEY: test_secret_key
-          ACOUSTID_API_KEY: ${{ secrets.ACOUSTID_API_KEY || 'test_acoustid_key' }}
-          AUDD_API_KEY: ${{ secrets.AUDD_API_KEY || 'test_audd_key' }}
-          PORT: 8000
-          API_PORT: 8000
+          ACOUSTID_API_KEY: test_acoustid_key
+          AUDD_API_KEY: test_audd_key
 
-      - name: Run E2E tests
+      - name: Run integration tests
         run: |
-          python -m pytest tests/e2e/ -v
+          python -m pytest backend/tests/integration/ -v
         env:
           PYTHONPATH: .
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sodav_dev
           REDIS_URL: redis://localhost:6379/0
           API_V1_STR: /api/v1
           SECRET_KEY: test_secret_key
-          ACOUSTID_API_KEY: ${{ secrets.ACOUSTID_API_KEY || 'test_acoustid_key' }}
-          AUDD_API_KEY: ${{ secrets.AUDD_API_KEY || 'test_audd_key' }}
+          ACOUSTID_API_KEY: test_acoustid_key
+          AUDD_API_KEY: test_audd_key
 
       - name: Upload test results
         if: always()
@@ -122,4 +143,4 @@ jobs:
           name: test-results
           path: |
             test-results/
-            coverage-reports/
+            coverage-reports/ 
