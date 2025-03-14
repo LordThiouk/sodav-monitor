@@ -96,10 +96,14 @@ jobs:
           ConfigDict = dict
           EOL
 
-      - name: Run pre-commit hooks
+      - name: Run pre-commit hooks (non-blocking)
         run: |
           pre-commit install
-          pre-commit run --all-files || echo "Pre-commit hooks completed with warnings"
+          pre-commit run --all-files || {
+            echo "::warning::Pre-commit hooks found issues, but continuing with tests"
+            echo "Pre-commit issues found. These should be fixed in future commits."
+          }
+        continue-on-error: true
 
       - name: Run E2E tests
         run: |
