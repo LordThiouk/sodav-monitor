@@ -21,18 +21,18 @@ class DetectionProcess:
         self.station_id = station_id
         self.track_manager = track_manager
         self.state = InitialState(self)
-        
+
     def process(self):
         return self.state.process()
-        
+
     def transition_to(self, state):
         self.state = state
-        
+
 class DetectionState(ABC):
     @abstractmethod
     def process(self):
         pass
-        
+
 class LocalDetectionState(DetectionState):
     def process(self):
         # Logique de détection locale
@@ -55,11 +55,11 @@ class LocalDetectionState(DetectionState):
 class DetectionError(Exception):
     """Base class for detection errors."""
     pass
-    
+
 class APIError(DetectionError):
     """Error when calling external APIs."""
     pass
-    
+
 def with_error_handling(func):
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
@@ -179,7 +179,7 @@ class TrackMetadata(BaseModel):
     title: str
     artist: str
     isrc: Optional[str] = None
-    
+
     @validator('isrc')
     def validate_isrc(cls, v):
         if v is None:
@@ -206,13 +206,13 @@ def find_duplicate_tracks(title, artist, isrc=None):
         track = db_session.query(Track).filter_by(isrc=isrc).first()
         if track:
             return track
-    
+
     # Recherche par titre et artiste avec correspondance floue
     candidates = db_session.query(Track).join(Artist).filter(
         func.similarity(Track.title, title) > 0.8,
         func.similarity(Artist.name, artist) > 0.8
     ).all()
-    
+
     # Logique de sélection du meilleur candidat
     return best_candidate(candidates, title, artist)
 ```
@@ -232,18 +232,18 @@ async def enrich_track_metadata(track_id):
     track = db_session.query(Track).filter_by(id=track_id).first()
     if not track:
         return False
-    
+
     # Enrichir avec MusicBrainz
     if track.isrc:
         mb_data = await musicbrainz_service.get_recording_by_isrc(track.isrc)
         if mb_data:
             update_track_with_musicbrainz_data(track, mb_data)
-    
+
     # Enrichir avec Discogs
     discogs_data = await discogs_service.search_release(track.title, track.artist.name)
     if discogs_data:
         update_track_with_discogs_data(track, discogs_data)
-    
+
     db_session.commit()
     return True
 ```
@@ -268,15 +268,15 @@ async def find_track_by_metadata(self, metadata, station_id=None):
         existing_track = self.db_session.query(Track).filter(
             Track.isrc == metadata['isrc']
         ).first()
-        
+
         if existing_track:
             self.logger.info(f"Found existing track with ISRC {metadata['isrc']}: {existing_track.title}")
-            
+
             # Mettre à jour les statistiques si station_id est fourni
             if station_id:
                 play_duration = metadata.get('duration', 0)
                 self._record_play_time(station_id, existing_track.id, play_duration)
-            
+
             # Retourner avec confiance maximale pour les correspondances ISRC
             return {
                 'track': self._track_to_dict(existing_track),
@@ -284,7 +284,7 @@ async def find_track_by_metadata(self, metadata, station_id=None):
                 'source': 'database',
                 'detection_method': 'isrc_match'
             }
-    
+
     # Si pas d'ISRC ou pas de correspondance, continuer avec d'autres méthodes
     # ...
 ```
@@ -326,7 +326,7 @@ def test_isrc_uniqueness_constraint(self):
         album="Another Album"
     )
     self.db_session.add(track2)
-    
+
     # Vérifier que la contrainte d'unicité est appliquée
     with self.assertRaises(IntegrityError):
         self.db_session.commit()
@@ -359,16 +359,16 @@ async def test_audd_service_isrc_extraction():
             "apple_music": {"isrc": "ABCDE1234567"}
         }
     }
-    
+
     # Mocker la réponse de l'API
     with patch('aiohttp.ClientSession.post') as mock_post:
         mock_post.return_value.__aenter__.return_value.status = 200
         mock_post.return_value.__aenter__.return_value.json.return_value = mock_response
-        
+
         # Appeler le service
         audd_service = AuddService("test_api_key")
         result = await audd_service.detect_track(b"test_audio_data")
-        
+
         # Vérifier le résultat
         assert result["success"] is True
         assert result["detection"]["isrc"] == "ABCDE1234567"
@@ -422,7 +422,7 @@ def test_complete_detection_cycle(db_session):
 async def test_detection_performance():
     # Préparer les données de test
     audio_samples = load_test_samples(100)  # 100 échantillons audio
-    
+
     # Mesurer le temps de détection
     start_time = time.time()
     results = await asyncio.gather(*[
@@ -430,12 +430,12 @@ async def test_detection_performance():
         for sample in audio_samples
     ])
     end_time = time.time()
-    
+
     # Analyser les résultats
     total_time = end_time - start_time
     success_rate = sum(1 for r in results if r["success"]) / len(results)
     avg_time_per_detection = total_time / len(results)
-    
+
     # Vérifier les seuils de performance
     assert avg_time_per_detection < 2.0  # Max 2 secondes par détection
     assert success_rate > 0.9  # Au moins 90% de réussite
@@ -457,24 +457,24 @@ async def test_detection_performance():
 async def detect_track(audio_data: bytes, station_id: Optional[int] = None) -> Dict[str, Any]:
     """
     Détecte une piste musicale à partir de données audio.
-    
+
     Cette méthode utilise l'API AudD pour identifier une piste musicale à partir
     d'un échantillon audio. Elle extrait également les métadonnées, y compris l'ISRC,
     à partir des résultats de détection.
-    
+
     Args:
         audio_data: Données audio brutes en bytes.
         station_id: ID optionnel de la station radio.
-        
+
     Returns:
         Un dictionnaire contenant:
         - success (bool): Indique si la détection a réussi.
         - detection (dict): Métadonnées de la piste détectée (si success=True).
         - error (str): Message d'erreur (si success=False).
-        
+
     Raises:
         APIError: Si l'appel à l'API AudD échoue.
-        
+
     Examples:
         >>> audio_data = open("sample.mp3", "rb").read()
         >>> result = await detect_track(audio_data)
@@ -611,4 +611,4 @@ paths:
 
 ## 7. Conclusion
 
-L'amélioration du système de détection musicale est un processus continu qui nécessite des efforts dans plusieurs domaines : code, architecture, qualité des données, tests et documentation. En suivant les recommandations de ce document, le système SODAV Monitor pourra atteindre un niveau supérieur de robustesse, de performance et de qualité des données, garantissant ainsi une gestion précise des droits d'auteur et la génération de rapports fiables. 
+L'amélioration du système de détection musicale est un processus continu qui nécessite des efforts dans plusieurs domaines : code, architecture, qualité des données, tests et documentation. En suivant les recommandations de ce document, le système SODAV Monitor pourra atteindre un niveau supérieur de robustesse, de performance et de qualité des données, garantissant ainsi une gestion précise des droits d'auteur et la génération de rapports fiables.

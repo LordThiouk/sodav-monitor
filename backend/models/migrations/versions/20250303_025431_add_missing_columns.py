@@ -5,22 +5,23 @@ Revises: 20250303_025430
 Create Date: 2025-03-03 02:54:31.000000
 
 """
-from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSON
 from datetime import datetime
 
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects.postgresql import JSON
 
 # revision identifiers, used by Alembic.
-revision = '20250303_025431'
-down_revision = '20250303_025430'
+revision = "20250303_025431"
+down_revision = "20250303_025430"
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
     # Add missing columns to reports table if they don't exist
-    op.execute("""
+    op.execute(
+        """
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'reports' AND column_name = 'title') THEN
@@ -54,10 +55,12 @@ def upgrade():
                 ALTER TABLE reports ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
             END IF;
         END $$;
-    """)
+    """
+    )
 
     # Add missing columns to report_subscriptions table if they don't exist
-    op.execute("""
+    op.execute(
+        """
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'report_subscriptions' AND column_name = 'format') THEN
@@ -82,13 +85,15 @@ def upgrade():
                 ALTER TABLE report_subscriptions ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
             END IF;
         END $$;
-    """)
+    """
+    )
 
 
 def downgrade():
     # Remove columns from reports table
-    op.execute("""
-        ALTER TABLE reports 
+    op.execute(
+        """
+        ALTER TABLE reports
         DROP COLUMN IF EXISTS title,
         DROP COLUMN IF EXISTS type,
         DROP COLUMN IF EXISTS report_type,
@@ -99,10 +104,12 @@ def downgrade():
         DROP COLUMN IF EXISTS file_path,
         DROP COLUMN IF EXISTS completed_at,
         DROP COLUMN IF EXISTS updated_at;
-    """)
+    """
+    )
 
     # Remove columns from report_subscriptions table
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE report_subscriptions
         DROP COLUMN IF EXISTS format,
         DROP COLUMN IF EXISTS parameters,
@@ -111,4 +118,5 @@ def downgrade():
         DROP COLUMN IF EXISTS language,
         DROP COLUMN IF EXISTS active,
         DROP COLUMN IF EXISTS updated_at;
-    """) 
+    """
+    )

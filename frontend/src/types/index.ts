@@ -48,7 +48,7 @@ export interface RadioStation {
 }
 
 // Error Types
-export type RadioBrowserError = 
+export type RadioBrowserError =
     | 'NETWORK_ERROR'
     | 'INVALID_RESPONSE'
     | 'STATION_UNAVAILABLE';
@@ -101,4 +101,4 @@ export interface Report {
     created_at: string;
     completed_at?: string;
     error_message?: string;
-} 
+}

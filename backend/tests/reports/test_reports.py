@@ -1,13 +1,16 @@
 """Tests pour le module de génération de rapports."""
 
-import pytest
 from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
 from typing import Dict, List
-from backend.models.models import Report, ReportSubscription, ReportType, ReportStatus, ReportFormat
+
+import pytest
+from sqlalchemy.orm import Session
+
+from backend.models.database import SessionLocal
+from backend.models.models import Report, ReportFormat, ReportStatus, ReportSubscription, ReportType
 from backend.reports.generate_report import ReportGenerator
 from backend.utils.auth import get_current_user
-from backend.models.database import SessionLocal
+
 
 @pytest.fixture(scope="function")
 def db_session() -> Session:
@@ -18,10 +21,12 @@ def db_session() -> Session:
     finally:
         session.close()
 
+
 @pytest.fixture
 def report_generator(db_session: Session):
     """Fixture pour le générateur de rapports."""
     return ReportGenerator(db_session)
+
 
 @pytest.fixture
 def sample_report_data() -> Dict:
@@ -32,8 +37,9 @@ def sample_report_data() -> Dict:
         "start_date": datetime.utcnow() - timedelta(days=7),
         "end_date": datetime.utcnow(),
         "include_graphs": True,
-        "language": "fr"
+        "language": "fr",
     }
+
 
 @pytest.mark.asyncio
 async def test_generate_pdf_report(report_generator, sample_report_data, db_session):
@@ -42,11 +48,12 @@ async def test_generate_pdf_report(report_generator, sample_report_data, db_sess
         start_date=sample_report_data["start_date"],
         end_date=sample_report_data["end_date"],
         format=ReportFormat.PDF,
-        include_stats=True
+        include_stats=True,
     )
 
     assert report_path is not None
     assert report_path.endswith(".pdf")
+
 
 @pytest.mark.asyncio
 async def test_generate_excel_report(report_generator, sample_report_data, db_session):
@@ -55,11 +62,12 @@ async def test_generate_excel_report(report_generator, sample_report_data, db_se
         start_date=sample_report_data["start_date"],
         end_date=sample_report_data["end_date"],
         format=ReportFormat.XLSX,
-        include_stats=True
+        include_stats=True,
     )
 
     assert report_path is not None
     assert report_path.endswith(".xlsx")
+
 
 @pytest.mark.asyncio
 async def test_generate_csv_report(report_generator, sample_report_data, db_session):
@@ -68,11 +76,12 @@ async def test_generate_csv_report(report_generator, sample_report_data, db_sess
         start_date=sample_report_data["start_date"],
         end_date=sample_report_data["end_date"],
         format=ReportFormat.CSV,
-        include_stats=True
+        include_stats=True,
     )
 
     assert report_path is not None
     assert report_path.endswith(".csv")
+
 
 @pytest.mark.asyncio
 async def test_report_subscription(report_generator, db_session):
@@ -82,7 +91,7 @@ async def test_report_subscription(report_generator, db_session):
         name="Test User",
         email="test@example.com",
         frequency=ReportType.DAILY,
-        format=ReportFormat.PDF
+        format=ReportFormat.PDF,
     )
     db_session.add(subscription)
     db_session.commit()
@@ -94,6 +103,7 @@ async def test_report_subscription(report_generator, db_session):
     assert subscription.format == ReportFormat.PDF
     assert subscription.active is True
 
+
 @pytest.mark.asyncio
 async def test_report_status_updates(report_generator, sample_report_data, db_session):
     """Test des mises à jour de statut des rapports."""
@@ -102,7 +112,7 @@ async def test_report_status_updates(report_generator, sample_report_data, db_se
         type=ReportType.COMPREHENSIVE,
         format=ReportFormat.PDF,
         status=ReportStatus.PENDING,
-        created_at=datetime.utcnow()
+        created_at=datetime.utcnow(),
     )
     db_session.add(report)
     db_session.commit()
@@ -114,4 +124,4 @@ async def test_report_status_updates(report_generator, sample_report_data, db_se
 
     report.status = ReportStatus.COMPLETED
     db_session.commit()
-    assert report.status == ReportStatus.COMPLETED 
+    assert report.status == ReportStatus.COMPLETED

@@ -43,4 +43,4 @@ Pour assurer le bon fonctionnement de l'intégration AcoustID :
 ## Références
 
 - [Documentation officielle AcoustID](https://acoustid.org/webservice)
-- [Documentation fpcalc](https://acoustid.org/chromaprint) 
+- [Documentation fpcalc](https://acoustid.org/chromaprint)

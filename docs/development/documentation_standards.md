@@ -19,20 +19,20 @@ Les docstrings sont des chaînes de documentation en Python qui sont utilisées 
 def fonction_exemple(param1: str, param2: int = 0) -> bool:
     """
     Description courte de la fonction.
-    
+
     Description plus détaillée de la fonction sur plusieurs
     lignes si nécessaire.
-    
+
     Args:
         param1: Description du premier paramètre.
         param2: Description du deuxième paramètre. Valeur par défaut: 0.
-        
+
     Returns:
         Description de la valeur de retour.
-        
+
     Raises:
         ValueError: Description de quand cette exception est levée.
-        
+
     Examples:
         >>> fonction_exemple("test", 1)
         True
@@ -61,10 +61,10 @@ Les docstrings de classes doivent décrire le but de la classe et ses attributs 
 class TrackManager:
     """
     Gère les pistes musicales dans la base de données.
-    
+
     Cette classe fournit des méthodes pour créer, rechercher et mettre à jour
     des pistes musicales dans la base de données.
-    
+
     Attributes:
         db_session: Session de base de données SQLAlchemy.
         logger: Logger pour enregistrer les événements.
@@ -79,13 +79,13 @@ Les docstrings de fonctions et méthodes doivent décrire ce que fait la fonctio
 def validate_isrc(isrc: str) -> bool:
     """
     Valide un code ISRC selon le format standard.
-    
+
     Args:
         isrc: Code ISRC à valider.
-        
+
     Returns:
         True si le format est valide, False sinon.
-        
+
     Raises:
         TypeError: Si isrc n'est pas une chaîne de caractères.
     """
@@ -146,7 +146,7 @@ Les tests doivent également être documentés. Chaque test doit avoir une docst
 def test_validate_isrc():
     """
     Teste la fonction validate_isrc avec différents codes ISRC.
-    
+
     Vérifie que la fonction retourne True pour les ISRC valides
     et False pour les ISRC invalides.
     """
@@ -195,21 +195,21 @@ logger = logging.getLogger(__name__)
 def validate_isrc(isrc: str) -> Tuple[bool, Optional[str]]:
     """
     Valide et normalise un code ISRC.
-    
+
     Format ISRC: CC-XXX-YY-NNNNN
     - CC: Code pays (2 lettres)
     - XXX: Code du propriétaire (3 caractères alphanumériques)
     - YY: Année de référence (2 chiffres)
     - NNNNN: Code de désignation (5 chiffres)
-    
+
     Args:
         isrc: Code ISRC à valider.
-        
+
     Returns:
         Tuple contenant:
         - Un booléen indiquant si l'ISRC est valide.
         - L'ISRC normalisé si valide, None sinon.
-        
+
     Examples:
         >>> validate_isrc("FR-Z03-14-00123")
         (True, "FRZ0314000123")
@@ -219,21 +219,21 @@ def validate_isrc(isrc: str) -> Tuple[bool, Optional[str]]:
     if not isrc or not isinstance(isrc, str):
         logger.warning(f"ISRC invalide (type incorrect ou vide): {isrc}")
         return False, None
-    
+
     # Supprimer les tirets et les espaces, mettre en majuscules
     normalized_isrc = re.sub(r'[\s-]', '', isrc).upper()
-    
+
     # Vérifier la longueur
     if len(normalized_isrc) != 12:
         logger.warning(f"ISRC invalide (longueur incorrecte): {isrc} -> {normalized_isrc}")
         return False, None
-    
+
     # Vérifier le format
     pattern = r'^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$'
     if not re.match(pattern, normalized_isrc):
         logger.warning(f"ISRC invalide (format incorrect): {isrc} -> {normalized_isrc}")
         return False, None
-    
+
     return True, normalized_isrc
 ```
 
@@ -242,4 +242,4 @@ def validate_isrc(isrc: str) -> Tuple[bool, Optional[str]]:
 - [Guide de Style Google pour Python](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings)
 - [Documentation Sphinx](https://www.sphinx-doc.org/en/master/)
 - [Extension Napoleon pour Sphinx](https://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html)
-- [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) 
+- [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)

@@ -5,11 +5,11 @@ This module handles analytics and statistics operations.
 
 from fastapi import APIRouter
 
+from .artists import router as artists_router
+from .export import router as export_router
 from .overview import router as overview_router
 from .stations import router as stations_router
-from .artists import router as artists_router
 from .tracks import router as tracks_router
-from .export import router as export_router
 
 # Create a combined router
 router = APIRouter()
@@ -21,4 +21,4 @@ router.include_router(artists_router)
 router.include_router(tracks_router)
 router.include_router(export_router)
 
-__all__ = ["router"] 
+__all__ = ["router"]

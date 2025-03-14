@@ -1,1 +1,1 @@
-"""Feature extractor tests package.""" 
+"""Feature extractor tests package."""

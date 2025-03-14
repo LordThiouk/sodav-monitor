@@ -70,4 +70,4 @@ Version 0.8.0 (2025-01-20)
 ### Corrections
 
 - Correction des fuites de mémoire
-- Résolution des problèmes de stabilité 
+- Résolution des problèmes de stabilité

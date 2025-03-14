@@ -88,14 +88,14 @@ async def detect_track_from_station(audio_data: bytes, station_id: int, station_
         "station_name": station_name,
         "timestamp": datetime.now().isoformat()
     }
-    
+
     # Initialiser le gestionnaire de pistes
     db_session = next(get_db_session())
     track_manager = TrackManager(db_session)
-    
+
     # Traiter les données de station
     result = await track_manager.process_station_data(station_data)
-    
+
     return result
 ```
 
@@ -123,4 +123,4 @@ Les logs de détection sont disponibles dans les fichiers suivants :
 ## Références
 
 - [Documentation AcoustID](../api_integration/acoustid_usage.md)
-- [Dépannage AcoustID](../troubleshooting/acoustid_integration.md) 
+- [Dépannage AcoustID](../troubleshooting/acoustid_integration.md)

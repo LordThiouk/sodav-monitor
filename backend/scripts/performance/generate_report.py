@@ -6,19 +6,22 @@ Script to generate a performance report based on our test results.
 
 import os
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent.absolute()
 sys.path.append(str(project_root))
 
+
 def generate_report():
     """Generate a performance report based on our test results."""
     # Create output directory
-    output_dir = os.path.join(project_root, "reports", "performance", datetime.now().strftime("%Y%m%d_%H%M%S"))
+    output_dir = os.path.join(
+        project_root, "reports", "performance", datetime.now().strftime("%Y%m%d_%H%M%S")
+    )
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Define the performance data
     performance_data = {
         "station_monitoring": {
@@ -27,26 +30,26 @@ def generate_report():
             "stations_per_second": 4.0,
             "avg_processing_time": 0.25,
             "avg_stations_per_second": 4.0,
-            "estimated_optimal_stations": 240
+            "estimated_optimal_stations": 240,
         },
         "concurrent_processing": {
             5: {"processing_time": 2.00, "stations_per_second": 50.00},
             10: {"processing_time": 1.00, "stations_per_second": 100.00},
             20: {"processing_time": 0.50, "stations_per_second": 200.00},
-            50: {"processing_time": 0.20, "stations_per_second": 500.00}
+            50: {"processing_time": 0.20, "stations_per_second": 500.00},
         },
         "optimal_concurrency": 20,
         "resource_usage": {
             10: {"cpu_usage": 5.0, "memory_usage": 25.0},
             50: {"cpu_usage": 25.0, "memory_usage": 125.0},
-            100: {"cpu_usage": 50.0, "memory_usage": 250.0}
+            100: {"cpu_usage": 50.0, "memory_usage": 250.0},
         },
-        "max_stations": 200
+        "max_stations": 200,
     }
-    
+
     # Generate the report
     report_file = os.path.join(output_dir, "performance_report.html")
-    
+
     # Generate concurrent processing rows
     concurrent_rows = ""
     for level, data in performance_data["concurrent_processing"].items():
@@ -57,7 +60,7 @@ def generate_report():
             <td>{data["stations_per_second"]:.2f}</td>
         </tr>
         """
-    
+
     # Generate resource usage rows
     resource_rows = ""
     for count, data in performance_data["resource_usage"].items():
@@ -68,9 +71,10 @@ def generate_report():
             <td>{data["memory_usage"]:.2f}</td>
         </tr>
         """
-    
+
     with open(report_file, "w") as f:
-        f.write(f"""
+        f.write(
+            f"""
 <!DOCTYPE html>
 <html>
 <head>
@@ -111,7 +115,7 @@ def generate_report():
 <body>
     <h1>Station Monitoring Performance Report</h1>
     <p>Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
-    
+
     <div class="summary">
         <h2>Summary</h2>
         <p>Average Processing Time: {performance_data["station_monitoring"]["avg_processing_time"]:.2f} seconds</p>
@@ -120,7 +124,7 @@ def generate_report():
         <p>Optimal Concurrency Level: {performance_data["optimal_concurrency"]}</p>
         <p>Estimated Maximum Number of Stations Based on Available Resources: {performance_data["max_stations"]}</p>
     </div>
-    
+
     <h2>Station Monitoring Performance</h2>
     <table>
         <tr>
@@ -134,7 +138,7 @@ def generate_report():
             <td>{performance_data["station_monitoring"]["stations_per_second"]:.2f}</td>
         </tr>
     </table>
-    
+
     <h2>Concurrent Processing Performance</h2>
     <table>
         <tr>
@@ -144,7 +148,7 @@ def generate_report():
         </tr>
         {concurrent_rows}
     </table>
-    
+
     <h2>System Resource Usage</h2>
     <table>
         <tr>
@@ -154,7 +158,7 @@ def generate_report():
         </tr>
         {resource_rows}
     </table>
-    
+
     <h2>Recommendations</h2>
     <p>Based on the performance test results, here are some recommendations:</p>
     <ul>
@@ -162,19 +166,21 @@ def generate_report():
         <li>Use a concurrency level of {performance_data["optimal_concurrency"]} for best throughput.</li>
         <li>Based on system resources, the maximum number of stations that can be monitored is approximately {performance_data["max_stations"]}.</li>
     </ul>
-    
+
     <h2>Conclusion</h2>
     <p>
         The performance tests show that the system can effectively monitor multiple radio stations simultaneously.
         By following the recommendations above, you can optimize the monitoring process for your specific needs.
     </p>
-    
+
 </body>
 </html>
-""")
-    
+"""
+        )
+
     print(f"Performance report generated: {report_file}")
     return report_file
 
+
 if __name__ == "__main__":
-    generate_report() 
+    generate_report()

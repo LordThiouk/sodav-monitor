@@ -127,4 +127,4 @@ Le système SODAV Monitor enregistre de manière complète et précise:
 - Les empreintes digitales pour l'identification technique des pistes
 - Les temps de lecture exacts pour les calculs de redevances et les analyses statistiques
 
-Ces données sont utilisées pour générer des rapports précis et fiables pour la gestion des droits d'auteur et la distribution des redevances. 
+Ces données sont utilisées pour générer des rapports précis et fiables pour la gestion des droits d'auteur et la distribution des redevances.

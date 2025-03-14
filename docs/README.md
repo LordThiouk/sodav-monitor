@@ -42,4 +42,4 @@ Pour contribuer à la documentation :
 1. Assurez-vous que votre documentation suit les standards définis
 2. Placez votre documentation dans le dossier thématique approprié
 3. Mettez à jour le fichier README.md du dossier concerné
-4. Si nécessaire, mettez à jour le fichier README.md principal 
+4. Si nécessaire, mettez à jour le fichier README.md principal

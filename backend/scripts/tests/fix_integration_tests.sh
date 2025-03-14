@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
 from backend.models.models import (
-    User, Report, ReportSubscription, RadioStation, 
+    User, Report, ReportSubscription, RadioStation,
     Artist, Track, TrackDetection, AnalyticsData
 )
 from backend.models.database import get_db, TestingSessionLocal
@@ -50,14 +50,14 @@ def db_session() -> Generator:
     """
     connection = TestingSessionLocal.connection()
     transaction = connection.begin()
-    
+
     # Create tables if they don't exist
     from sqlalchemy import text
     from backend.models.models import Base
     Base.metadata.create_all(bind=connection)
-    
+
     session = TestingSessionLocal(bind=connection)
-    
+
     try:
         yield session
     finally:
@@ -76,7 +76,7 @@ def test_user(db_session: Session) -> User:
     user = db_session.query(User).filter(User.email == "test@example.com").first()
     if user:
         return user
-    
+
     # Create a new test user
     user = User(
         username="testuser",
@@ -120,11 +120,11 @@ def test_client(db_session: Session, test_user: User, auth_headers: Dict[str, st
         return test_user
 
     app.dependency_overrides[get_db] = override_get_db
-    
+
     with TestClient(app) as client:
         client.headers.update(auth_headers)
         yield client
-    
+
     app.dependency_overrides = {}
 EOF
 
@@ -143,14 +143,14 @@ from typing import Dict, List
 from datetime import datetime, timedelta
 
 from backend.models.models import (
-    RadioStation, Artist, Track, TrackDetection, 
+    RadioStation, Artist, Track, TrackDetection,
     ArtistStats, TrackStats, AnalyticsData
 )
 from backend.analytics.stats_manager import StatsManager
 
 class TestAnalyticsIntegration:
     """Integration tests for the analytics system."""
-    
+
     def test_stats_calculation(self, db_session: Session):
         """
         Test the calculation of statistics:
@@ -225,7 +225,7 @@ class TestAnalyticsIntegration:
         track_stats = db_session.query(TrackStats).filter(TrackStats.track_id == track.id).first()
         assert track_stats is not None, "Track stats not created"
         assert track_stats.total_plays >= 5, "Track plays not updated correctly"
-        
+
         artist_stats = db_session.query(ArtistStats).filter(ArtistStats.artist_id == artist.id).first()
         assert artist_stats is not None, "Artist stats not created"
         assert artist_stats.total_plays >= 5, "Artist plays not updated correctly"
@@ -339,7 +339,7 @@ from backend.detection.audio_processor.stream_handler import StreamHandler
 
 class TestDetectionIntegration:
     """Integration tests for the detection system."""
-    
+
     @pytest.mark.asyncio
     async def test_detection_pipeline(self, db_session: Session):
         """
@@ -385,7 +385,7 @@ class TestDetectionIntegration:
         # Create a test track with a unique fingerprint
         import uuid
         unique_fingerprint = f"test_fingerprint_{uuid.uuid4()}"
-        
+
         track = Track(
             title="Test Track",
             artist_id=artist.id,
@@ -420,7 +420,7 @@ class TestDetectionIntegration:
             TrackDetection.track_id == track.id,
             TrackDetection.station_id == station.id
         ).first()
-        
+
         assert saved_detection is not None, "Detection not saved in the database"
         assert saved_detection.confidence == 0.9, "Detection confidence not correct"
         assert saved_detection.fingerprint == unique_fingerprint, "Detection fingerprint not correct"
@@ -455,7 +455,7 @@ from backend.models.models import User, Report, RadioStation, Artist, Track, Tra
 
 class TestAPIIntegration:
     """Integration tests for the API endpoints."""
-    
+
     def test_reports_workflow(self, test_client: TestClient, db_session: Session, auth_headers: Dict[str, str]):
         """
         Test the complete workflow for reports:
@@ -473,26 +473,26 @@ class TestAPIIntegration:
                 "date": "2023-01-01"
             }
         }
-        
+
         response = test_client.post("/api/reports/", json=report_data)
         assert response.status_code == 200, f"Failed to create report: {response.text}"
         report_id = response.json().get("id")
         assert report_id is not None, "Report ID not returned"
-        
+
         # Get the report
         response = test_client.get(f"/api/reports/{report_id}")
         assert response.status_code == 200, f"Failed to get report: {response.text}"
         assert response.json().get("id") == report_id, "Report ID mismatch"
-        
+
         # Generate a daily report
         response = test_client.post("/api/reports/generate/daily")
         assert response.status_code == 200, f"Failed to generate daily report: {response.text}"
-        
+
         # Get the report list
         response = test_client.get("/api/reports/")
         assert response.status_code == 200, f"Failed to get report list: {response.text}"
         assert isinstance(response.json(), list), "Report list not returned as a list"
-        
+
     def test_detections_workflow(self, test_client: TestClient, db_session: Session, auth_headers: Dict[str, str]):
         """
         Test the complete workflow for detections:
@@ -512,7 +512,7 @@ class TestAPIIntegration:
         db_session.add(station)
         db_session.commit()
         db_session.refresh(station)
-        
+
         # Create a test artist
         artist = Artist(
             name="API Test Artist",
@@ -522,7 +522,7 @@ class TestAPIIntegration:
         db_session.add(artist)
         db_session.commit()
         db_session.refresh(artist)
-        
+
         # Create a test track
         track = Track(
             title="API Test Track",
@@ -533,7 +533,7 @@ class TestAPIIntegration:
         db_session.add(track)
         db_session.commit()
         db_session.refresh(track)
-        
+
         # Create a test detection
         detection = TrackDetection(
             track_id=track.id,
@@ -546,19 +546,19 @@ class TestAPIIntegration:
         )
         db_session.add(detection)
         db_session.commit()
-        
+
         # Get the list of detections
         response = test_client.get("/api/detections/")
         assert response.status_code == 200, f"Failed to get detections: {response.text}"
-        
+
         # Filter detections by station
         response = test_client.get(f"/api/detections/?station_id={station.id}")
         assert response.status_code == 200, f"Failed to filter detections by station: {response.text}"
-        
+
         # Search for detections
         response = test_client.get("/api/detections/search?query=API Test")
         assert response.status_code == 200, f"Failed to search for detections: {response.text}"
-        
+
     def test_analytics_workflow(self, test_client: TestClient, db_session: Session, auth_headers: Dict[str, str]):
         """
         Test the complete workflow for analytics:
@@ -568,10 +568,10 @@ class TestAPIIntegration:
         # Get the analytics overview
         response = test_client.get("/api/analytics/overview")
         assert response.status_code == 200, f"Failed to get analytics overview: {response.text}"
-        
+
         # Get the analytics stats
         response = test_client.get("/api/analytics/stats?start_date=2023-01-01&end_date=2023-01-31")
         assert response.status_code == 200, f"Failed to get analytics stats: {response.text}"
 EOF
 
-echo "Integration tests fixed successfully!" 
+echo "Integration tests fixed successfully!"

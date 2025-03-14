@@ -43,4 +43,4 @@ else
     # Mode production
     echo "Mode production"
     python backend/run.py
-fi 
+fi

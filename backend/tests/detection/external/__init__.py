@@ -10,4 +10,4 @@ external music recognition services like MusicBrainz, AcoustID, and Audd.
 """
 
 from .test_external_services import *  # noqa: F403
-from .test_musicbrainz_recognizer import *  # noqa: F403 
+from .test_musicbrainz_recognizer import *  # noqa: F403

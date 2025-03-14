@@ -13,4 +13,4 @@ Ce dossier contient la documentation relative à la sécurité du projet SODAV M
 
 - **environment_variables.md** : Gestion sécurisée des variables d'environnement
 - **secrets_management.md** : Gestion des secrets et des clés API
-- **deployment_security.md** : Sécurité lors du déploiement 
+- **deployment_security.md** : Sécurité lors du déploiement

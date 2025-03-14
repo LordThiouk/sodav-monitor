@@ -13,4 +13,4 @@ Ce dossier contient la documentation pour résoudre les problèmes courants renc
 - **detection_failures.md** : Résolution des problèmes de détection musicale
 - **fingerprint_issues.md** : Résolution des problèmes liés aux empreintes digitales
 - **stream_connection.md** : Résolution des problèmes de connexion aux flux radio
-- **stats_update_issues.md** : Résolution des problèmes de mise à jour des statistiques après détection 
+- **stats_update_issues.md** : Résolution des problèmes de mise à jour des statistiques après détection

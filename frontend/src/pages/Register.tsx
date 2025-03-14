@@ -34,7 +34,7 @@ const Register: React.FC = () => {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (password !== confirmPassword) {
       toast({
         title: 'Error',
@@ -178,4 +178,4 @@ const Register: React.FC = () => {
   );
 };
 
-export default Register; 
+export default Register;

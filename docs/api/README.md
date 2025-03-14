@@ -13,4 +13,4 @@ Ce dossier contient la documentation relative à l'API REST de SODAV Monitor et 
 
 - **acoustid_integration.md** : Intégration avec le service AcoustID
 - **audd_integration.md** : Intégration avec le service AudD
-- **external_services.md** : Vue d'ensemble des services externes utilisés 
+- **external_services.md** : Vue d'ensemble des services externes utilisés

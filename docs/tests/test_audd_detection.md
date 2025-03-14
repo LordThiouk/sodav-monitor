@@ -97,4 +97,4 @@ Ce script affiche les détections récentes, y compris celles effectuées via Au
 - AudD est utilisé comme solution de dernier recours dans le processus de détection hiérarchique
 - Le service AudD est payant, donc les tests consomment des crédits de votre compte
 - Les résultats peuvent varier en fonction de la qualité de l'audio et de la popularité de la piste
-- La détection AudD est généralement plus précise pour les morceaux populaires et récents 
+- La détection AudD est généralement plus précise pour les morceaux populaires et récents

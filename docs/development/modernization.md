@@ -10,7 +10,7 @@ Ce document décrit les modifications apportées pour moderniser le code du proj
   ```python
   # Avant
   from sqlalchemy.ext.declarative import declarative_base
-  
+
   # Après
   from sqlalchemy.orm import declarative_base
   ```
@@ -30,7 +30,7 @@ Ce document décrit les modifications apportées pour moderniser le code du proj
    @validator('title', 'artist')
    def validate_non_empty(cls, v):
        # ...
-   
+
    # Après
    @field_validator('title', 'artist')
    @classmethod
@@ -44,7 +44,7 @@ Ce document décrit les modifications apportées pour moderniser le code du proj
    class Config:
        from_attributes = True
        json_schema_extra = { ... }
-   
+
    # Après
    model_config = ConfigDict(
        from_attributes=True,
@@ -60,7 +60,7 @@ Ce document décrit les modifications apportées pour moderniser le code du proj
            datetime: lambda v: v.isoformat(),
            timedelta: lambda v: int(v.total_seconds())
        }
-   
+
    # Après
    model_config = ConfigDict(
        json_encoders={
@@ -156,4 +156,4 @@ Les tests d'intégration passent toujours, ce qui confirme que les modifications
 1. Mettre à jour les tests unitaires pour qu'ils fonctionnent avec les nouvelles versions des bibliothèques
 2. Continuer à nettoyer les fichiers redondants
 3. Optimiser les performances du code
-4. Améliorer la documentation 
+4. Améliorer la documentation

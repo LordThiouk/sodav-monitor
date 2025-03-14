@@ -10,4 +10,4 @@ This package contains tests for the audio processor components:
 - test_hierarchical_detection.py: Tests for the hierarchical detection pipeline
 - test_external_integration.py: Tests for integration with external services
 - test_performance.py: Performance benchmarks for audio processing
-""" 
+"""

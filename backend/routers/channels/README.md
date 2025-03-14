@@ -86,4 +86,4 @@ response = await client.post(f"/api/channels/{station_id}/check", headers=auth_h
 # Get music detections for a station
 response = await client.get(f"/api/channels/{station_id}/detections", headers=auth_headers)
 detections = response.json()
-``` 
+```

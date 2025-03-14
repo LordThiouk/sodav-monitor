@@ -77,4 +77,4 @@ Si vous rencontrez des problèmes lors de l'exécution des scripts, vérifiez le
 
 Pour plus d'informations sur le processus de détection hiérarchique et la réutilisation des empreintes digitales, consultez la documentation complète dans les fichiers suivants :
 - `docs/external_services.md` : Documentation sur les services externes de détection musicale
-- `docs/fingerprint_reuse.md` : Documentation détaillée sur la réutilisation des empreintes digitales 
+- `docs/fingerprint_reuse.md` : Documentation détaillée sur la réutilisation des empreintes digitales

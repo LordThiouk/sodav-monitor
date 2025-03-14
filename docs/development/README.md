@@ -16,4 +16,4 @@ Ce dossier contient les guides et standards pour le développement du projet SOD
 
 ## Modernisation
 
-- **modernization.md** : Plan de modernisation du code et des technologies utilisées 
+- **modernization.md** : Plan de modernisation du code et des technologies utilisées

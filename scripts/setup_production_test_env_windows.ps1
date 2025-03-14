@@ -6,11 +6,11 @@ function Write-ColorOutput {
     param(
         [Parameter(Mandatory=$true)]
         [string]$Message,
-        
+
         [Parameter(Mandatory=$false)]
         [string]$ForegroundColor = "White"
     )
-    
+
     $originalColor = $host.UI.RawUI.ForegroundColor
     $host.UI.RawUI.ForegroundColor = $ForegroundColor
     Write-Output $Message
@@ -40,7 +40,7 @@ if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
     Set-ExecutionPolicy Bypass -Scope Process -Force
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
     Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
-    
+
     # Refresh environment variables
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 }
@@ -52,7 +52,7 @@ Write-ColorOutput "Installing system dependencies..." "Green"
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     Write-ColorOutput "Installing Python..." "Green"
     choco install python -y
-    
+
     # Refresh environment variables
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 }
@@ -64,7 +64,7 @@ else {
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
     Write-ColorOutput "Installing FFmpeg..." "Green"
     choco install ffmpeg -y
-    
+
     # Refresh environment variables
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 }
@@ -76,7 +76,7 @@ else {
 if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
     Write-ColorOutput "Installing PostgreSQL..." "Green"
     choco install postgresql -y
-    
+
     # Refresh environment variables
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 }
@@ -88,7 +88,7 @@ else {
 if (-not (Get-Command redis-server -ErrorAction SilentlyContinue)) {
     Write-ColorOutput "Installing Redis..." "Green"
     choco install redis-server -y
-    
+
     # Refresh environment variables
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 }
@@ -100,37 +100,37 @@ else {
 $fpcalcPath = "C:\Program Files (x86)\Chromaprint\fpcalc.exe"
 if (-not (Test-Path $fpcalcPath)) {
     Write-ColorOutput "Installing Chromaprint (fpcalc)..." "Green"
-    
+
     # Create temporary directory
     $tempDir = [System.IO.Path]::GetTempPath() + [System.Guid]::NewGuid().ToString()
     New-Item -ItemType Directory -Path $tempDir | Out-Null
-    
+
     # Download Chromaprint
     $chromaprintUrl = "https://github.com/acoustid/chromaprint/releases/download/v1.5.1/chromaprint-fpcalc-1.5.1-windows-x86_64.zip"
     $chromaprintZip = "$tempDir\chromaprint.zip"
     Invoke-WebRequest -Uri $chromaprintUrl -OutFile $chromaprintZip
-    
+
     # Extract Chromaprint
     Expand-Archive -Path $chromaprintZip -DestinationPath $tempDir
-    
+
     # Create installation directory
     $installDir = "C:\Program Files (x86)\Chromaprint"
     if (-not (Test-Path $installDir)) {
         New-Item -ItemType Directory -Path $installDir | Out-Null
     }
-    
+
     # Copy fpcalc.exe to installation directory
     Copy-Item -Path "$tempDir\chromaprint-fpcalc-1.5.1-windows-x86_64\fpcalc.exe" -Destination $installDir
-    
+
     # Add to PATH
     $currentPath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
     if (-not $currentPath.Contains($installDir)) {
         [System.Environment]::SetEnvironmentVariable("Path", $currentPath + ";" + $installDir, "Machine")
     }
-    
+
     # Refresh environment variables
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-    
+
     # Clean up
     Remove-Item -Path $tempDir -Recurse -Force
 }
@@ -241,7 +241,7 @@ def test_acoustid():
     if not api_key or api_key == "your_acoustid_api_key":
         print("Error: ACOUSTID_API_KEY not found or not set in environment variables")
         return False
-    
+
     try:
         # Simple API call to test connection
         result = acoustid.lookup(api_key, "4115aae1201a58d50aaf9577f5086530")
@@ -257,7 +257,7 @@ def test_audd():
     if not api_key or api_key == "your_audd_api_key":
         print("Error: AUDD_API_KEY not found or not set in environment variables")
         return False
-    
+
     try:
         # Simple API call to test connection
         url = f"https://api.audd.io/getApiStatus/?api_token={api_key}"
@@ -275,7 +275,7 @@ def test_audd():
 if __name__ == "__main__":
     acoustid_success = test_acoustid()
     audd_success = test_audd()
-    
+
     if acoustid_success and audd_success:
         print("All external services are configured correctly!")
     else:
@@ -341,25 +341,25 @@ def create_test_data():
     for station_data in stations:
         station = RadioStation(**station_data)
         session.add(station)
-    
+
     # Add artists
     for artist_data in artists:
         artist = Artist(**artist_data)
         session.add(artist)
-    
+
     # Add labels
     for label_data in labels:
         label = Label(**label_data)
         session.add(label)
-    
+
     # Commit to get IDs
     session.commit()
-    
+
     # Add tracks
     for track_data in tracks:
         track = Track(**track_data)
         session.add(track)
-    
+
     # Final commit
     session.commit()
     print("Test data created successfully!")
@@ -411,4 +411,4 @@ Write-ColorOutput "4. Test external services: python test_external_services.py" 
 Write-ColorOutput "5. Run the end-to-end tests: python -m pytest backend/tests/integration/test_end_to_end.py -v" "Green"
 Write-ColorOutput "========================================================" "Green"
 Write-ColorOutput "For more information, see docs/tests/production_test_environment.md" "Green"
-Write-ColorOutput "========================================================" "Green" 
+Write-ColorOutput "========================================================" "Green"

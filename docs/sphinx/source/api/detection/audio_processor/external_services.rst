@@ -5,4 +5,4 @@ Module des Services Externes
    :members:
    :undoc-members:
    :show-inheritance:
-   :private-members: 
+   :private-members:

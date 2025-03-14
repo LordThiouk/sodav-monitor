@@ -23,7 +23,7 @@ const Streams: React.FC = () => {
       try {
         setLoading(true);
         const stations = await fetchStations();
-        
+
         const streamData = stations.map(station => ({
           station,
           detections: station.last_detection?.total_tracks || 0

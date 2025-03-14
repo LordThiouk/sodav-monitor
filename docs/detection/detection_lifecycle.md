@@ -44,7 +44,7 @@ Le processus de détection musicale se déroule en plusieurs étapes :
 
 ### 2.4. Détection externe
 
-- **Méthodes** : 
+- **Méthodes** :
   - `find_acoustid_match()` dans `TrackManager`
   - `find_audd_match()` dans `TrackManager`
 - **Description** : Si aucune correspondance locale n'est trouvée, le système utilise d'abord AcoustID, puis AudD comme service de secours.
@@ -54,7 +54,7 @@ Le processus de détection musicale se déroule en plusieurs étapes :
 
 - **Méthode** : `detect_track()` dans `AuddService`
 - **Description** : Extrait les métadonnées, y compris l'ISRC, des résultats de détection.
-- **Détail de l'extraction de l'ISRC** : 
+- **Détail de l'extraction de l'ISRC** :
   1. Vérifie d'abord si l'ISRC est présent dans le résultat principal.
   2. Si non, vérifie dans les données Apple Music.
   3. Si non, vérifie dans les données Spotify.
@@ -212,7 +212,7 @@ Les ISRC peuvent être obtenus à partir de plusieurs sources :
    duration_value = track_info.get("duration", 0)
    if isinstance(duration_value, (int, float)):
        duration_value = timedelta(seconds=duration_value)
-   
+
    track = Track(
        title=track_title,
        artist_id=artist.id,
@@ -237,7 +237,7 @@ Les ISRC peuvent être obtenus à partir de plusieurs sources :
        title: str
        artist_id: int
        duration: Union[int, float, timedelta]
-       
+
        @validator('duration')
        def validate_duration(cls, v):
            if isinstance(v, (int, float)):
@@ -322,4 +322,4 @@ Pour vérifier et mettre à jour les empreintes digitales existantes, utilisez l
 
 ## 7. Conclusion
 
-La gestion correcte du cycle de vie d'une détection, la sauvegarde des ISRC et l'utilisation efficace des empreintes digitales sont essentielles pour le bon fonctionnement du système SODAV Monitor. En suivant les bonnes pratiques décrites dans ce document, vous pouvez vous assurer que toutes les métadonnées sont correctement extraites et sauvegardées, et que la détection locale fonctionne de manière optimale, permettant ainsi une gestion précise des droits d'auteur et la génération de rapports fiables. 
+La gestion correcte du cycle de vie d'une détection, la sauvegarde des ISRC et l'utilisation efficace des empreintes digitales sont essentielles pour le bon fonctionnement du système SODAV Monitor. En suivant les bonnes pratiques décrites dans ce document, vous pouvez vous assurer que toutes les métadonnées sont correctement extraites et sauvegardées, et que la détection locale fonctionne de manière optimale, permettant ainsi une gestion précise des droits d'auteur et la génération de rapports fiables.

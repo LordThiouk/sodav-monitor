@@ -1,19 +1,29 @@
 """Tests for the reorganized reports router."""
 
+from datetime import datetime, timedelta
+from typing import Dict, List
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-from typing import Dict, List
-from datetime import datetime, timedelta
 
-from backend.models.models import Report, ReportSubscription, User, ReportType, ReportStatus, ReportFormat
-from backend.models.database import get_db
-from backend.utils.auth import get_current_user, oauth2_scheme
 from backend.main import app
+from backend.models.database import get_db
+from backend.models.models import (
+    Report,
+    ReportFormat,
+    ReportStatus,
+    ReportSubscription,
+    ReportType,
+    User,
+)
+from backend.utils.auth import get_current_user, oauth2_scheme
+
 
 @pytest.fixture
 def test_client_reports(db_session: Session, test_user: User, auth_headers: Dict[str, str]):
     """Create a test client specifically for the reports router."""
+
     def override_get_db():
         try:
             yield db_session
@@ -37,12 +47,16 @@ def test_client_reports(db_session: Session, test_user: User, auth_headers: Dict
 
     app.dependency_overrides.clear()
 
-def test_get_reports_new_router(test_client_reports: TestClient, test_report: Report, auth_headers: Dict[str, str]):
+
+def test_get_reports_new_router(
+    test_client_reports: TestClient, test_report: Report, auth_headers: Dict[str, str]
+):
     """Test getting all reports with the new router."""
     response = test_client_reports.get("/api/reports/")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
     assert len(response.json()) > 0
+
 
 def test_create_report_new_router(test_client_reports: TestClient, auth_headers: Dict[str, str]):
     """Test creating a report with the new router."""
@@ -53,9 +67,9 @@ def test_create_report_new_router(test_client_reports: TestClient, auth_headers:
         "start_date": datetime.utcnow().isoformat(),
         "end_date": (datetime.utcnow() + timedelta(days=1)).isoformat(),
         "include_graphs": True,
-        "language": "fr"
+        "language": "fr",
     }
-    
+
     response = test_client_reports.post("/api/reports/", json=report_data)
     assert response.status_code == 200
     data = response.json()
@@ -63,10 +77,13 @@ def test_create_report_new_router(test_client_reports: TestClient, auth_headers:
     assert data["report_type"] == "DAILY"
     assert data["status"] == "pending"
 
-def test_get_report_new_router(test_client_reports: TestClient, test_report: Report, auth_headers: Dict[str, str]):
+
+def test_get_report_new_router(
+    test_client_reports: TestClient, test_report: Report, auth_headers: Dict[str, str]
+):
     """Test getting a specific report with the new router."""
     response = test_client_reports.get(f"/api/reports/{test_report.id}")
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == test_report.id
-    assert data["title"] == test_report.title 
+    assert data["title"] == test_report.title

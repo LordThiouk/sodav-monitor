@@ -51,9 +51,9 @@ const Dashboard: React.FC = () => {
       try {
         setIsLoading(true);
         const fetchedStations = await fetchStations();
-        
+
         const activeStations = fetchedStations.filter(station => station.is_active);
-        const totalTracks = fetchedStations.reduce((sum, station) => 
+        const totalTracks = fetchedStations.reduce((sum, station) =>
           sum + (station.last_detection?.total_tracks || 0), 0);
 
         setStats(prev => ({

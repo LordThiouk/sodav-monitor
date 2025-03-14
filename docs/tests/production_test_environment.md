@@ -162,7 +162,7 @@ def test_acoustid():
     if not api_key:
         print("Error: ACOUSTID_API_KEY not found in environment variables")
         return False
-    
+
     try:
         # Simple API call to test connection
         result = acoustid.lookup(api_key, "4115aae1201a58d50aaf9577f5086530")
@@ -178,7 +178,7 @@ def test_audd():
     if not api_key:
         print("Error: AUDD_API_KEY not found in environment variables")
         return False
-    
+
     try:
         # Simple API call to test connection
         url = f"https://api.audd.io/getApiStatus/?api_token={api_key}"
@@ -196,7 +196,7 @@ def test_audd():
 if __name__ == "__main__":
     acoustid_success = test_acoustid()
     audd_success = test_audd()
-    
+
     if acoustid_success and audd_success:
         print("All external services are configured correctly!")
     else:
@@ -279,25 +279,25 @@ def create_test_data():
     for station_data in stations:
         station = RadioStation(**station_data)
         session.add(station)
-    
+
     # Add artists
     for artist_data in artists:
         artist = Artist(**artist_data)
         session.add(artist)
-    
+
     # Add labels
     for label_data in labels:
         label = Label(**label_data)
         session.add(label)
-    
+
     # Commit to get IDs
     session.commit()
-    
+
     # Add tracks
     for track_data in tracks:
         track = Track(**track_data)
         session.add(track)
-    
+
     # Final commit
     session.commit()
     print("Test data created successfully!")
@@ -484,4 +484,4 @@ After setting up this environment, consider:
 1. Creating automated CI/CD pipelines that use this environment
 2. Developing benchmark tests to measure system performance
 3. Setting up monitoring for the production environment
-4. Creating a staging environment that mirrors this setup 
+4. Creating a staging environment that mirrors this setup

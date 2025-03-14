@@ -1,11 +1,14 @@
-from fastapi import WebSocket
-from typing import Dict, List, Optional
 import json
 import logging
 from datetime import datetime
+from typing import Dict, List, Optional
+
+from fastapi import WebSocket
+
 from .config.redis import get_redis
 
 logger = logging.getLogger(__name__)
+
 
 class ConnectionManager:
     def __init__(self):
@@ -13,33 +16,37 @@ class ConnectionManager:
         self.user_connections: Dict[str, List[WebSocket]] = {}
         self.redis_channel = "sodav_monitor:websocket"
 
-    async def connect(self, websocket: WebSocket, client_id: str, user_id: Optional[str] = None) -> None:
+    async def connect(
+        self, websocket: WebSocket, client_id: str, user_id: Optional[str] = None
+    ) -> None:
         """Connect a new WebSocket client."""
         await websocket.accept()
-        
+
         if client_id not in self.active_connections:
             self.active_connections[client_id] = []
         self.active_connections[client_id].append(websocket)
-        
+
         if user_id:
             if user_id not in self.user_connections:
                 self.user_connections[user_id] = []
             self.user_connections[user_id].append(websocket)
-            
+
         logger.info(f"New WebSocket connection: client_id={client_id}, user_id={user_id}")
 
-    def disconnect(self, websocket: WebSocket, client_id: str, user_id: Optional[str] = None) -> None:
+    def disconnect(
+        self, websocket: WebSocket, client_id: str, user_id: Optional[str] = None
+    ) -> None:
         """Disconnect a WebSocket client."""
         if client_id in self.active_connections:
             self.active_connections[client_id].remove(websocket)
             if not self.active_connections[client_id]:
                 del self.active_connections[client_id]
-        
+
         if user_id and user_id in self.user_connections:
             self.user_connections[user_id].remove(websocket)
             if not self.user_connections[user_id]:
                 del self.user_connections[user_id]
-                
+
         logger.info(f"WebSocket disconnected: client_id={client_id}, user_id={user_id}")
 
     async def send_personal_message(self, message: dict, client_id: str) -> None:
@@ -60,7 +67,7 @@ class ConnectionManager:
                     await connection.send_json(message)
                 except Exception as e:
                     logger.error(f"Error broadcasting message: {str(e)}")
-        
+
         # Publish to Redis
         try:
             redis = get_redis()
@@ -83,7 +90,7 @@ class ConnectionManager:
         message = {
             "type": "detection_update",
             "data": detection_data,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
         await self.broadcast(message)
 
@@ -93,7 +100,7 @@ class ConnectionManager:
             "type": "station_health_update",
             "station_id": station_id,
             "data": health_data,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
         await self.broadcast(message)
 
@@ -102,6 +109,6 @@ class ConnectionManager:
         message = {
             "type": "error_notification",
             "message": error_message,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
-        await self.send_personal_message(message, user_id) 
+        await self.send_personal_message(message, user_id)

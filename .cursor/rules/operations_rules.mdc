@@ -37,7 +37,7 @@ globs: *
   - Duration measurement (play_duration)
   - Station identification
   - Track metadata
-  
+
 5. Security Measures
 - API authentication
 - Input validation

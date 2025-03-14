@@ -1,8 +1,13 @@
 """Base schemas for the SODAV Monitor."""
 
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator, model_serializer
-from typing import List, Optional, Dict, Union, Any
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Union
+
+from pydantic import BaseModel, EmailStr, Field
+
+# Import compatibility layer for Pydantic v1
+from backend.utils.pydantic_compat import ConfigDict, model_serializer, model_validator
+
 
 class StationBase(BaseModel):
     name: str
@@ -11,12 +16,15 @@ class StationBase(BaseModel):
     language: Optional[str] = None
     type: Optional[str] = "radio"
 
+
 class StationCreate(StationBase):
     pass
+
 
 class StationUpdate(StationBase):
     status: Optional[str] = None
     is_active: Optional[bool] = None
+
 
 class StationResponse(StationBase):
     id: int
@@ -28,6 +36,7 @@ class StationResponse(StationBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class TrackBase(BaseModel):
     title: str
     artist: str
@@ -35,20 +44,22 @@ class TrackBase(BaseModel):
     label: Optional[str] = None
     fingerprint: Optional[str] = None
 
+
 class TrackResponse(TrackBase):
     id: int
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
-    
-    @model_validator(mode='before')
+
+    @model_validator(mode="before")
     @classmethod
     def validate_artist(cls, data):
-        if isinstance(data, dict) and 'artist' in data and hasattr(data['artist'], 'name'):
+        if isinstance(data, dict) and "artist" in data and hasattr(data["artist"], "name"):
             # Si artist est un objet avec un attribut name, utiliser le nom
-            data['artist'] = data['artist'].name
+            data["artist"] = data["artist"].name
         return data
+
 
 class StreamBase(BaseModel):
     name: str
@@ -57,6 +68,7 @@ class StreamBase(BaseModel):
     region: str
     language: str
     stream_url: str
+
 
 class DetectionCreate(BaseModel):
     track_id: int
@@ -75,6 +87,7 @@ class DetectionCreate(BaseModel):
             data["play_duration"] = self.play_duration.total_seconds()
         return data
 
+
 class DetectionResponse(BaseModel):
     id: int
     track: TrackResponse
@@ -85,17 +98,21 @@ class DetectionResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class StreamRequest(BaseModel):
     stream_url: str
+
 
 class ChartData(BaseModel):
     hour: int
     count: int
 
+
 class SystemHealth(BaseModel):
     status: str
     uptime: int
     lastError: Optional[str] = None
+
 
 class AnalyticsResponse(BaseModel):
     totalDetections: int
@@ -106,6 +123,7 @@ class AnalyticsResponse(BaseModel):
     detectionsByHour: List[ChartData]
     topArtists: List[Dict[str, Union[str, int]]]
     systemHealth: SystemHealth
+
 
 class StationStatusResponse(BaseModel):
     id: int
@@ -119,11 +137,13 @@ class StationStatusResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class StationStatusUpdate(BaseModel):
     status: str
     message: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class ReportBase(BaseModel):
     title: str
@@ -133,14 +153,17 @@ class ReportBase(BaseModel):
     period_end: datetime
     filters: Optional[Dict[str, str]] = None
 
+
 class ReportCreate(ReportBase):
     report_type: str
     parameters: Optional[Dict[str, Any]] = None
+
 
 class ReportUpdate(ReportBase):
     status: Optional[str] = None
     file_path: Optional[str] = None
     error_message: Optional[str] = None
+
 
 class ReportResponse(ReportBase):
     id: int
@@ -154,12 +177,14 @@ class ReportResponse(ReportBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class ReportStatusResponse(BaseModel):
     id: int
     title: str
     status: str
     created_at: datetime
     updated_at: datetime
+
 
 class SubscriptionBase(BaseModel):
     name: str
@@ -171,8 +196,10 @@ class SubscriptionBase(BaseModel):
     include_graphs: Optional[bool] = True
     language: Optional[str] = "fr"
 
+
 class SubscriptionCreate(SubscriptionBase):
     pass
+
 
 class SubscriptionUpdate(BaseModel):
     name: Optional[str] = None
@@ -181,6 +208,7 @@ class SubscriptionUpdate(BaseModel):
     filters: Optional[Dict] = None
     include_graphs: Optional[bool] = None
     language: Optional[str] = None
+
 
 class SubscriptionResponse(SubscriptionBase):
     id: int
@@ -191,10 +219,12 @@ class SubscriptionResponse(SubscriptionBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class DetectionsResponse(BaseModel):
     """Response model for a list of detections with pagination."""
+
     total: int
     items: List[Dict[str, Any]]
     station: Optional[Dict[str, Any]] = None
 
-    model_config = ConfigDict(from_attributes=True) 
+    model_config = ConfigDict(from_attributes=True)

@@ -144,7 +144,7 @@ const Reports: React.FC = () => {
         fetchReports(),
         getReportSubscriptions()
       ]);
-      
+
       // Set reports and subscriptions, ensuring they are arrays
       setReports(Array.isArray(reportsData) ? reportsData : []);
       setSubscriptions(Array.isArray(subscriptionsData) ? subscriptionsData : []);
@@ -190,7 +190,7 @@ const Reports: React.FC = () => {
         status: 'success',
         duration: 3000,
       });
-      
+
       // Refresh reports list
       fetchData();
     } catch (error: any) {

@@ -8,9 +8,10 @@ This script will:
 """
 
 import os
-import sys
 import subprocess
+import sys
 from pathlib import Path
+
 
 def run_command(command, cwd=None):
     """Run a command and return the output."""
@@ -22,35 +23,43 @@ def run_command(command, cwd=None):
         print(f"Error: {result.stderr}")
     return result.returncode
 
+
 def main():
     """Run all migration steps."""
     # Get the project root directory
     project_root = Path(__file__).parent.parent.parent.absolute()
-    
+
     # Step 1: Run the SQL script
     print("\n=== Step 1: Running SQL script to add updated_at column ===")
-    sql_script_path = os.path.join(project_root, "backend", "migrations", "sql", "add_updated_at_to_users.sql")
+    sql_script_path = os.path.join(
+        project_root, "backend", "migrations", "sql", "add_updated_at_to_users.sql"
+    )
     sql_command = f"psql -U sodav -d sodav_dev -f {sql_script_path}"
     if run_command(sql_command, cwd=project_root) != 0:
         print("Failed to run SQL script")
         return 1
-    
+
     # Step 2: Update Alembic revision
     print("\n=== Step 2: Updating Alembic revision ===")
-    update_script_path = os.path.join(project_root, "backend", "scripts", "migrations", "update_alembic_revision.py")
+    update_script_path = os.path.join(
+        project_root, "backend", "scripts", "migrations", "update_alembic_revision.py"
+    )
     if run_command(f"python {update_script_path}", cwd=project_root) != 0:
         print("Failed to update Alembic revision")
         return 1
-    
+
     # Step 3: Run tests
     print("\n=== Step 3: Running tests ===")
-    test_script_path = os.path.join(project_root, "backend", "scripts", "migrations", "run_updated_at_tests.py")
+    test_script_path = os.path.join(
+        project_root, "backend", "scripts", "migrations", "run_updated_at_tests.py"
+    )
     if run_command(f"python {test_script_path}", cwd=project_root) != 0:
         print("Tests failed")
         return 1
-    
+
     print("\n=== All migration steps completed successfully ===")
     return 0
 
+
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

@@ -1,534 +1,60 @@
-name: End-to-End Tests in Docker
+name: E2E Tests with Docker
 
 on:
-  workflow_dispatch:  # Permet de déclencher manuellement le workflow
+  workflow_dispatch:
   schedule:
-    - cron: '0 0 * * 1'  # Exécute chaque lundi à minuit
+    - cron: '0 0 * * 1'  # Run every Monday at midnight
 
 jobs:
-  e2e_tests:
+  e2e-tests:
     runs-on: ubuntu-latest
-    
+    env:
+      DOCKER_BUILDKIT: 1
+      COMPOSE_DOCKER_CLI_BUILD: 1
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-    
-    - name: Build and start Docker containers
-      run: |
-        docker compose -f docker-compose.yml up -d
-      env:
-        ACOUSTID_API_KEY: ${{ secrets.ACOUSTID_API_KEY }}
-        AUDD_API_KEY: ${{ secrets.AUDD_API_KEY }}
-    
-    - name: Wait for containers to be ready
-      run: |
-        echo "Waiting for containers to be ready..."
-        sleep 30
-    
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pytest pytest-asyncio pytest-html httpx PyJWT python-jose python-multipart email-validator aiohttp pandas
-    
-    - name: Install required packages for tests
-      run: |
-        # Désinstaller pydantic-settings pour éviter les conflits
-        docker exec sodav-backend pip uninstall -y pydantic-settings
-        
-        # Installer les dépendances par petits groupes pour éviter les problèmes de mémoire
-        echo "Installation des dépendances de base..."
-        docker exec sodav-backend pip install --no-cache-dir pytest pytest-asyncio pytest-html
-        
-        echo "Installation des dépendances HTTP..."
-        docker exec sodav-backend pip install --no-cache-dir httpx aiohttp
-        
-        echo "Installation des dépendances d'authentification..."
-        docker exec sodav-backend pip install --no-cache-dir PyJWT python-jose
-        
-        echo "Installation des dépendances de validation..."
-        # Installer typing-extensions d'abord pour éviter les conflits
-        docker exec sodav-backend pip install --no-cache-dir typing-extensions>=4.5.0 --force-reinstall
-        
-        # Désinstaller et réinstaller pydantic avec une version compatible
-        docker exec sodav-backend pip uninstall -y pydantic
-        docker exec sodav-backend pip install --no-cache-dir pydantic==1.10.8
-        
-        # Installer les autres dépendances sans pydantic-settings
-        docker exec sodav-backend pip install --no-cache-dir python-multipart email-validator python-dotenv
-        
-        echo "Installation des dépendances de base de données..."
-        docker exec sodav-backend pip install --no-cache-dir sqlalchemy psycopg2-binary redis
-        
-        echo "Installation des dépendances FastAPI..."
-        docker exec sodav-backend pip install --no-cache-dir fastapi==0.95.2 uvicorn aiofiles
-        
-        echo "Installation des dépendances d'analyse de données..."
-        docker exec sodav-backend pip install --no-cache-dir pandas numpy
-        
-        echo "Installation des dépendances de test spécifiques..."
-        docker exec sodav-backend pip install --no-cache-dir coverage==7.2.7 pytest-cov==4.1.0 pytest-mock
-        
-        # Créer le répertoire pour les résultats de test
-        docker exec sodav-backend mkdir -p /app/test_results
-    
-    - name: Fix indentation errors in core.py
-      run: |
-        # Créer un script Python amélioré pour corriger l'indentation
-        cat > fix_indentation.py << 'EOF'
-        #!/usr/bin/env python3
-        import re
-        import sys
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-        def fix_indentation(file_path):
-            print(f"Correction de l'indentation dans {file_path}")
-            
-            # Lire le fichier
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            # Chercher la ligne problématique
-            async_def_pattern = re.compile(r'^\s*async\s+def\s+process_stream\s*\(')
-            fixed_lines = []
-            seen_process_stream = False
-            in_async_def = False
-            needs_indentation = False
-            
-            i = 0
-            while i < len(lines):
-                line = lines[i]
-                
-                # Détecter les définitions dupliquées de process_stream
-                if async_def_pattern.match(line):
-                    if seen_process_stream:
-                        # Si on a déjà vu cette méthode, on la saute
-                        print(f"Définition dupliquée trouvée à la ligne {i+1}, suppression")
-                        i += 1
-                        continue
-                    else:
-                        # Première occurrence
-                        seen_process_stream = True
-                        in_async_def = True
-                        needs_indentation = True
-                        fixed_lines.append(line)
-                        print(f"Ligne problématique trouvée à la ligne {i+1}: {line.strip()}")
-                elif in_async_def and needs_indentation and line.strip() and not line.startswith(' '):
-                    # Ajouter une indentation de 4 espaces
-                    fixed_lines.append('    ' + line)
-                    needs_indentation = False
-                    print(f"Indentation ajoutée à la ligne {i+1}")
-                else:
-                    fixed_lines.append(line)
-                
-                i += 1
-            
-            # Écrire le fichier corrigé
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.writelines(fixed_lines)
-            
-            print(f"Correction terminée pour {file_path}")
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-        if __name__ == "__main__":
-            if len(sys.argv) != 2:
-                print("Usage: python fix_indentation.py <file_path>")
-                sys.exit(1)
-            
-            file_path = sys.argv[1]
-            fix_indentation(file_path)
-        EOF
-        
-        # Copier le script dans le conteneur
-        docker cp fix_indentation.py sodav-backend:/app/
-        
-        # Exécuter le script dans le conteneur
-        docker exec sodav-backend python /app/fix_indentation.py /app/backend/detection/audio_processor/core.py
-      continue-on-error: true
-    
-    - name: Check for indentation errors
-      run: |
-        docker exec sodav-backend bash -c "cd /app && python -m pyflakes backend/detection/audio_processor/core.py"
-      continue-on-error: true
-    
-    - name: Manual fix for core.py if needed
-      run: |
-        # Créer un script pour corriger manuellement le fichier
-        cat > manual_fix.py << 'EOF'
-        #!/usr/bin/env python3
-        import sys
+      - name: Build and start Docker containers
+        run: |
+          docker-compose -f docker-compose.yml build
+          docker-compose -f docker-compose.yml up -d
 
-        def manual_fix(file_path):
-            print(f"Correction manuelle de {file_path}")
-            
-            # Lire le fichier
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Remplacer la définition dupliquée et ajouter un corps de méthode
-            fixed_content = content.replace(
-                "async def process_stream(self, audio_data: np.ndarray, station_id: Optional[int] = None, features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:\nasync def process_stream(self, audio_data: np.ndarray, station_id: Optional[int] = None, features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:",
-                "async def process_stream(self, audio_data: np.ndarray, station_id: Optional[int] = None, features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:"
-            )
-            
-            # Vérifier si la méthode a un corps
-            if "async def process_stream" in fixed_content and "    return" not in fixed_content:
-                # Ajouter un corps minimal à la méthode
-                fixed_content = fixed_content.replace(
-                    "async def process_stream(self, audio_data: np.ndarray, station_id: Optional[int] = None, features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:",
-                    "async def process_stream(self, audio_data: np.ndarray, station_id: Optional[int] = None, features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:\n    # Corps minimal pour éviter l'erreur d'indentation\n    return {}"
-                )
-            
-            # Écrire le fichier corrigé
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(fixed_content)
-            
-            print(f"Correction manuelle terminée pour {file_path}")
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
 
-        if __name__ == "__main__":
-            if len(sys.argv) != 2:
-                print("Usage: python manual_fix.py <file_path>")
-                sys.exit(1)
-            
-            file_path = sys.argv[1]
-            manual_fix(file_path)
-        EOF
-        
-        # Copier le script dans le conteneur
-        docker cp manual_fix.py sodav-backend:/app/
-        
-        # Exécuter le script dans le conteneur
-        docker exec sodav-backend python /app/manual_fix.py /app/backend/detection/audio_processor/core.py
-      continue-on-error: true
-    
-    - name: Final check for indentation errors
-      run: |
-        docker exec sodav-backend bash -c "cd /app && python -m pyflakes backend/detection/audio_processor/core.py"
-      continue-on-error: true
-    
-    - name: Fix ConfigDict import error in core.py
-      run: |
-        # Créer un script pour corriger l'erreur de ConfigDict
-        cat > fix_configdict.py << 'EOF'
-        #!/usr/bin/env python3
-        import sys
-        import re
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
 
-        def fix_configdict_error(file_path):
-            print(f"Correction de l'erreur ConfigDict dans {file_path}")
-            
-            # Lire le fichier
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Approche plus directe pour corriger la syntaxe du dictionnaire
-            # Rechercher le bloc de code problématique
-            error_pattern = re.compile(r'return \{[^}]*"station_id": station_id[^}]*\}', re.DOTALL)
-            match = error_pattern.search(content)
-            
-            if match:
-                error_block = match.group(0)
-                print(f"Bloc problématique trouvé: {error_block}")
-                
-                # Corriger le bloc en supprimant les lignes problématiques et en reformatant correctement
-                corrected_block = "return {\n                \"type\": \"error\",\n                \"error\": str(e),\n                \"station_id\": station_id\n            }"
-                content = content.replace(error_block, corrected_block)
-                print("Bloc corrigé")
-            else:
-                print("Aucun bloc problématique trouvé avec l'expression régulière")
-                
-                # Approche alternative: correction ligne par ligne
-                lines = content.split('\n')
-                fixed_lines = []
-                in_error_block = False
-                has_station_id = False
-                
-                for line in lines:
-                    # Détecter le début du bloc d'erreur
-                    if "return {" in line:
-                        in_error_block = True
-                        fixed_lines.append(line)
-                    # Détecter la ligne station_id
-                    elif in_error_block and "\"station_id\": station_id" in line:
-                        if not has_station_id:
-                            # Première occurrence de station_id
-                            has_station_id = True
-                            fixed_lines.append(line)
-                        # Ignorer les occurrences suivantes
-                    # Détecter l'import de ConfigDict
-                    elif "from pydantic import ConfigDict" in line:
-                        # Ignorer cette ligne
-                        print(f"Ligne d'import ConfigDict ignorée: {line}")
-                    # Détecter la fin du bloc d'erreur
-                    elif in_error_block and "}" in line:
-                        in_error_block = False
-                        has_station_id = False
-                        fixed_lines.append(line)
-                    else:
-                        fixed_lines.append(line)
-                
-                content = '\n'.join(fixed_lines)
-                print("Correction ligne par ligne effectuée")
-            
-            # Vérifier s'il y a d'autres références à ConfigDict
-            if 'ConfigDict' in content:
-                # Remplacer ConfigDict par un commentaire explicatif
-                content = content.replace(
-                    'ConfigDict',
-                    '# ConfigDict n\'est pas disponible dans pydantic 1.10.8'
-                )
-                print("Références à ConfigDict remplacées")
-            
-            # Écrire le fichier corrigé
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            
-            print(f"Correction de l'erreur ConfigDict terminée pour {file_path}")
+      - name: Run pre-commit hooks
+        run: |
+          pip install pre-commit
+          pre-commit run --all-files
 
-        if __name__ == "__main__":
-            if len(sys.argv) != 2:
-                print("Usage: python fix_configdict.py <file_path>")
-                sys.exit(1)
-            
-            file_path = sys.argv[1]
-            fix_configdict_error(file_path)
-        EOF
-        
-        # Copier le script dans le conteneur
-        docker cp fix_configdict.py sodav-backend:/app/
-        
-        # Exécuter le script dans le conteneur
-        docker exec sodav-backend python /app/fix_configdict.py /app/backend/detection/audio_processor/core.py
-      continue-on-error: true
-    
-    - name: Final check for ConfigDict errors
-      run: |
-        docker exec sodav-backend bash -c "cd /app && python -m pyflakes backend/detection/audio_processor/core.py"
-      continue-on-error: true
-    
-    - name: Fix settings.py for pydantic 1.10.8 compatibility
-      run: |
-        # Créer un script pour corriger le fichier settings.py
-        cat > fix_settings.py << 'EOF'
-        #!/usr/bin/env python3
-        import sys
-        import re
+      - name: Run E2E tests
+        run: |
+          pytest tests/e2e/ -v
 
-        def fix_settings_file(file_path):
-            print(f"Correction du fichier {file_path} pour compatibilité avec pydantic 1.10.8")
-            
-            # Lire le fichier
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Remplacer l'import de pydantic_settings
-            content = content.replace(
-                "from pydantic_settings import BaseSettings, SettingsConfigDict",
-                "from pydantic import BaseSettings"
-            )
-            
-            # Remplacer l'utilisation de SettingsConfigDict par Config
-            content = re.sub(
-                r'model_config = SettingsConfigDict\((.*?)\)',
-                r'class Config:\n        env_file = ".env"\n        env_file_encoding = "utf-8"\n        case_sensitive = True\n        extra = "allow"  # Allow extra fields',
-                content,
-                flags=re.DOTALL
-            )
-            
-            # Écrire le fichier corrigé
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            
-            print(f"Correction terminée pour {file_path}")
+      - name: Stop Docker containers
+        if: always()
+        run: |
+          docker-compose -f docker-compose.yml down
 
-        if __name__ == "__main__":
-            if len(sys.argv) != 2:
-                print("Usage: python fix_settings.py <file_path>")
-                sys.exit(1)
-            
-            file_path = sys.argv[1]
-            fix_settings_file(file_path)
-        EOF
-        
-        # Copier le script dans le conteneur
-        docker cp fix_settings.py sodav-backend:/app/
-        
-        # Exécuter le script dans le conteneur
-        docker exec sodav-backend python /app/fix_settings.py /app/backend/core/config/settings.py
-      continue-on-error: true
-    
-    - name: Check settings.py after fix
-      run: |
-        docker exec sodav-backend bash -c "cd /app && python -c 'from backend.core.config.settings import get_settings; print(get_settings())'"
-      continue-on-error: true
-    
-    - name: Fix all pydantic imports for compatibility
-      run: |
-        # Créer un script pour corriger tous les fichiers qui utilisent pydantic_settings ou ConfigDict
-        cat > fix_pydantic_imports.py << 'EOF'
-        #!/usr/bin/env python3
-        import sys
-        import os
-        import re
-
-        def fix_pydantic_imports(directory):
-            print(f"Recherche et correction des imports pydantic dans {directory}")
-            
-            # Extensions de fichiers Python
-            extensions = ['.py']
-            
-            # Motifs à rechercher et remplacer
-            replacements = [
-                # Import de pydantic_settings
-                (r'from pydantic_settings import BaseSettings(?:, SettingsConfigDict)?', 'from pydantic import BaseSettings'),
-                # Import de ConfigDict
-                (r'from pydantic import ([^,\n]+,\s*)*ConfigDict(\s*,\s*[^,\n]+)*', lambda match: match.group(0).replace('ConfigDict', '# ConfigDict')),
-                # Utilisation de SettingsConfigDict
-                (r'model_config\s*=\s*SettingsConfigDict\((.*?)\)', r'class Config:\n        env_file = ".env"\n        env_file_encoding = "utf-8"\n        case_sensitive = True\n        extra = "allow"  # Allow extra fields', re.DOTALL),
-                # Utilisation de ConfigDict
-                (r'model_config\s*=\s*ConfigDict\((.*?)\)', r'class Config:\n        extra = "allow"  # Allow extra fields', re.DOTALL),
-                # Correction de la syntaxe dans core.py
-                (r'"station_id": station_id\s+"station_id": station_id', r'"station_id": station_id', re.DOTALL),
-            ]
-            
-            # Parcourir tous les fichiers Python récursivement
-            for root, dirs, files in os.walk(directory):
-                for file in files:
-                    if any(file.endswith(ext) for ext in extensions):
-                        file_path = os.path.join(root, file)
-                        try:
-                            # Lire le contenu du fichier
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                content = f.read()
-                            
-                            # Vérifier si le fichier contient des motifs à remplacer
-                            original_content = content
-                            modified = False
-                            
-                            # Appliquer les remplacements
-                            for pattern, replacement in replacements:
-                                if callable(replacement):
-                                    # Si le remplacement est une fonction
-                                    content = re.sub(pattern, replacement, content)
-                                else:
-                                    # Si le remplacement est une chaîne
-                                    if re.search(pattern, content, re.DOTALL):
-                                        content = re.sub(pattern, replacement, content, flags=re.DOTALL)
-                                        modified = True
-                            
-                            # Vérifier si le contenu a été modifié
-                            if content != original_content:
-                                print(f"Correction du fichier {file_path}")
-                                # Écrire le contenu modifié
-                                with open(file_path, 'w', encoding='utf-8') as f:
-                                    f.write(content)
-                        except Exception as e:
-                            print(f"Erreur lors du traitement du fichier {file_path}: {str(e)}")
-            
-            print("Correction terminée")
-
-        if __name__ == "__main__":
-            if len(sys.argv) != 2:
-                print("Usage: python fix_pydantic_imports.py <directory>")
-                sys.exit(1)
-            
-            directory = sys.argv[1]
-            fix_pydantic_imports(directory)
-        EOF
-        
-        # Copier le script dans le conteneur
-        docker cp fix_pydantic_imports.py sodav-backend:/app/
-        
-        # Exécuter le script dans le conteneur pour corriger tous les fichiers Python
-        docker exec sodav-backend python /app/fix_pydantic_imports.py /app/backend
-      continue-on-error: true
-    
-    - name: Fix core.py syntax error directly
-      run: |
-        # Créer un script pour corriger spécifiquement la syntaxe dans core.py
-        cat > fix_core_syntax.py << 'EOF'
-        #!/usr/bin/env python3
-        import sys
-        import re
-
-        def fix_core_syntax(file_path):
-            print(f"Correction de la syntaxe dans {file_path}")
-            
-            # Lire le fichier
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Corriger la syntaxe du dictionnaire
-            # Rechercher le bloc problématique avec une expression régulière plus précise
-            pattern = r'return\s*\{\s*"type":\s*"error",\s*"error":\s*str\(e\),\s*"station_id":\s*station_id(?:\s*,)?\s*(?:"station_id":\s*station_id)?(?:\s*,)?\s*\}'
-            
-            if re.search(pattern, content, re.DOTALL):
-                # Remplacer par un bloc correctement formaté
-                corrected_content = re.sub(
-                    pattern,
-                    'return {\n                "type": "error",\n                "error": str(e),\n                "station_id": station_id\n            }',
-                    content,
-                    flags=re.DOTALL
-                )
-                
-                # Écrire le fichier corrigé
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write(corrected_content)
-                
-                print(f"Syntaxe corrigée dans {file_path}")
-            else:
-                print(f"Aucun problème de syntaxe trouvé dans {file_path}")
-        
-        if __name__ == "__main__":
-            if len(sys.argv) != 2:
-                print("Usage: python fix_core_syntax.py <file_path>")
-                sys.exit(1)
-            
-            file_path = sys.argv[1]
-            fix_core_syntax(file_path)
-        EOF
-        
-        # Copier le script dans le conteneur
-        docker cp fix_core_syntax.py sodav-backend:/app/
-        
-        # Exécuter le script dans le conteneur
-        docker exec sodav-backend python /app/fix_core_syntax.py /app/backend/detection/audio_processor/core.py
-      continue-on-error: true
-    
-    - name: Verify fixes
-      run: |
-        # Vérifier que les fichiers ont été correctement corrigés
-        docker exec sodav-backend bash -c "cd /app && python -m pyflakes backend/detection/audio_processor/core.py"
-        docker exec sodav-backend bash -c "cd /app && python -c 'from backend.core.config.settings import get_settings; print(\"Settings import successful\")'"
-      continue-on-error: true
-    
-    - name: Check imports after fix
-      run: |
-        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_report_generation -v --log-cli-level=INFO --html=/app/test_results/report_generation_report.html"
-      continue-on-error: true
-    
-    - name: Run play duration accuracy test
-      run: |
-        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_play_duration_accuracy -v --log-cli-level=INFO --html=/app/test_results/play_duration_report.html"
-      continue-on-error: true
-    
-    - name: Run end-to-end workflow test
-      run: |
-        docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_end_to_end_workflow -v --log-cli-level=INFO --html=/app/test_results/end_to_end_workflow_report.html"
-      continue-on-error: true
-    
-    - name: Create test results directory
-      run: mkdir -p test_results
-    
-    - name: Copy test results from container
-      run: |
-        docker cp sodav-backend:/app/test_results/. ./test_results/
-    
-    - name: Upload test results
-      uses: actions/upload-artifact@v4
-      with:
-        name: e2e-test-reports
-        path: test_results/
-    
-    - name: Stop Docker containers
-      run: docker compose down 
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            test-results/
+            coverage-reports/

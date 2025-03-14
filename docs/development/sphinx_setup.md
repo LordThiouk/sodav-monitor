@@ -266,4 +266,4 @@ jobs:
 - [Documentation Sphinx](https://www.sphinx-doc.org/en/master/)
 - [Sphinx reStructuredText Primer](https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html)
 - [Extension Napoleon pour Sphinx](https://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html)
-- [Thème Read the Docs pour Sphinx](https://sphinx-rtd-theme.readthedocs.io/en/stable/) 
+- [Thème Read the Docs pour Sphinx](https://sphinx-rtd-theme.readthedocs.io/en/stable/)

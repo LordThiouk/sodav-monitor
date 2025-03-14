@@ -88,21 +88,21 @@ Exemple de docstring :
    def validate_isrc(isrc: str) -> Tuple[bool, Optional[str]]:
        """
        Valide et normalise un code ISRC.
-       
+
        Format ISRC: CC-XXX-YY-NNNNN
        - CC: Code pays (2 lettres)
        - XXX: Code du propriétaire (3 caractères alphanumériques)
        - YY: Année de référence (2 chiffres)
        - NNNNN: Code de désignation (5 chiffres)
-       
+
        Args:
            isrc: Code ISRC à valider.
-           
+
        Returns:
            Tuple contenant:
            - Un booléen indiquant si l'ISRC est valide.
            - L'ISRC normalisé si valide, None sinon.
-           
+
        Examples:
            >>> validate_isrc("FR-Z03-14-00123")
            (True, "FRZ0314000123")
@@ -129,7 +129,7 @@ Exemple de test :
        is_valid, normalized = validate_isrc("FR-Z03-14-00123")
        assert is_valid is True
        assert normalized == "FRZ0314000123"
-       
+
        # Cas invalide
        is_valid, normalized = validate_isrc("XX-123-45-6789")
        assert is_valid is False
@@ -158,4 +158,4 @@ Pour proposer une nouvelle fonctionnalité, créez une issue sur GitHub avec les
 3. **Cas d'utilisation** : Comment cette fonctionnalité sera utilisée
 4. **Bénéfices** : Pourquoi cette fonctionnalité est utile
 5. **Alternatives** : Autres approches envisagées
-6. **Maquettes** : Maquettes ou diagrammes si pertinent 
+6. **Maquettes** : Maquettes ou diagrammes si pertinent

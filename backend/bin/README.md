@@ -41,4 +41,4 @@ Pour tester si fpcalc fonctionne correctement, vous pouvez exécuter le script d
 python backend/scripts/detection/external_services/test_acoustid_fpcalc.py
 ```
 
-Ce script teste la génération d'empreintes digitales avec fpcalc et affiche les résultats. 
+Ce script teste la génération d'empreintes digitales avec fpcalc et affiche les résultats.

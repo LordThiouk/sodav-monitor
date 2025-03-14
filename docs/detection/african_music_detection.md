@@ -119,4 +119,4 @@ Des tests ont été réalisés avec plusieurs échantillons de musique sénégal
 
 L'amélioration de la détection de la musique africaine est essentielle pour le succès du projet SODAV Monitor au Sénégal. Les tests ont montré que le service AudD offre les meilleures performances pour ce type de contenu, mais des problèmes subsistent dans le traitement et l'enregistrement des métadonnées.
 
-En mettant en œuvre les recommandations de ce document, le système pourra atteindre un taux de détection beaucoup plus élevé pour la musique africaine, contribuant ainsi à une meilleure gestion des droits d'auteur pour les artistes locaux. 
+En mettant en œuvre les recommandations de ce document, le système pourra atteindre un taux de détection beaucoup plus élevé pour la musique africaine, contribuant ainsi à une meilleure gestion des droits d'auteur pour les artistes locaux.

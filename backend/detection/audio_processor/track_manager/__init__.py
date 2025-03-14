@@ -7,4 +7,4 @@ y compris la création, la recherche, la détection et l'enregistrement des stat
 
 from backend.detection.audio_processor.track_manager.track_manager import TrackManager
 
-__all__ = ['TrackManager'] 
+__all__ = ["TrackManager"]

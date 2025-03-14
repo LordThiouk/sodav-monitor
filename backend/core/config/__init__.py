@@ -1,13 +1,10 @@
 """Configuration module for SODAV Monitor."""
 
-from .settings import (
-    get_settings,
-    Settings
-)
-
 # Define constants that were previously in main.py
 import os
 from pathlib import Path
+
+from .settings import Settings, get_settings
 
 # Define paths
 BACKEND_DIR = Path(__file__).parent.parent.parent
@@ -17,18 +14,14 @@ PATHS = {
     "DATA_DIR": os.path.join(BACKEND_DIR, "data"),
     "STATIC_DIR": os.path.join(PROJECT_ROOT, "static"),
     "REPORTS_DIR": os.path.join(BACKEND_DIR, "reports"),
-    "TEMP_DIR": os.path.join(BACKEND_DIR, "temp")
+    "TEMP_DIR": os.path.join(BACKEND_DIR, "temp"),
 }
 
 # Define logging config
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
-    "formatters": {
-        "default": {
-            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        }
-    }
+    "formatters": {"default": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"}},
 }
 
 # Define default stations
@@ -41,11 +34,11 @@ REPORT_FORMATS = ["pdf", "xlsx", "csv"]
 DETECTION_ALGORITHMS = ["chromaprint", "acoustid", "audd"]
 
 __all__ = [
-    'get_settings',
-    'Settings',
-    'PATHS',
-    'LOGGING_CONFIG',
-    'DEFAULT_STATIONS',
-    'REPORT_FORMATS',
-    'DETECTION_ALGORITHMS'
-] 
+    "get_settings",
+    "Settings",
+    "PATHS",
+    "LOGGING_CONFIG",
+    "DEFAULT_STATIONS",
+    "REPORT_FORMATS",
+    "DETECTION_ALGORITHMS",
+]

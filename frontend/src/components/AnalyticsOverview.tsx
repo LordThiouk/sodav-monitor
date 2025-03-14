@@ -124,7 +124,7 @@ const AnalyticsOverview: React.FC = () => {
     const days = Math.floor(seconds / (24 * 3600));
     const hours = Math.floor((seconds % (24 * 3600)) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    
+
     if (days > 0) return `${days}d ${hours}h`;
     if (hours > 0) return `${hours}h ${minutes}m`;
     return `${minutes}m`;
@@ -215,14 +215,14 @@ const AnalyticsOverview: React.FC = () => {
           <CardBody>
             <VStack align="start" spacing={2}>
               <HStack>
-                <Icon 
-                  as={analytics.systemHealth.status === 'healthy' ? FaCheckCircle : FaExclamationTriangle} 
+                <Icon
+                  as={analytics.systemHealth.status === 'healthy' ? FaCheckCircle : FaExclamationTriangle}
                   color={
                     analytics.systemHealth.status === 'healthy' ? "green.500" :
                     analytics.systemHealth.status === 'warning' ? "yellow.500" :
                     "red.500"
                   }
-                  boxSize={5} 
+                  boxSize={5}
                 />
                 <Text fontWeight="medium">System Health</Text>
               </HStack>

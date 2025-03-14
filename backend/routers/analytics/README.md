@@ -99,4 +99,4 @@ artist_stats = response.json()
 # Exporter les données d'analyse au format CSV
 response = await client.get("/api/analytics/export?format=csv", headers=auth_headers)
 export_data = response.json()
-``` 
+```

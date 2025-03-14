@@ -63,4 +63,4 @@ export const authenticatedFetch = async (url: string, options: RequestInit = {})
   }
 
   return response;
-}; 
+};

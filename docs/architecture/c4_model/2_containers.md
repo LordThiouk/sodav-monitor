@@ -9,30 +9,30 @@ graph TD
     User[Utilisateur SODAV] -->|Utilise| WebApp[Application Web]
     Admin[Administrateur] -->|Utilise| WebApp
     WebApp -->|Appelle API| APIServer[API Server]
-    
+
     RadioStation[Stations Radio] -->|Diffuse| AudioStream[Flux Audio]
     AudioStream -->|Capturé par| StreamCapture[Service de Capture]
     StreamCapture -->|Envoie audio| DetectionService[Service de Détection]
-    
+
     DetectionService -->|Utilise| AcoustID[Service AcoustID]
     DetectionService -->|Utilise| AudD[Service AudD]
     DetectionService -->|Stocke résultats| Database[(Base de Données PostgreSQL)]
-    
+
     APIServer -->|Lit/Écrit| Database
     APIServer -->|Déclenche| ReportGenerator[Générateur de Rapports]
     ReportGenerator -->|Lit données| Database
     ReportGenerator -->|Stocke rapports| ReportStorage[Stockage de Rapports]
-    
+
     APIServer -->|Communique avec| DetectionService
     APIServer -->|Utilise| Redis[(Cache Redis)]
-    
+
     WebApp -->|Stocke UI state| LocalStorage[Stockage Local]
-    
+
     classDef primary fill:#f9f,stroke:#333,stroke-width:2px;
     classDef secondary fill:#bbf,stroke:#333,stroke-width:1px;
     classDef external fill:#fbb,stroke:#333,stroke-width:1px;
     classDef database fill:#bfb,stroke:#333,stroke-width:1px;
-    
+
     class WebApp,APIServer,DetectionService,StreamCapture,ReportGenerator primary;
     class User,Admin,ReportStorage,LocalStorage secondary;
     class RadioStation,AcoustID,AudD,AudioStream external;
@@ -88,4 +88,4 @@ graph TD
 - Tous les conteneurs peuvent être déployés sur une seule machine pour les environnements de développement et de test.
 - Pour la production, les conteneurs peuvent être déployés sur plusieurs machines ou dans un environnement cloud pour améliorer la scalabilité et la résilience.
 - Les services de capture et de détection peuvent être répliqués pour gérer plusieurs stations simultanément.
-- Redis peut être configuré en cluster pour améliorer les performances et la disponibilité. 
+- Redis peut être configuré en cluster pour améliorer les performances et la disponibilité.

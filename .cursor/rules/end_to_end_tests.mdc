@@ -9,46 +9,46 @@ These rules will guide the **E2E testing process** to ensure **accurate music de
 ---
 
 ### **🔹 1. General E2E Testing Principles**
-✅ **Test the entire system** → Include **frontend, backend, database, APIs, and external integrations (MusicBrainz, Audd.io, Redis, PostgreSQL, etc.).**  
-✅ **Use real-world scenarios** → Simulate how a user interacts with the system.  
-✅ **Automate tests where possible** → Use tools like **Selenium, Playwright, Pytest, or Postman**.  
-✅ **Monitor performance** → Track **response times, detection speed, and database queries efficiency**.  
-✅ **Ensure data consistency** → Cross-check stored **fingerprints, play durations, detections, and reports**.  
+✅ **Test the entire system** → Include **frontend, backend, database, APIs, and external integrations (MusicBrainz, Audd.io, Redis, PostgreSQL, etc.).**
+✅ **Use real-world scenarios** → Simulate how a user interacts with the system.
+✅ **Automate tests where possible** → Use tools like **Selenium, Playwright, Pytest, or Postman**.
+✅ **Monitor performance** → Track **response times, detection speed, and database queries efficiency**.
+✅ **Ensure data consistency** → Cross-check stored **fingerprints, play durations, detections, and reports**.
 
 ---
 
 ### **🔹 2. Detection Workflow Rules**
 #### 🎧 **Music Detection Process**
-🔹 **Step 1: Check if it's speech or music**  
-   - If **speech** → Ignore detection.  
-   - If **music** → Proceed to fingerprint extraction.  
+🔹 **Step 1: Check if it's speech or music**
+   - If **speech** → Ignore detection.
+   - If **music** → Proceed to fingerprint extraction.
 
-🔹 **Step 2: Perform Local Detection First**  
-   - Search for a match in **previously detected fingerprints**.  
-   - If **match found** → Register the detection **without calling external APIs**.  
+🔹 **Step 2: Perform Local Detection First**
+   - Search for a match in **previously detected fingerprints**.
+   - If **match found** → Register the detection **without calling external APIs**.
    - If **no match** → Proceed to external detection.
 
-🔹 **Step 3: Use MusicBrainz API**  
-   - If **match found** → Store result with metadata.  
+🔹 **Step 3: Use MusicBrainz API**
+   - If **match found** → Store result with metadata.
    - If **no match** → Try next detection method.
 
-🔹 **Step 4: Use Audd.io API**  
-   - If **match found** → Store result.  
+🔹 **Step 4: Use Audd.io API**
+   - If **match found** → Store result.
    - If **no match** → Log the failed detection for future reference.
 
-🔹 **Step 5: Register Detection Details**  
-   - Store **fingerprint** (`fingerprint`, `fingerprint_raw`) in the database.  
-   - Save **exact play time** (`play_duration`).  
-   - Record **station ID, track ID, confidence score**, and other metadata.  
+🔹 **Step 5: Register Detection Details**
+   - Store **fingerprint** (`fingerprint`, `fingerprint_raw`) in the database.
+   - Save **exact play time** (`play_duration`).
+   - Record **station ID, track ID, confidence score**, and other metadata.
 
 ✅ **Test Case:** Ensure detection **follows this sequence** and stores correct information.
 
 ---
 
 ### **🔹 3. Play Duration Accuracy Rules**
-🔹 **Start timestamp** → Register when the track is first detected.  
-🔹 **End timestamp** → Register when the track stops playing.  
-🔹 **Calculate exact play duration** = **End - Start**  
+🔹 **Start timestamp** → Register when the track is first detected.
+🔹 **End timestamp** → Register when the track stops playing.
+🔹 **Calculate exact play duration** = **End - Start**
 🔹 **Validate play duration**:
    - If **duration is less than 5 seconds**, ignore detection.
    - If **track is interrupted and resumes within 10s**, merge detections.
@@ -59,9 +59,9 @@ These rules will guide the **E2E testing process** to ensure **accurate music de
 ---
 
 ### **🔹 4. Station & Streaming Validation Rules**
-🔹 **Test live radio streams** for **stability, downtime, and errors.**  
-🔹 **Ensure station metadata is correctly stored** (name, region, country, URL).  
-🔹 **Test recovery mechanisms** if a stream **disconnects mid-detection**.  
+🔹 **Test live radio streams** for **stability, downtime, and errors.**
+🔹 **Ensure station metadata is correctly stored** (name, region, country, URL).
+🔹 **Test recovery mechanisms** if a stream **disconnects mid-detection**.
 
 ✅ **Test Case:** Simulate a radio stream drop and ensure **detection resumes correctly**.
 
@@ -69,15 +69,15 @@ These rules will guide the **E2E testing process** to ensure **accurate music de
 
 ### **🔹 5. Report Generation Rules**
 📊 **Test that reports contain**:
-   - **Track detections per station** (with exact play duration).  
-   - **Top played artists & labels**.  
-   - **Detection confidence for each song**.  
-   - **Total playtime per track, artist, and station**.  
+   - **Track detections per station** (with exact play duration).
+   - **Top played artists & labels**.
+   - **Detection confidence for each song**.
+   - **Total playtime per track, artist, and station**.
 
 📩 **Test Subscription Reports**:
-   - Users should receive scheduled **daily/weekly/monthly** reports.  
-   - Report files must be **downloadable & correctly formatted (CSV, JSON, etc.).**  
-   - If an error occurs, send **error logs instead of an empty report**.  
+   - Users should receive scheduled **daily/weekly/monthly** reports.
+   - Report files must be **downloadable & correctly formatted (CSV, JSON, etc.).**
+   - If an error occurs, send **error logs instead of an empty report**.
 
 ✅ **Test Case:** Trigger reports manually and verify the **data accuracy and email delivery**.
 
@@ -85,31 +85,31 @@ These rules will guide the **E2E testing process** to ensure **accurate music de
 
 ### **🔹 6. Performance & Scalability Rules**
 🔹 **Test system load**:
-   - Run **multiple detections simultaneously** across different stations.  
-   - Ensure PostgreSQL & Redis can handle the **increased queries**.  
-   - Monitor API **response times** (should be under **3 seconds**).  
+   - Run **multiple detections simultaneously** across different stations.
+   - Ensure PostgreSQL & Redis can handle the **increased queries**.
+   - Monitor API **response times** (should be under **3 seconds**).
 
 🔹 **Test large dataset processing**:
-   - Simulate detection on **thousands of tracks**.  
-   - Ensure **data retrieval (analytics, reports, dashboard stats) is optimized**.  
+   - Simulate detection on **thousands of tracks**.
+   - Ensure **data retrieval (analytics, reports, dashboard stats) is optimized**.
 
 ✅ **Test Case:** Simulate high-traffic conditions and ensure **no performance degradation**.
 
 ---
 
 ### **🔹 7. Database Consistency Rules**
-🔹 **Ensure no duplicate detections** for the same track & station.  
-🔹 **Ensure foreign keys & relationships are enforced** (Tracks ↔ Detections ↔ Stations).  
-🔹 **Ensure historical detection data remains intact after migrations**.  
+🔹 **Ensure no duplicate detections** for the same track & station.
+🔹 **Ensure foreign keys & relationships are enforced** (Tracks ↔ Detections ↔ Stations).
+🔹 **Ensure historical detection data remains intact after migrations**.
 
 ✅ **Test Case:** Add, update, and delete tracks to confirm **database integrity**.
 
 ---
 
 ### **🚀 Final Steps**
-🔹 Implement these rules in **Cursor AI** for automated validation.  
-🔹 Run tests in **CI/CD pipeline** to detect regressions early.  
-🔹 Log errors & notify developers if **failures occur in real-time**.  
+🔹 Implement these rules in **Cursor AI** for automated validation.
+🔹 Run tests in **CI/CD pipeline** to detect regressions early.
+🔹 Log errors & notify developers if **failures occur in real-time**.
 
 ---
 

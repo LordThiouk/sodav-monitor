@@ -351,4 +351,4 @@ Ces scripts testent les différents services avec différentes approches et affi
 
 3. **Considérer des alternatives** :
    - Explorer d'autres services de détection musicale comme Shazam API ou ACRCloud
-   - Développer un système de détection propriétaire basé sur l'apprentissage automatique 
+   - Développer un système de détection propriétaire basé sur l'apprentissage automatique

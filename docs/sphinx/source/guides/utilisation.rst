@@ -90,4 +90,4 @@ Pour rechercher des pistes :
    - ISRC
    - Label
    - Date de détection
-3. Cliquez sur une piste pour voir ses détails et son historique de diffusion 
+3. Cliquez sur une piste pour voir ses détails et son historique de diffusion

@@ -6,7 +6,7 @@ Ce document détaille les améliorations apportées au système de détection mu
 
 ### 1. Correction de l'intégration AudD
 
-**Problème identifié :** 
+**Problème identifié :**
 - Erreur lors de l'utilisation du service AudD : `_request() got an unexpected keyword argument 'files'`
 - Cette erreur se produisait car la méthode `detect_track` de la classe `AuddService` utilisait incorrectement le paramètre `files` avec `aiohttp.ClientSession.post()`, qui n'est pas supporté par aiohttp.
 
@@ -16,7 +16,7 @@ Ce document détaille les améliorations apportées au système de détection mu
 
 **Fichier modifié :** `backend/detection/audio_processor/external_services.py`
 
-**Résultat :** 
+**Résultat :**
 - Le service AudD fonctionne maintenant correctement et peut identifier les morceaux à partir des échantillons audio.
 
 ### 2. Ajout de la classification du type audio
@@ -275,6 +275,6 @@ Pour plus de détails sur ces implémentations, consultez le document [DETECTION
 - [Documentation AudD API](https://docs.audd.io/)
 - [Documentation aiohttp](https://docs.aiohttp.org/en/stable/client_reference.html#aiohttp.FormData)
 - [Documentation AcoustID](https://acoustid.org/webservice)
-- [Standard ISRC](https://isrc.ifpi.org/en/) 
+- [Standard ISRC](https://isrc.ifpi.org/en/)
 - [Chromaprint](https://github.com/acoustid/chromaprint)
-- [Dejavu](https://github.com/worldveil/dejavu) 
+- [Dejavu](https://github.com/worldveil/dejavu)

@@ -42,12 +42,12 @@ La méthode `capture_audio_stream` a été améliorée pour permettre la capture
 def capture_audio_stream(self, stream_url, duration=RECORDING_DURATION, detect_silence=False):
     """
     Capture un extrait audio d'un flux radio en direct.
-    
+
     Args:
         stream_url: URL du flux radio
         duration: Durée d'enregistrement en secondes (utilisée seulement si detect_silence=False)
         detect_silence: Si True, capture jusqu'à ce qu'un silence ou changement de morceau soit détecté
-        
+
     Returns:
         tuple: (bytes: Données audio capturées, float: Durée réelle capturée)
     """
@@ -55,41 +55,41 @@ def capture_audio_stream(self, stream_url, duration=RECORDING_DURATION, detect_s
         # Établir une connexion au flux
         response = requests.get(stream_url, stream=True, timeout=10)
         response.raise_for_status()
-        
+
         # Préparer un buffer pour stocker les données audio
         audio_buffer = io.BytesIO()
-        
+
         # Calculer la taille approximative à capturer
         bytes_to_capture = int(duration * 128 * 1024 / 8)
-        
+
         # Capturer les données
         bytes_captured = 0
         start_time = datetime.now()
-        
+
         for chunk in response.iter_content(chunk_size=4096):
             if chunk:
                 audio_buffer.write(chunk)
                 bytes_captured += len(chunk)
-                
+
                 # Vérifier si nous avons capturé suffisamment de données
                 elapsed = (datetime.now() - start_time).total_seconds()
                 if bytes_captured >= bytes_to_capture or elapsed >= duration + 5:
                     break
-        
+
         # Convertir en format compatible avec pydub pour extraction de la durée
         audio_buffer.seek(0)
         audio = AudioSegment.from_file(audio_buffer)
-        
+
         # Créer un nouveau buffer avec le segment audio
         output_buffer = io.BytesIO()
         audio.export(output_buffer, format="mp3")
         output_buffer.seek(0)
-        
+
         # Variables pour la détection de silence/changement
         silence_threshold = 0.05  # Seuil pour considérer un segment comme silence
         silence_duration = 0  # Durée du silence courant
         max_silence_duration = 2.0  # Durée maximale de silence avant de considérer la fin du morceau
-        
+
         # Détecter le silence
         if normalized_rms < silence_threshold:
             silence_duration += len(temp_audio) / 1000.0
@@ -98,12 +98,12 @@ def capture_audio_stream(self, stream_url, duration=RECORDING_DURATION, detect_s
                 break
         else:
             silence_duration = 0
-        
+
         # Détecter un changement significatif dans le contenu audio
         # ... code de détection de changement ...
-        
+
         return output_buffer.read(), silence_duration
-                
+
     except Exception as e:
         return None, None
 ```
@@ -140,20 +140,20 @@ async def test_real_radio_duration_until_silence(self, db_session, test_stations
     """
     # Sélectionner une station de test
     station = test_stations[0]
-    
+
     # Capturer l'audio jusqu'à ce qu'un silence soit détecté
     audio_data, captured_duration = self.capture_audio_stream(
-        station.stream_url, 
+        station.stream_url,
         detect_silence=True
     )
-    
+
     # ... code d'extraction des caractéristiques et de détection ...
-    
+
     # Vérifier que la durée enregistrée correspond à la durée capturée
     captured_duration_td = timedelta(seconds=captured_duration)
     assert abs(detection.play_duration.total_seconds() - captured_duration_td.total_seconds()) < 0.5, \
         f"La durée enregistrée ({detection.play_duration.total_seconds()} s) ne correspond pas à la durée capturée ({captured_duration_td.total_seconds()} s)"
-    
+
     # ... vérifications supplémentaires ...
 ```
 
@@ -223,16 +223,16 @@ def extract_features(self, audio_data: np.ndarray) -> Dict[str, Any]:
     # ...
     # Calculer la durée de lecture
     play_duration = self.get_audio_duration(audio_mono)
-    
+
     # ...
-    
+
     # Assembler toutes les caractéristiques
     features = {
         "play_duration": play_duration,
         "duration": play_duration,  # Ajouter la durée sous le nom 'duration' pour compatibilité
         # ...
     }
-    
+
     return features
 ```
 
@@ -245,7 +245,7 @@ async def process_track(self, features: Dict[str, Any], station_id: Optional[int
     # ...
     # Extraire la durée des caractéristiques
     duration = features.get("duration", features.get("play_duration", 0))
-    
+
     # ...
     # Ajouter la durée au résultat
     result["duration"] = duration
@@ -262,7 +262,7 @@ def record_detection(self, detection_result: Dict[str, Any], station_id: int) ->
     # ...
     # Extraire la durée du résultat de détection
     duration = detection_result.get("duration", 0)
-    
+
     # Créer un enregistrement de détection
     detection = TrackDetection(
         track_id=track.id,
@@ -273,13 +273,13 @@ def record_detection(self, detection_result: Dict[str, Any], station_id: int) ->
         play_duration=duration  # Utiliser la durée extraite
     )
     self.db_session.add(detection)
-    
+
     # Mettre à jour les statistiques de la station
     station_track_stats = self.db_session.query(StationTrackStats).filter(
         StationTrackStats.station_id == station_id,
         StationTrackStats.track_id == track.id
     ).first()
-    
+
     if not station_track_stats:
         # Créer de nouvelles statistiques si elles n'existent pas
         station_track_stats = StationTrackStats(
@@ -310,4 +310,4 @@ def record_detection(self, detection_result: Dict[str, Any], station_id: int) ->
 
 ## Conclusion
 
-Les tests de durée de lecture avec des données réelles garantissent que le système capture, enregistre et utilise correctement les informations de durée pour chaque morceau sur chaque station. Ces tests sont essentiels pour fournir des données précises sur le temps d'antenne, ce qui est crucial pour la distribution des droits d'auteur. La nouvelle approche de capture jusqu'à la fin naturelle du morceau permet d'obtenir des mesures encore plus précises de la durée réelle de diffusion. 
+Les tests de durée de lecture avec des données réelles garantissent que le système capture, enregistre et utilise correctement les informations de durée pour chaque morceau sur chaque station. Ces tests sont essentiels pour fournir des données précises sur le temps d'antenne, ce qui est crucial pour la distribution des droits d'auteur. La nouvelle approche de capture jusqu'à la fin naturelle du morceau permet d'obtenir des mesures encore plus précises de la durée réelle de diffusion.

@@ -34,10 +34,16 @@ La sécurité est une priorité pour le projet SODAV Monitor. Veuillez suivre ce
 
 - **Variables d'environnement** : Toutes les données sensibles (mots de passe, clés API, etc.) doivent être stockées dans des variables d'environnement via un fichier `.env` qui n'est jamais commité.
 - **Configuration** : Utilisez le fichier `.env.example` comme modèle pour créer votre propre fichier `.env`.
-- **Railway** : Pour le déploiement sur Railway, utilisez `railway.json.example` comme modèle et configurez les secrets via la plateforme Railway.
-- **Scripts** : Pour les scripts nécessitant des identifiants, utilisez les variables d'environnement `ADMIN_EMAIL` et `ADMIN_PASSWORD`.
+- **Docker Compose** : Dans les fichiers docker-compose, utilisez la syntaxe `${VARIABLE_NAME}` pour référencer les variables d'environnement.
+- **Vérification des secrets** : Utilisez le script `scripts/check_sensitive_info.sh` pour vérifier la présence d'informations sensibles dans le code avant de commiter.
+- **Pre-commit hooks** : Les hooks pre-commit sont configurés pour exécuter automatiquement le script de vérification des secrets.
 
-Pour plus d'informations sur les bonnes pratiques de sécurité, consultez [docs/SECURITY_GUIDELINES.md](docs/SECURITY_GUIDELINES.md).
+### Documentation de Sécurité
+
+Pour plus d'informations sur la sécurité, consultez les documents suivants :
+
+- [Bonnes Pratiques de Sécurité](docs/security/security_best_practices.md) - Guide général des bonnes pratiques de sécurité
+- [Gestion des Clés API et des Secrets](docs/security/api_keys_management.md) - Guide spécifique pour la gestion des clés API et autres secrets
 
 ## 🌍 Gestion des Environnements
 
@@ -55,7 +61,7 @@ Le projet SODAV Monitor prend en charge plusieurs environnements de déploiement
    # Pour le développement
    cp .env.example .env.development
    # Éditez .env.development avec vos configurations de développement
-   
+
    # Pour la production
    cp .env.example .env.production
    # Éditez .env.production avec vos configurations de production
@@ -66,14 +72,14 @@ Le projet SODAV Monitor prend en charge plusieurs environnements de déploiement
    # Pour Windows (PowerShell)
    # Pour le développement
    .\backend\scripts\startup\start_env.ps1 development
-   
+
    # Pour la production
    .\backend\scripts\startup\start_env.ps1 production
-   
+
    # Pour Linux/Mac (Bash)
    # Pour le développement
    ./backend/scripts/startup/start_env.sh development
-   
+
    # Pour la production
    ./backend/scripts/startup/start_env.sh production
    ```
@@ -107,6 +113,7 @@ La documentation du projet SODAV Monitor est organisée de manière thématique 
 - **[Base de Données](docs/database/)** : Schéma de base de données, migrations et gestion des données
 - **[Détection](docs/detection/)** : Système de détection musicale, algorithmes et optimisations
 - **[Développement](docs/development/)** : Guides de développement, standards de code et contribution
+  - [Code Style Fixes](docs/development/code_style_fixes.md) : Documentation des corrections de style de code récentes
 - **[Sécurité](docs/security/)** : Directives de sécurité et bonnes pratiques
 - **[Performance](docs/performance/)** : Tests de performance et optimisations
 - **[Tests](docs/tests/)** : Documentation des tests et stratégies de test
@@ -270,61 +277,52 @@ Pour plus d'informations sur la stratégie de test, consultez les documents suiv
 - `docs/INTEGRATION_TESTING.md` : Documentation spécifique pour les tests d'intégration
 - `backend/tests/integration/README.md` : Documentation pour les tests d'intégration
 
-## Intégration Continue (CI)
+## 🔄 Intégration Continue
 
-Nous avons configuré GitHub Actions pour exécuter automatiquement les tests à chaque push et pull request sur les branches `main` et `develop`. La configuration se trouve dans le fichier `.github/workflows/tests.yml`.
+Le projet utilise GitHub Actions pour l'intégration continue et les tests automatisés. Plusieurs workflows sont disponibles :
 
-Le workflow CI exécute les étapes suivantes :
+### Tests End-to-End
 
-1. Configuration de l'environnement Python et Redis
-2. Installation des dépendances
-3. Exécution des tests unitaires avec génération de rapport de couverture
-4. Exécution des tests d'intégration avec génération de rapport de couverture
-5. Téléchargement des rapports de couverture vers Codecov
+- **Run E2E Tests on Push** : Exécute les tests E2E à chaque push sur n'importe quelle branche
+- **E2E Tests with Pydantic Compatibility** : Gère la compatibilité entre Pydantic v1 et v2
+- **E2E Tests Local** : Exécute les tests sans Docker
+- **E2E Tests with Docker** : Utilise Docker pour créer un environnement complet
 
-Pour visualiser les résultats des tests CI, consultez l'onglet "Actions" du dépôt GitHub.
+### Exécution Locale des Workflows
 
-## Tests Docker
+Vous pouvez exécuter les workflows GitHub Actions localement avec l'outil `act` :
 
-Pour exécuter les tests end-to-end dans l'environnement Docker de développement, nous avons créé plusieurs scripts PowerShell dans le répertoire `scripts/docker_tests/`.
-
-### Scripts disponibles
-
-1. `scripts/docker_tests/run_tests_in_docker.ps1` - Exécute tous les tests end-to-end
-2. `scripts/docker_tests/run_detection_test_in_docker.ps1` - Exécute uniquement le test de workflow de détection
-3. `scripts/docker_tests/run_report_test_in_docker.ps1` - Exécute uniquement le test de génération de rapport
-4. `scripts/docker_tests/run_play_duration_test_in_docker.ps1` - Exécute uniquement le test de précision de durée de lecture
-5. `scripts/docker_tests/run_end_to_end_workflow_test_in_docker.ps1` - Exécute uniquement le test de workflow end-to-end
-
-### Exécution des tests
-
-Assurez-vous que Docker Desktop est en cours d'exécution, puis exécutez l'un des scripts ci-dessus. Par exemple :
-
-```powershell
-.\scripts\docker_tests\run_detection_test_in_docker.ps1
+```bash
+# Exécuter le script interactif
+./run_github_actions_locally.sh
 ```
 
-Pour plus d'informations, consultez le fichier [README_DOCKER_TESTS.md](scripts/docker_tests/README_DOCKER_TESTS.md).
+Pour plus d'informations sur les workflows GitHub Actions, consultez la [documentation des tests E2E](docs/tests/github_actions_e2e_tests.md).
 
-## Tests avec GitHub Actions
+## 🧪 Tests
 
-Si vous n'avez pas assez d'espace de stockage sur votre ordinateur pour exécuter Docker localement, vous pouvez utiliser GitHub Actions pour exécuter les tests end-to-end dans un environnement hébergé.
+### Tests End-to-End (E2E)
 
-### Configuration
+Pour exécuter les tests E2E localement :
 
-1. Configurez les secrets GitHub pour vos clés API :
-   - `ACOUSTID_API_KEY`
-   - `AUDD_API_KEY`
+```bash
+# Exécuter les tests E2E avec pytest
+python -m pytest tests/e2e/ -v
 
-2. Accédez à l'onglet "Actions" de votre dépôt GitHub
-3. Sélectionnez le workflow "End-to-End Tests in Docker"
-4. Cliquez sur "Run workflow"
+# Ou utiliser le script dédié
+./run_e2e_tests_local.sh
+```
 
-### Avantages
+### GitHub Actions
 
-- Aucune installation locale requise
-- Exécution dans un environnement isolé et propre
-- Ressources de calcul fournies par GitHub
-- Résultats des tests facilement accessibles
+Le projet utilise GitHub Actions pour l'intégration continue. Vous pouvez exécuter les workflows GitHub Actions localement à l'aide de l'outil [act](https://github.com/nektos/act) :
 
-Pour plus d'informations, consultez [Tests E2E avec GitHub Actions](docs/tests/github_actions_e2e_tests.md).
+```bash
+# Installer act (macOS)
+brew install act
+
+# Exécuter le workflow E2E avec Pydantic compatibility
+./run_github_actions_locally.sh
+```
+
+Les résultats des tests et les rapports de couverture sont disponibles dans les répertoires `test-results/` et `coverage-reports/`.

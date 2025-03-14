@@ -25,10 +25,10 @@ Set-Location $rootDir
 $containersRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "sodav-backend"
 if (-not $containersRunning) {
     Write-Host "SODAV containers are not running. Starting them now..." -ForegroundColor Yellow
-    
+
     # Start the Docker environment
     & "$rootDir\start-docker.ps1"
-    
+
     # Wait for containers to be ready
     Write-Host "Waiting for containers to be ready..." -ForegroundColor Yellow
     Start-Sleep -Seconds 30
@@ -40,4 +40,4 @@ if (-not $containersRunning) {
 Write-Host "Running end-to-end workflow test in the backend container..." -ForegroundColor Green
 docker exec sodav-backend bash -c "cd /app && python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_end_to_end_workflow -v --log-cli-level=INFO"
 
-Write-Host "Test completed." -ForegroundColor Green 
+Write-Host "Test completed." -ForegroundColor Green

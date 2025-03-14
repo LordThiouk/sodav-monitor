@@ -82,15 +82,15 @@ if isrc:
     existing_track = self.db_session.query(Track).filter(Track.isrc == isrc).first()
     if existing_track:
         self.logger.info(f"Found existing track with ISRC {isrc}: {existing_track.title} by artist ID {existing_track.artist_id}")
-        
+
         # Récupérer l'artiste
         artist = self.db_session.query(Artist).filter(Artist.id == existing_track.artist_id).first()
         artist_name_from_db = artist.name if artist else "Unknown Artist"
-        
+
         # Mettre à jour les statistiques si station_id est fourni
         if station_id:
             self._record_play_time(station_id, existing_track.id, play_duration)
-        
+
         # Retourner les informations de la piste existante
         return {
             "track": {
@@ -120,15 +120,15 @@ if isrc:
     existing_track = self.db_session.query(Track).filter(Track.isrc == isrc).first()
     if existing_track:
         self.logger.info(f"Found existing track with ISRC {isrc}: {existing_track.title} by artist ID {existing_track.artist_id}")
-        
+
         # Récupérer l'artiste
         artist = self.db_session.query(Artist).filter(Artist.id == existing_track.artist_id).first()
         artist_name_from_db = artist.name if artist else "Unknown Artist"
-        
+
         # Mettre à jour les statistiques si station_id est fourni
         if station_id:
             self._record_play_time(station_id, existing_track.id, play_duration)
-        
+
         # Retourner les informations de la piste existante
         return {
             "track": {
@@ -152,4 +152,4 @@ if isrc:
 - Optimisation de la recherche par ISRC pour de grandes bases de données
 - Implémentation d'un système de vérification de la validité des codes ISRC
 - Développement d'un système de fusion des pistes dupliquées existantes
-- Amélioration de l'extraction des codes ISRC à partir des métadonnées des services externes 
+- Amélioration de l'extraction des codes ISRC à partir des métadonnées des services externes

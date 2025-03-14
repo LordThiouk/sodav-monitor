@@ -23,10 +23,10 @@ print_red() {
 if [ "$EUID" -ne 0 ]; then
     print_yellow "This script requires sudo privileges for system package installation."
     print_yellow "Please enter your password when prompted."
-    
+
     # Try to get sudo privileges
     sudo -v
-    
+
     # Check if sudo was successful
     if [ $? -ne 0 ]; then
         print_red "Failed to obtain sudo privileges. Please run this script with sudo."
@@ -47,7 +47,7 @@ echo ""
 # Check OS
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     print_green "Detected Linux operating system."
-    
+
     # Detect distribution
     if [ -f /etc/os-release ]; then
         . /etc/os-release
@@ -58,57 +58,57 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         print_yellow "Could not determine Linux distribution. Assuming Debian/Ubuntu compatible."
         OS="Unknown"
     fi
-    
+
     # Install system dependencies
     print_green "Installing system dependencies..."
     sudo apt update
-    
+
     print_green "Installing audio processing libraries..."
     sudo apt install -y ffmpeg libavcodec-extra libsndfile1 portaudio19-dev
-    
+
     print_green "Installing chromaprint for AcoustID fingerprinting..."
     sudo apt install -y libchromaprint-dev libchromaprint-tools
-    
+
     print_green "Installing additional audio libraries..."
     sudo apt install -y libasound2-dev python3-dev python3-pip python3-venv
-    
+
     print_green "Installing PostgreSQL..."
     sudo apt install -y postgresql postgresql-contrib
-    
+
     print_green "Installing Redis..."
     sudo apt install -y redis-server
-    
+
 elif [[ "$OSTYPE" == "darwin"* ]]; then
     print_green "Detected macOS operating system."
-    
+
     # Check if Homebrew is installed
     if ! command -v brew &> /dev/null; then
         print_yellow "Homebrew not found. Installing Homebrew..."
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     fi
-    
+
     print_green "Installing system dependencies with Homebrew..."
     brew update
-    
+
     print_green "Installing audio processing libraries..."
     brew install ffmpeg
-    
+
     print_green "Installing chromaprint for AcoustID fingerprinting..."
     brew install chromaprint
-    
+
     print_green "Installing PostgreSQL..."
     brew install postgresql
-    
+
     print_green "Installing Redis..."
     brew install redis
-    
+
     # Start services
     print_green "Starting PostgreSQL service..."
     brew services start postgresql
-    
+
     print_green "Starting Redis service..."
     brew services start redis
-    
+
 elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
     print_red "Windows detected. This script is optimized for Linux/macOS."
     print_yellow "For Windows, please follow the manual setup instructions in docs/tests/production_test_environment.md"
@@ -148,7 +148,7 @@ pip install pyaudio soundfile librosa chromaprint acoustid pydub
 # Set up PostgreSQL database
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     print_green "Setting up PostgreSQL database..."
-    
+
     # Check if PostgreSQL service is running
     if systemctl is-active --quiet postgresql; then
         print_green "PostgreSQL service is running."
@@ -157,16 +157,16 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         sudo systemctl start postgresql
         sudo systemctl enable postgresql
     fi
-    
+
     # Create database and user
     print_green "Creating database and user..."
     sudo -u postgres psql -c "CREATE USER sodav_test WITH PASSWORD 'sodav_test_password';" || print_yellow "User may already exist."
     sudo -u postgres psql -c "CREATE DATABASE sodav_test OWNER sodav_test;" || print_yellow "Database may already exist."
     sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE sodav_test TO sodav_test;" || print_yellow "Privileges may already be granted."
-    
+
     # Set up Redis
     print_green "Setting up Redis..."
-    
+
     # Check if Redis service is running
     if systemctl is-active --quiet redis-server; then
         print_green "Redis service is running."
@@ -175,10 +175,10 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         sudo systemctl start redis-server
         sudo systemctl enable redis-server
     fi
-    
+
 elif [[ "$OSTYPE" == "darwin"* ]]; then
     print_green "Setting up PostgreSQL database..."
-    
+
     # Create database and user
     print_green "Creating database and user..."
     createuser -s sodav_test || print_yellow "User may already exist."
@@ -224,7 +224,7 @@ def test_acoustid():
     if not api_key or api_key == "your_acoustid_api_key":
         print("Error: ACOUSTID_API_KEY not found or not set in environment variables")
         return False
-    
+
     try:
         # Simple API call to test connection
         result = acoustid.lookup(api_key, "4115aae1201a58d50aaf9577f5086530")
@@ -240,7 +240,7 @@ def test_audd():
     if not api_key or api_key == "your_audd_api_key":
         print("Error: AUDD_API_KEY not found or not set in environment variables")
         return False
-    
+
     try:
         # Simple API call to test connection
         url = f"https://api.audd.io/getApiStatus/?api_token={api_key}"
@@ -258,7 +258,7 @@ def test_audd():
 if __name__ == "__main__":
     acoustid_success = test_acoustid()
     audd_success = test_audd()
-    
+
     if acoustid_success and audd_success:
         print("All external services are configured correctly!")
     else:
@@ -324,25 +324,25 @@ def create_test_data():
     for station_data in stations:
         station = RadioStation(**station_data)
         session.add(station)
-    
+
     # Add artists
     for artist_data in artists:
         artist = Artist(**artist_data)
         session.add(artist)
-    
+
     # Add labels
     for label_data in labels:
         label = Label(**label_data)
         session.add(label)
-    
+
     # Commit to get IDs
     session.commit()
-    
+
     # Add tracks
     for track_data in tracks:
         track = Track(**track_data)
         session.add(track)
-    
+
     # Final commit
     session.commit()
     print("Test data created successfully!")
@@ -388,4 +388,4 @@ print_green "4. Test external services: python test_external_services.py"
 print_green "5. Run the end-to-end tests: python -m pytest backend/tests/integration/test_end_to_end.py -v"
 print_green "========================================================"
 print_green "For more information, see docs/tests/production_test_environment.md"
-print_green "========================================================" 
+print_green "========================================================"

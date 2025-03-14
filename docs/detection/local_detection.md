@@ -45,12 +45,12 @@ def generate_chromaprint(audio_data: bytes) -> str:
     """Génère une empreinte Chromaprint à partir des données audio."""
     import subprocess
     import tempfile
-    
+
     # Écrire les données audio dans un fichier temporaire
     with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
         temp_file.write(audio_data)
         temp_path = temp_file.name
-    
+
     try:
         # Appeler fpcalc (outil Chromaprint)
         result = subprocess.run(
@@ -58,12 +58,12 @@ def generate_chromaprint(audio_data: bytes) -> str:
             capture_output=True,
             text=True
         )
-        
+
         # Extraire l'empreinte
         for line in result.stdout.splitlines():
             if line.startswith('FINGERPRINT='):
                 return line[12:]
-        
+
         return None
     finally:
         # Supprimer le fichier temporaire
@@ -88,15 +88,15 @@ class DejavuFingerprinter:
         self.overlap_ratio = 0.5
         self.fan_value = 15
         self.amp_min = 10
-        
+
     def fingerprint(self, audio_data: np.ndarray) -> List[Tuple[str, int]]:
         """Génère des empreintes Dejavu à partir des données audio."""
         # Calculer le spectrogramme
         spectrum = self._spectrum(audio_data)
-        
+
         # Trouver les pics
         peaks = self._find_peaks(spectrum)
-        
+
         # Générer les empreintes
         return self._generate_fingerprints(peaks)
 ```
@@ -117,12 +117,12 @@ class DejavuFingerprinter:
 # Dans models.py
 class Fingerprint(Base):
     __tablename__ = 'fingerprints'
-    
+
     id = Column(Integer, primary_key=True)
     track_id = Column(Integer, ForeignKey('tracks.id'), index=True)
     hash = Column(String(255), index=True)
     offset = Column(Integer)
-    
+
     # Relation avec Track
     track = relationship("Track", back_populates="fingerprints")
 
@@ -146,7 +146,7 @@ from elasticsearch import Elasticsearch
 class ElasticsearchFingerprinter:
     def __init__(self, es_host='localhost:9200'):
         self.es = Elasticsearch([es_host])
-        
+
     def index_fingerprint(self, track_id: int, fingerprint: str):
         """Indexe une empreinte dans Elasticsearch."""
         self.es.index(
@@ -156,7 +156,7 @@ class ElasticsearchFingerprinter:
                 'fingerprint': fingerprint
             }
         )
-        
+
     def search_fingerprint(self, fingerprint: str) -> List[Dict]:
         """Recherche une empreinte dans Elasticsearch."""
         result = self.es.search(
@@ -172,7 +172,7 @@ class ElasticsearchFingerprinter:
                 }
             }
         )
-        
+
         return result['hits']['hits']
 ```
 
@@ -193,10 +193,10 @@ def extract_multiple_fingerprints(audio_data: bytes, num_segments: int = 5) -> L
     """Extrait plusieurs empreintes à partir de différentes sections de l'audio."""
     # Convertir les données audio en tableau numpy
     audio_array = audio_to_numpy(audio_data)
-    
+
     # Calculer la longueur de chaque segment
     segment_length = len(audio_array) // num_segments
-    
+
     # Extraire une empreinte pour chaque segment
     fingerprints = []
     for i in range(num_segments):
@@ -205,7 +205,7 @@ def extract_multiple_fingerprints(audio_data: bytes, num_segments: int = 5) -> L
         segment = audio_array[start:end]
         fingerprint = generate_fingerprint(segment)
         fingerprints.append(fingerprint)
-    
+
     return fingerprints
 ```
 
@@ -223,19 +223,19 @@ def extract_multiple_fingerprints(audio_data: bytes, num_segments: int = 5) -> L
 def normalize_features(features: Dict[str, Any]) -> Dict[str, Any]:
     """Normalise les caractéristiques audio pour améliorer la robustesse."""
     normalized = {}
-    
+
     # Normaliser les MFCC
     if "mfcc_mean" in features:
         mfcc = np.array(features["mfcc_mean"])
         normalized["mfcc_mean"] = (mfcc - np.mean(mfcc)) / np.std(mfcc)
-    
+
     # Normaliser le chroma
     if "chroma_mean" in features:
         chroma = np.array(features["chroma_mean"])
         normalized["chroma_mean"] = chroma / np.sum(chroma) if np.sum(chroma) > 0 else chroma
-    
+
     # Autres caractéristiques...
-    
+
     return normalized
 ```
 
@@ -259,7 +259,7 @@ def get_track_by_fingerprint(fingerprint_hash: str) -> Optional[int]:
     """Récupère l'ID d'une piste à partir de son empreinte (avec cache)."""
     # Recherche dans la base de données
     fingerprint = db_session.query(Fingerprint).filter_by(hash=fingerprint_hash).first()
-    
+
     return fingerprint.track_id if fingerprint else None
 ```
 
@@ -278,28 +278,28 @@ async def find_local_match_parallel(fingerprint: str, chunk_size: int = 1000) ->
     """Recherche une correspondance locale en parallèle."""
     # Récupérer le nombre total d'empreintes
     total = db_session.query(func.count(Fingerprint.id)).scalar()
-    
+
     # Calculer le nombre de chunks
     num_chunks = (total + chunk_size - 1) // chunk_size
-    
+
     # Créer les tâches de recherche
     tasks = []
     for i in range(num_chunks):
         offset = i * chunk_size
         tasks.append(search_fingerprint_chunk(fingerprint, offset, chunk_size))
-    
+
     # Exécuter les tâches en parallèle
     results = await asyncio.gather(*tasks)
-    
+
     # Trouver la meilleure correspondance
     best_match = None
     best_score = 0.0
-    
+
     for result in results:
         if result and result["score"] > best_score:
             best_match = result
             best_score = result["score"]
-    
+
     return best_match
 ```
 
@@ -346,14 +346,14 @@ async def detect_track(audio_data: bytes) -> Dict[str, Any]:
     """Détecte une piste à partir de données audio."""
     # Générer les empreintes
     fingerprints = extract_multiple_fingerprints(audio_data)
-    
+
     # Rechercher des correspondances pour chaque empreinte
     matches = []
     for fingerprint in fingerprints:
         match = await find_local_match(fingerprint)
         if match:
             matches.append(match)
-    
+
     # Si des correspondances ont été trouvées, retourner la meilleure
     if matches:
         # Trier par score de confiance
@@ -363,7 +363,7 @@ async def detect_track(audio_data: bytes) -> Dict[str, Any]:
             "detection": matches[0],
             "source": "local"
         }
-    
+
     # Si aucune correspondance locale, utiliser les services externes
     return await detect_with_external_services(audio_data)
 ```
@@ -377,18 +377,18 @@ async def update_track_fingerprints(track_id: int):
     track = db_session.query(Track).filter_by(id=track_id).first()
     if not track:
         return False
-    
+
     # Récupérer les données audio
     audio_data = get_track_audio(track_id)
     if not audio_data:
         return False
-    
+
     # Supprimer les anciennes empreintes
     db_session.query(Fingerprint).filter_by(track_id=track_id).delete()
-    
+
     # Générer de nouvelles empreintes
     fingerprints = extract_multiple_fingerprints(audio_data)
-    
+
     # Enregistrer les nouvelles empreintes
     for i, fingerprint in enumerate(fingerprints):
         db_session.add(Fingerprint(
@@ -396,7 +396,7 @@ async def update_track_fingerprints(track_id: int):
             hash=fingerprint,
             offset=i * 10  # Offset approximatif en secondes
         ))
-    
+
     db_session.commit()
     return True
 ```
@@ -414,4 +414,4 @@ Pour évaluer l'efficacité des améliorations, nous recommandons de suivre ces 
 
 L'amélioration de la détection locale avec empreintes digitales permettra de réduire significativement la dépendance aux services externes, d'améliorer les performances et de renforcer l'autonomie du système SODAV Monitor. Les recommandations présentées dans ce document offrent une feuille de route complète pour atteindre ces objectifs, avec des solutions concrètes et un plan d'implémentation progressif.
 
-En mettant en œuvre ces améliorations, le système sera capable de reconnaître efficacement les pistes musicales même en l'absence de connexion Internet, tout en maintenant une haute précision et des performances optimales. 
+En mettant en œuvre ces améliorations, le système sera capable de reconnaître efficacement les pistes musicales même en l'absence de connexion Internet, tout en maintenant une haute précision et des performances optimales.

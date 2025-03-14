@@ -36,4 +36,4 @@ else {
     # Mode production
     Write-Host "Mode production"
     python backend/run.py
-} 
+}

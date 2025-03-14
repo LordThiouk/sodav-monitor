@@ -1,223 +1,183 @@
-"""Module de gestion des WebSockets."""
+"""WebSocket management utilities.
 
-from typing import Dict, List, Optional, Set, Any
-from datetime import datetime, timedelta
-import logging
-from fastapi import WebSocket
+This module provides functionality for managing WebSocket connections
+and broadcasting updates to connected clients.
+"""
+
 import json
-from backend.core.config.redis import get_redis
-import asyncio
+from datetime import datetime
+from typing import Any, Dict, Optional, Set
 
-logger = logging.getLogger(__name__)
+from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
-class WebSocketManager:
-    """Manage WebSocket connections and broadcasting."""
-    
+from backend.models.models import RadioStation
+from backend.utils.logging_config import setup_logging
+
+logger = setup_logging(__name__)
+
+
+class ConnectionManager:
+    """WebSocket connection manager.
+
+    This class handles WebSocket connections, disconnections, and
+    broadcasting messages to connected clients.
+    """
+
     def __init__(self):
-        """Initialize the WebSocket manager."""
+        """Initialize the connection manager."""
         self.active_connections: Set[WebSocket] = set()
-        self.redis = None
-        
+
     async def connect(self, websocket: WebSocket):
-        """Connect a new WebSocket client."""
+        """Connect a new WebSocket client.
+
+        Args:
+            websocket: The WebSocket connection to add
+        """
         await websocket.accept()
         self.active_connections.add(websocket)
-        logger.info(f"New WebSocket connection. Total connections: {len(self.active_connections)}")
-        
-    async def disconnect(self, websocket: WebSocket):
-        """Disconnect a WebSocket client."""
+
+    def disconnect(self, websocket: WebSocket):
+        """Disconnect a WebSocket client.
+
+        Args:
+            websocket: The WebSocket connection to remove
+        """
         self.active_connections.remove(websocket)
-        logger.info(f"WebSocket disconnected. Total connections: {len(self.active_connections)}")
-        
-    async def broadcast(self, message: Dict[str, Any]):
-        """Broadcast a message to all connected clients."""
-        if not self.active_connections:
-            return
-            
-        # Convert message to JSON
-        message_str = json.dumps(message)
-        
-        # Broadcast to all connections
-        disconnected = set()
+
+    async def broadcast(self, message: Dict):
+        """Broadcast a message to all connected clients.
+
+        Args:
+            message: The message to broadcast
+        """
         for connection in self.active_connections:
             try:
-                await connection.send_text(message_str)
+                await connection.send_json(message)
+            except WebSocketDisconnect:
+                self.disconnect(connection)
             except Exception as e:
-                logger.error(f"Error broadcasting to connection: {str(e)}")
-                disconnected.add(connection)
-                
-        # Clean up disconnected clients
-        for connection in disconnected:
-            await self.disconnect(connection)
-            
-    async def initialize_redis(self):
-        """Initialize Redis connection."""
-        if not self.redis:
-            self.redis = await get_redis()
-            
-    async def publish_to_redis(self, channel: str, message: Dict[str, Any]):
-        """Publish a message to Redis channel."""
-        try:
-            await self.initialize_redis()
-            message_str = json.dumps(message)
-            await self.redis.publish(channel, message_str)
-        except Exception as e:
-            logger.error(f"Error publishing to Redis: {str(e)}")
-            
-    async def subscribe_to_redis(self, channel: str):
-        """Subscribe to Redis channel and broadcast messages."""
-        try:
-            await self.initialize_redis()
-            pubsub = self.redis.pubsub()
-            await pubsub.subscribe(channel)
-            
-            while True:
-                try:
-                    message = await pubsub.get_message(ignore_subscribe_messages=True)
-                    if message:
-                        data = json.loads(message['data'])
-                        await self.broadcast(data)
-                except Exception as e:
-                    logger.error(f"Error processing Redis message: {str(e)}")
-                await asyncio.sleep(0.1)
-                
-        except Exception as e:
-            logger.error(f"Error subscribing to Redis: {str(e)}")
-            
-    async def send_personal_message(self, websocket: WebSocket, message: Dict[str, Any]):
-        """Send a message to a specific client."""
-        try:
-            message_str = json.dumps(message)
-            await websocket.send_text(message_str)
-        except Exception as e:
-            logger.error(f"Error sending personal message: {str(e)}")
-            await self.disconnect(websocket)
-            
-    def get_connection_count(self) -> int:
-        """Get the number of active connections."""
-        return len(self.active_connections)
-        
-    async def cleanup(self):
-        """Clean up resources."""
-        # Close all connections
-        for connection in self.active_connections:
-            try:
-                await connection.close()
-            except Exception as e:
-                logger.error(f"Error closing connection: {str(e)}")
-                
-        self.active_connections.clear()
-        
-        # Close Redis connection
-        if self.redis:
-            await self.redis.close()
-            self.redis = None
+                logger.error(f"Error broadcasting message: {str(e)}")
+                self.disconnect(connection)
 
-manager = WebSocketManager()
 
-async def broadcast_track_detection(track_data: Dict[str, Any]):
-    """Broadcast track detection to all connected clients."""
-    await manager.broadcast({
-        'type': 'track_detection',
-        'data': track_data,
-        'timestamp': datetime.now().isoformat()
-    })
+# Alias for backward compatibility
+WebSocketManager = ConnectionManager
 
-async def broadcast_station_update(station_data: Dict):
-    """Diffuser une mise à jour de station à tous les clients."""
-    try:
-        # Valider les données
-        if not isinstance(station_data.get("id"), int) or \
-           not station_data.get("name") or \
-           not station_data.get("stream_url"):
-            await send_error(None, "Données de station invalides")
-            return
+manager = ConnectionManager()
 
-        # Publier sur Redis pour la synchronisation
-        redis = get_redis()
-        redis.publish("station_updates", json.dumps(station_data))
-        
-        # Diffuser via WebSocket
-        await manager.broadcast({
+
+async def broadcast_station_update(station: RadioStation):
+    """Broadcast a station status update.
+
+    Args:
+        station: The station that was updated
+    """
+    await manager.broadcast(
+        {
             "type": "station_update",
-            "data": station_data
-        })
-    except Exception as e:
-        print(f"Erreur lors de la diffusion de la mise à jour de la station: {str(e)}")
+            "data": {
+                "id": station.id,
+                "name": station.name,
+                "status": station.status.value,
+                "last_checked": station.last_checked.isoformat() if station.last_checked else None,
+            },
+        }
+    )
 
-async def broadcast_station_status(station_data: Dict):
-    """Diffuser le statut d'une station à tous les clients."""
-    try:
-        # Publier sur Redis pour la synchronisation
-        redis = get_redis()
-        redis.publish("station_status", json.dumps(station_data))
-        
-        # Diffuser via WebSocket
-        await manager.broadcast({
-            "type": "station_status",
-            "data": station_data
-        })
-    except Exception as e:
-        print(f"Erreur lors de la diffusion du statut: {str(e)}")
 
-async def broadcast_system_status(status_data: Dict):
-    """Diffuser le statut du système à tous les clients."""
-    try:
-        await manager.broadcast({
+async def broadcast_system_status(status: Dict):
+    """Broadcast system status information.
+
+    Args:
+        status: System status information to broadcast
+    """
+    await manager.broadcast(
+        {
             "type": "system_status",
-            "data": status_data
-        })
-    except Exception as e:
-        print(f"Erreur lors de la diffusion du statut système: {str(e)}")
+            "data": status,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    )
 
-async def send_error(websocket: WebSocket, error: str):
-    """Envoyer un message d'erreur à un client spécifique."""
-    try:
-        await websocket.send_json({
-            "type": "error",
-            "message": error
-        })
-    except Exception as e:
-        print(f"Erreur lors de l'envoi du message d'erreur: {str(e)}")
+
+async def broadcast_station_status(station_id: int, status: str, message: Optional[str] = None):
+    """Broadcast a station status update.
+
+    Args:
+        station_id: ID of the station
+        status: Status of the station
+        message: Optional status message
+    """
+    await manager.broadcast(
+        {
+            "type": "station_status",
+            "data": {
+                "id": station_id,
+                "status": status,
+                "message": message,
+                "timestamp": datetime.utcnow().isoformat(),
+            },
+        }
+    )
+
+
+async def broadcast_track_detection(detection_data: Dict[str, Any]):
+    """Broadcast a track detection event.
+
+    Args:
+        detection_data: Detection data to broadcast
+    """
+    await manager.broadcast(
+        {
+            "type": "track_detection",
+            "data": detection_data,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    )
+
 
 async def send_heartbeat(websocket: WebSocket):
-    """Envoyer un heartbeat à un client spécifique."""
-    try:
-        await websocket.send_json({
-            "type": "heartbeat",
-            "timestamp": str(datetime.utcnow())
-        })
-    except Exception as e:
-        print(f"Erreur lors de l'envoi du heartbeat: {str(e)}")
+    """Send a heartbeat message to a WebSocket client.
 
-async def process_websocket_message(data: str, websocket: WebSocket):
-    """Traiter un message WebSocket reçu."""
+    Args:
+        websocket: The WebSocket connection to send the heartbeat to
+    """
     try:
-        message = json.loads(data)
-        
-        # Valider le message
-        if not message:
-            await send_error(websocket, "Message vide")
-            return
-            
-        if "type" not in message:
-            await send_error(websocket, "Type de message manquant")
-            return
-            
-        message_type = message.get("type")
-        
+        await websocket.send_json(
+            {
+                "type": "heartbeat",
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error sending heartbeat: {str(e)}")
+        manager.disconnect(websocket)
+
+
+async def process_websocket_message(websocket: WebSocket, message: str):
+    """Process a message received from a WebSocket client.
+
+    Args:
+        websocket: The WebSocket connection that sent the message
+        message: The message received
+
+    Returns:
+        Dict: Response message
+    """
+    try:
+        data = json.loads(message)
+        message_type = data.get("type")
+
         if message_type == "heartbeat":
             await send_heartbeat(websocket)
-        elif message_type == "subscribe":
-            # TODO: Implémenter la logique d'abonnement
-            pass
-        elif message_type == "unsubscribe":
-            # TODO: Implémenter la logique de désabonnement
-            pass
+            return {"status": "ok", "type": "heartbeat_response"}
         else:
-            await send_error(websocket, f"Type de message non reconnu: {message_type}")
-            
+            logger.warning(f"Unknown message type: {message_type}")
+            return {"status": "error", "message": f"Unknown message type: {message_type}"}
     except json.JSONDecodeError:
-        await send_error(websocket, "Message JSON invalide")
+        logger.error("Invalid JSON message received")
+        return {"status": "error", "message": "Invalid JSON message"}
     except Exception as e:
-        await send_error(websocket, f"Erreur lors du traitement du message: {str(e)}")
+        logger.error(f"Error processing WebSocket message: {str(e)}")
+        return {"status": "error", "message": str(e)}

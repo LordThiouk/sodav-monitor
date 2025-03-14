@@ -15,11 +15,11 @@ graph TD
     System -->|Génère| Reports[Rapports de Diffusion]
     Reports -->|Consultés par| User
     System -->|Stocke les données| Database[(Base de Données)]
-    
+
     classDef primary fill:#f9f,stroke:#333,stroke-width:2px;
     classDef secondary fill:#bbf,stroke:#333,stroke-width:1px;
     classDef external fill:#fbb,stroke:#333,stroke-width:1px;
-    
+
     class System primary;
     class User,Admin,Reports,Database secondary;
     class RadioStation,AcoustID,AudD,AudioStream external;
@@ -66,4 +66,4 @@ graph TD
 1. **Connectivité Internet** - Le système dépend d'une connexion Internet stable pour accéder aux flux audio et aux services externes.
 2. **Qualité des flux** - La précision de la détection dépend de la qualité des flux audio.
 3. **Limites des API** - Les services externes (AcoustID, AudD) ont des limites d'utilisation de leurs API.
-4. **Spécificités de la musique africaine** - Certains morceaux de musique africaine peuvent être difficiles à identifier avec les services standard. 
+4. **Spécificités de la musique africaine** - Certains morceaux de musique africaine peuvent être difficiles à identifier avec les services standard.

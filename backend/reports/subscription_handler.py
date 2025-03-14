@@ -1,10 +1,12 @@
 from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
 from typing import List, Optional
 
-from ..models.models import ReportSubscription, Report, ReportType, ReportFormat, ReportStatus
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
+
+from ..models.models import Report, ReportFormat, ReportStatus, ReportSubscription, ReportType
 from .generate_report import ReportGenerator
+
 
 class SubscriptionHandler:
     def __init__(self, db: Session):
@@ -13,12 +15,16 @@ class SubscriptionHandler:
 
     async def process_subscriptions(self) -> None:
         """Process all active subscriptions that are due for delivery."""
-        active_subscriptions = self.db.query(ReportSubscription).filter(
-            and_(
-                ReportSubscription.active == True,
-                ReportSubscription.next_delivery <= datetime.utcnow()
+        active_subscriptions = (
+            self.db.query(ReportSubscription)
+            .filter(
+                and_(
+                    ReportSubscription.active == True,
+                    ReportSubscription.next_delivery <= datetime.utcnow(),
+                )
             )
-        ).all()
+            .all()
+        )
 
         for subscription in active_subscriptions:
             try:
@@ -27,7 +33,9 @@ class SubscriptionHandler:
             except Exception as e:
                 self._update_subscription_error(subscription, str(e))
 
-    async def generate_subscription_report(self, subscription: ReportSubscription) -> Optional[Report]:
+    async def generate_subscription_report(
+        self, subscription: ReportSubscription
+    ) -> Optional[Report]:
         """Generate a report for a subscription."""
         end_date = datetime.utcnow()
         start_date = self._calculate_start_date(subscription.frequency, end_date)
@@ -37,7 +45,7 @@ class SubscriptionHandler:
             format=subscription.format,
             start_date=start_date,
             end_date=end_date,
-            user_id=subscription.user_id
+            user_id=subscription.user_id,
         )
         self.db.add(report)
         self.db.commit()
@@ -88,4 +96,4 @@ class SubscriptionHandler:
         elif frequency == ReportType.MONTHLY:
             return now + timedelta(days=30)
         else:  # COMPREHENSIVE
-            return now + timedelta(days=90) 
+            return now + timedelta(days=90)

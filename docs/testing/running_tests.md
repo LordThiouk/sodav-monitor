@@ -177,4 +177,4 @@ Pour les tests asynchrones, assurez-vous d'utiliser le décorateur `@pytest.mark
 
 - [Documentation officielle de pytest](https://docs.pytest.org/)
 - [Guide de pytest-asyncio](https://pytest-asyncio.readthedocs.io/en/latest/)
-- [Guide de pytest-cov](https://pytest-cov.readthedocs.io/en/latest/) 
+- [Guide de pytest-cov](https://pytest-cov.readthedocs.io/en/latest/)

@@ -55,4 +55,4 @@ Si vous rencontrez des problèmes lors de l'exécution des scripts, vérifiez le
 2. Vérifiez que vous avez une connexion Internet active
 3. Consultez les logs pour plus de détails sur les erreurs rencontrées
 
-Pour plus d'informations sur les services externes, consultez la documentation complète dans le fichier `docs/external_services.md` à la racine du projet. 
+Pour plus d'informations sur les services externes, consultez la documentation complète dans le fichier `docs/external_services.md` à la racine du projet.

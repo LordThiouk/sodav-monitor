@@ -155,4 +155,4 @@ If you encounter issues not covered in this README, please:
 
 ## Conclusion
 
-This production-like environment allows you to fully test all aspects of the SODAV Monitor system, including the external detection services that require specialized audio conversion capabilities. By using this environment, you can ensure that your tests accurately reflect how the system will behave in production. 
+This production-like environment allows you to fully test all aspects of the SODAV Monitor system, including the external detection services that require specialized audio conversion capabilities. By using this environment, you can ensure that your tests accurately reflect how the system will behave in production.

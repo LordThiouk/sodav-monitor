@@ -73,7 +73,7 @@ if [ "$INSTALL_NEEDED" = true ]; then
         numba==0.56.4 \
         librosa==0.10.0 \
         llvmlite==0.39.1
-    
+
     # Verify installations again
     echo "Verifying installations after install..."
     for pkg_info in "${PACKAGES[@]}"; do
@@ -91,7 +91,7 @@ fi
 if ! command -v uvicorn &> /dev/null; then
     echo "❌ uvicorn command not found. Installing..."
     pip install --no-cache-dir uvicorn==0.22.0
-    
+
     if ! command -v uvicorn &> /dev/null; then
         echo "❌ Failed to install uvicorn. Checking installation details..."
         pip show uvicorn
@@ -115,7 +115,7 @@ then
         psycopg2-binary>=2.9.9 \
         SQLAlchemy>=2.0.15 \
         python-dotenv>=1.0.0
-    
+
     # Verify installation
     if ! command -v alembic &> /dev/null
     then
@@ -192,12 +192,12 @@ for i in {1..60}; do
         echo "✅ PostgreSQL is ready!"
         break
     fi
-    
+
     if [ $i -eq 60 ]; then
         echo "❌ Error: PostgreSQL did not become ready in time"
         exit 1
     fi
-    
+
     echo "⏳ Waiting for PostgreSQL... attempt $i/60"
     sleep 2
 done
@@ -271,13 +271,13 @@ for i in $(seq 1 $ATTEMPTS); do
         echo "❌ Error: FastAPI process died unexpectedly"
         exit 1
     fi
-    
+
     HEALTH_RESPONSE=$(curl -s -H "X-Startup-Check: true" "http://127.0.0.1:$API_PORT/api/health" || true)
     if [[ "$HEALTH_RESPONSE" == *"healthy"* ]] || [[ "$HEALTH_RESPONSE" == *"ok"* ]] || [[ "$HEALTH_RESPONSE" == *"starting"* ]]; then
         echo "✅ FastAPI is running on port $API_PORT!"
         break
     fi
-    
+
     if [ $i -eq $ATTEMPTS ]; then
         echo "❌ Error: FastAPI did not start properly after $HEALTH_CHECK_TIMEOUT seconds"
         echo "Health check response: $HEALTH_RESPONSE"
@@ -288,7 +288,7 @@ for i in $(seq 1 $ATTEMPTS); do
         fi
         exit 1
     fi
-    
+
     echo "⏳ Waiting for FastAPI... attempt $i/$ATTEMPTS"
     sleep $HEALTH_CHECK_INTERVAL
 done
@@ -335,7 +335,7 @@ for i in {1..60}; do
         echo "✅ Nginx is running on port $PORT!"
         break
     fi
-    
+
     if [ $i -eq 60 ]; then
         echo "❌ Error: Nginx did not start properly"
         if [ -n "$NGINX_PID" ]; then
@@ -343,7 +343,7 @@ for i in {1..60}; do
         fi
         exit 1
     fi
-    
+
     echo "⏳ Waiting for Nginx... attempt $i/60"
     sleep 2
 done

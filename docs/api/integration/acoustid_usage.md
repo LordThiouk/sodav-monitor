@@ -56,10 +56,10 @@ import asyncio
 async def detect_track(audio_data: bytes):
     # Initialiser le service
     acoustid_service = AcoustIDService()
-    
+
     # Détecter le morceau
     result = await acoustid_service.detect_track(audio_data)
-    
+
     if result:
         print(f"Morceau détecté : {result.get('title')} par {result.get('artist')}")
         print(f"Confiance : {result.get('confidence')}")
@@ -69,7 +69,7 @@ async def detect_track(audio_data: bytes):
 # Exemple d'utilisation
 with open("chemin/vers/fichier.mp3", "rb") as f:
     audio_data = f.read()
-    
+
 asyncio.run(detect_track(audio_data))
 ```
 
@@ -131,4 +131,4 @@ En cas de problème avec l'API AcoustID, consultez le document [Dépannage de l'
 ## Références
 
 - [Documentation officielle AcoustID](https://acoustid.org/webservice)
-- [Documentation Chromaprint (fpcalc)](https://acoustid.org/chromaprint) 
+- [Documentation Chromaprint (fpcalc)](https://acoustid.org/chromaprint)

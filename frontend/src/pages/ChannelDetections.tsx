@@ -152,7 +152,7 @@ const ChannelDetections: React.FC = () => {
 
         console.log('Fetching detections from:', url.toString());
         const response = await fetch(url.toString());
-        
+
         if (!response.ok) {
           console.error('Detections error:', response.status, response.statusText);
           const errorData = await response.json();
@@ -254,10 +254,10 @@ const ChannelDetections: React.FC = () => {
               </Box>
               <Box>
                 <Text fontWeight="bold" color="green.700">Statut</Text>
-                <Badge 
-                  colorScheme={(data?.station?.status || stationDetails?.status) === 'active' ? 'green' : 'gray'} 
-                  fontSize="md" 
-                  px={2} 
+                <Badge
+                  colorScheme={(data?.station?.status || stationDetails?.status) === 'active' ? 'green' : 'gray'}
+                  fontSize="md"
+                  px={2}
                   py={1}
                 >
                   {(data?.station?.status || stationDetails?.status || '').toUpperCase()}
@@ -278,7 +278,7 @@ const ChannelDetections: React.FC = () => {
               <Box p={4} bg="gray.50" rounded="md">
                 <Text color="gray.600" fontSize="sm">Taux d'activité</Text>
                 <Text fontSize="2xl" fontWeight="bold">
-                  {stationDetails?.metrics?.uptime_percentage 
+                  {stationDetails?.metrics?.uptime_percentage
                     ? `${Math.round(stationDetails.metrics.uptime_percentage)}%`
                     : 'N/A'}
                 </Text>
@@ -397,7 +397,7 @@ const ChannelDetections: React.FC = () => {
               {!loading && (!data?.detections || data.detections.length === 0) && (
                 <Tr>
                   <Td colSpan={7} textAlign="center">
-                    {searchQuery || selectedLabel !== "All Labels" 
+                    {searchQuery || selectedLabel !== "All Labels"
                       ? "Aucune détection ne correspond aux critères de recherche"
                       : "Aucune détection trouvée"}
                   </Td>

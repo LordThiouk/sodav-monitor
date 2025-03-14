@@ -14,52 +14,52 @@ graph TD
     Router -->|Route vers| ReportsModule[Module de Rapports]
     Router -->|Route vers| AnalyticsModule[Module d'Analytique]
     Router -->|Route vers| SettingsModule[Module de Paramètres]
-    
+
     AuthModule -->|Utilise| AuthService[Service d'Authentification]
     AuthService -->|Appelle API| APIClient[Client API]
-    
+
     DashboardModule -->|Utilise| DashboardService[Service de Tableau de Bord]
     DashboardService -->|Appelle API| APIClient
     DashboardModule -->|Utilise| ChartComponent[Composant de Graphiques]
     DashboardModule -->|Utilise| StatCardComponent[Composant de Carte Statistique]
-    
+
     StationsModule -->|Utilise| StationsService[Service de Stations]
     StationsService -->|Appelle API| APIClient
     StationsModule -->|Utilise| StationListComponent[Composant de Liste de Stations]
     StationsModule -->|Utilise| StationDetailComponent[Composant de Détail de Station]
     StationsModule -->|Utilise| StationFormComponent[Composant de Formulaire de Station]
-    
+
     TracksModule -->|Utilise| TracksService[Service de Pistes]
     TracksService -->|Appelle API| APIClient
     TracksModule -->|Utilise| TrackListComponent[Composant de Liste de Pistes]
     TracksModule -->|Utilise| TrackDetailComponent[Composant de Détail de Piste]
     TracksModule -->|Utilise| TrackSearchComponent[Composant de Recherche de Pistes]
-    
+
     DetectionModule -->|Utilise| DetectionService[Service de Détection]
     DetectionService -->|Appelle API| APIClient
     DetectionModule -->|Utilise| LiveDetectionComponent[Composant de Détection en Direct]
     DetectionModule -->|Utilise| DetectionHistoryComponent[Composant d'Historique de Détection]
     DetectionModule -->|Utilise| AudioUploadComponent[Composant d'Upload Audio]
-    
+
     ReportsModule -->|Utilise| ReportsService[Service de Rapports]
     ReportsService -->|Appelle API| APIClient
     ReportsModule -->|Utilise| ReportListComponent[Composant de Liste de Rapports]
     ReportsModule -->|Utilise| ReportGeneratorComponent[Composant de Générateur de Rapports]
     ReportsModule -->|Utilise| SubscriptionComponent[Composant d'Abonnement]
-    
+
     AnalyticsModule -->|Utilise| AnalyticsService[Service d'Analytique]
     AnalyticsService -->|Appelle API| APIClient
     AnalyticsModule -->|Utilise| AnalyticsDashboardComponent[Composant de Tableau de Bord d'Analytique]
     AnalyticsModule -->|Utilise| TrendsComponent[Composant de Tendances]
     AnalyticsModule -->|Utilise| ComparisonComponent[Composant de Comparaison]
-    
+
     SettingsModule -->|Utilise| SettingsService[Service de Paramètres]
     SettingsService -->|Appelle API| APIClient
     SettingsModule -->|Utilise| UserSettingsComponent[Composant de Paramètres Utilisateur]
     SettingsModule -->|Utilise| SystemSettingsComponent[Composant de Paramètres Système]
-    
+
     APIClient -->|Communique avec| APIServer[API Server]
-    
+
     ThemeProvider[Fournisseur de Thème] -->|Applique thème à| AuthModule
     ThemeProvider -->|Applique thème à| DashboardModule
     ThemeProvider -->|Applique thème à| StationsModule
@@ -68,10 +68,10 @@ graph TD
     ThemeProvider -->|Applique thème à| ReportsModule
     ThemeProvider -->|Applique thème à| AnalyticsModule
     ThemeProvider -->|Applique thème à| SettingsModule
-    
+
     AuthContext[Contexte d'Authentification] -->|Fournit état auth à| Router
     AuthContext -->|Fournit état auth à| APIClient
-    
+
     NotificationSystem[Système de Notifications] -->|Affiche notifications à| AuthModule
     NotificationSystem -->|Affiche notifications à| DashboardModule
     NotificationSystem -->|Affiche notifications à| StationsModule
@@ -80,13 +80,13 @@ graph TD
     NotificationSystem -->|Affiche notifications à| ReportsModule
     NotificationSystem -->|Affiche notifications à| AnalyticsModule
     NotificationSystem -->|Affiche notifications à| SettingsModule
-    
+
     classDef module fill:#f9f,stroke:#333,stroke-width:2px;
     classDef service fill:#bbf,stroke:#333,stroke-width:1px;
     classDef component fill:#bfb,stroke:#333,stroke-width:1px;
     classDef context fill:#fbb,stroke:#333,stroke-width:1px;
     classDef external fill:#ddd,stroke:#333,stroke-width:1px;
-    
+
     class Router,AuthModule,DashboardModule,StationsModule,TracksModule,DetectionModule,ReportsModule,AnalyticsModule,SettingsModule module;
     class AuthService,DashboardService,StationsService,TracksService,DetectionService,ReportsService,AnalyticsService,SettingsService,APIClient service;
     class ChartComponent,StatCardComponent,StationListComponent,StationDetailComponent,StationFormComponent,TrackListComponent,TrackDetailComponent,TrackSearchComponent,LiveDetectionComponent,DetectionHistoryComponent,AudioUploadComponent,ReportListComponent,ReportGeneratorComponent,SubscriptionComponent,AnalyticsDashboardComponent,TrendsComponent,ComparisonComponent,UserSettingsComponent,SystemSettingsComponent component;
@@ -170,4 +170,4 @@ graph TD
 - **Accessibilité** - Les composants sont conçus pour être accessibles conformément aux normes WCAG.
 - **Internationalisation** - L'application prend en charge plusieurs langues.
 - **Thème Personnalisable** - L'application utilise Chakra UI pour permettre la personnalisation du thème.
-- **Optimisation des Performances** - Les composants sont optimisés pour minimiser les rendus inutiles. 
+- **Optimisation des Performances** - Les composants sont optimisés pour minimiser les rendus inutiles.

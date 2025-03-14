@@ -107,4 +107,4 @@ Si des données sensibles sont accidentellement exposées :
 2. Générer de nouveaux identifiants.
 3. Mettre à jour les variables d'environnement sur tous les environnements.
 4. Documenter l'incident et les mesures prises.
-5. Revoir les procédures de sécurité pour éviter que cela ne se reproduise. 
+5. Revoir les procédures de sécurité pour éviter que cela ne se reproduise.

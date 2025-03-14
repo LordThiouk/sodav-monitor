@@ -12,16 +12,16 @@ globs: *
 #### 🎼 **2. Processus de Détection Hiérarchique**
 Si le contenu est identifié comme **musique**, suivre cet ordre de détection :
 
-1. 🔍 **Détection Locale**  
-   - Rechercher des correspondances dans la base de données locale à l'aide des empreintes digitales enregistrées.  
+1. 🔍 **Détection Locale**
+   - Rechercher des correspondances dans la base de données locale à l'aide des empreintes digitales enregistrées.
    - Si une correspondance est trouvée, procéder à l'enregistrement des données.
 
-2. 🌐 **Détection avec MusicBrainz**  
-   - Si la détection locale échoue, interroger l'API MusicBrainz pour tenter une identification externe.  
+2. 🌐 **Détection avec MusicBrainz**
+   - Si la détection locale échoue, interroger l'API MusicBrainz pour tenter une identification externe.
    - Si trouvée, enregistrer les métadonnées récupérées.
 
-3. 🎧 **Détection avec Audd**  
-   - Si MusicBrainz échoue également, utiliser l'API Audd comme solution de dernier recours.  
+3. 🎧 **Détection avec Audd**
+   - Si MusicBrainz échoue également, utiliser l'API Audd comme solution de dernier recours.
    - Enregistrer les informations fournies par Audd.
 
 ---

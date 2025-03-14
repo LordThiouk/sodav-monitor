@@ -1102,7 +1102,7 @@ PYTHONPATH=. pytest --cov=backend.detection.audio_processor
    - Implemented better error handling for data operations
 
 3. **Test Coverage**:
-   - Database Models: 
+   - Database Models:
      - User authentication: ✅ 100% coverage
      - Artist relationships: ✅ 90% coverage
      - Track detection: 🔄 85% coverage

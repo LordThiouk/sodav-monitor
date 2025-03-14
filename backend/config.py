@@ -1,11 +1,14 @@
 """Configuration principale du backend SODAV Monitor."""
 
-import os
-from pydantic import validator, ConfigDict
-from pydantic_settings import BaseSettings
-from typing import Optional, Dict, Any, List
-from functools import lru_cache
 import logging
+import os
+from functools import lru_cache
+from typing import Any, Dict, List, Optional
+
+from pydantic import validator
+
+# Import from compatibility layer instead of directly from pydantic_settings
+from backend.core.compat import PYDANTIC_V2, BaseSettings, create_settings_config
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +23,10 @@ if not os.path.exists(env_file) and os.path.exists(".env"):
 else:
     logger.info(f"Utilisation du fichier de configuration: {env_file}")
 
+
 class Settings(BaseSettings):
     """Configuration globale de l'application."""
-    
+
     # Configuration de base
     PROJECT_NAME: str = "SODAV Monitor"
     VERSION: str = "1.0.0"
@@ -34,7 +38,7 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = None
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
-    
+
     # Configuration Redis
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
@@ -48,7 +52,7 @@ class Settings(BaseSettings):
 
     # Configuration des APIs externes
     ACOUSTID_API_KEY: Optional[str] = None  # Clé API pour AcoustID/Chromaprint
-    AUDD_API_KEY: Optional[str] = None      # Clé API pour Audd.io
+    AUDD_API_KEY: Optional[str] = None  # Clé API pour Audd.io
     MUSICBRAINZ_APP_NAME: str = "SODAV Monitor"
     MUSICBRAINZ_VERSION: str = "1.0"
     MUSICBRAINZ_CONTACT: str = "contact@sodav.sn"
@@ -57,7 +61,7 @@ class Settings(BaseSettings):
     DETECTION_INTERVAL: int = 15  # secondes
     MIN_CONFIDENCE_THRESHOLD: float = 0.8
     FINGERPRINT_ALGORITHM: str = "chromaprint"
-    
+
     # Seuils de détection par service
     ACOUSTID_CONFIDENCE_THRESHOLD: float = 0.7
     AUDD_CONFIDENCE_THRESHOLD: float = 0.6
@@ -85,11 +89,19 @@ class Settings(BaseSettings):
     PROMETHEUS_PORT: int = 9090
     HEALTH_CHECK_INTERVAL: int = 60  # secondes
 
-    model_config = ConfigDict(
-        env_file=env_file,
-        case_sensitive=True,
-        extra="allow"  # Allow extra fields from environment
-    )
+    # Use appropriate configuration method based on Pydantic version
+    if PYDANTIC_V2:
+        model_config = create_settings_config(
+            env_file=env_file,
+            case_sensitive=True,
+            extra="allow",  # Allow extra fields from environment
+        )
+    else:
+        # For Pydantic 1.x
+        class Config:
+            env_file = env_file
+            case_sensitive = True
+            extra = "allow"  # Allow extra fields from environment
 
     def validate_api_keys(self) -> None:
         """Validate that required API keys are set."""
@@ -98,12 +110,17 @@ class Settings(BaseSettings):
         if not self.AUDD_API_KEY:
             logger.warning("AUDD_API_KEY not set. Audd detection will be disabled.")
         if not self.SECRET_KEY:
-            logger.error("SECRET_KEY not set. This is a security risk. Please set a strong SECRET_KEY in your .env file.")
+            logger.error(
+                "SECRET_KEY not set. This is a security risk. Please set a strong SECRET_KEY in your .env file."
+            )
         if not self.DATABASE_URL:
-            logger.error("DATABASE_URL not set. Database connection will fail. Please set DATABASE_URL in your .env file.")
-        
+            logger.error(
+                "DATABASE_URL not set. Database connection will fail. Please set DATABASE_URL in your .env file."
+            )
+
         # Log l'environnement actuel
         logger.info(f"Application running in {self.ENV} environment")
+
 
 @lru_cache()
 def get_settings() -> Settings:
@@ -112,9 +129,12 @@ def get_settings() -> Settings:
     settings.validate_api_keys()
     return settings
 
+
 # Configuration des chemins
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))  # Chemin direct vers le dossier backend actuel
+BACKEND_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)  # Chemin direct vers le dossier backend actuel
 
 PATHS = {
     "BASE_DIR": BASE_DIR,
@@ -123,7 +143,7 @@ PATHS = {
     "LOG_DIR": os.path.join(BACKEND_DIR, "logs"),
     "REPORT_DIR": os.path.join(BACKEND_DIR, "reports"),
     "MIGRATION_DIR": os.path.join(BACKEND_DIR, "models", "migrations"),
-    "STATIC_DIR": os.path.join(BASE_DIR, "static")  # Ajout du dossier static à la racine
+    "STATIC_DIR": os.path.join(BASE_DIR, "static"),  # Ajout du dossier static à la racine
 }
 
 # Création des dossiers nécessaires avec logging
@@ -143,34 +163,27 @@ LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "default": {
-            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        },
+        "default": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
         "json": {
             "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
-            "format": "%(asctime)s %(name)s %(levelname)s %(message)s"
-        }
+            "format": "%(asctime)s %(name)s %(levelname)s %(message)s",
+        },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "default",
-            "stream": "ext://sys.stdout"
+            "stream": "ext://sys.stdout",
         },
         "file": {
             "class": "logging.handlers.RotatingFileHandler",
             "formatter": "json",
             "filename": os.path.join(PATHS["LOG_DIR"], "sodav_monitor.log"),
             "maxBytes": 10485760,  # 10MB
-            "backupCount": 5
-        }
+            "backupCount": 5,
+        },
     },
-    "loggers": {
-        "sodav_monitor": {
-            "handlers": ["console", "file"],
-            "level": "INFO"
-        }
-    }
+    "loggers": {"sodav_monitor": {"handlers": ["console", "file"], "level": "INFO"}},
 }
 
 # Configuration des stations radio sénégalaises par défaut
@@ -179,49 +192,31 @@ DEFAULT_STATIONS = [
         "name": "RTS Radio",
         "stream_url": "http://rts.sn/radio/stream",
         "location": "Dakar",
-        "is_active": True
+        "is_active": True,
     },
     {
         "name": "RFM Sénégal",
         "stream_url": "http://rfm.sn/live",
         "location": "Dakar",
-        "is_active": True
-    }
+        "is_active": True,
+    },
 ]
 
 # Configuration des formats de rapport supportés
 REPORT_FORMATS = {
-    "pdf": {
-        "mime_type": "application/pdf",
-        "extension": ".pdf"
-    },
+    "pdf": {"mime_type": "application/pdf", "extension": ".pdf"},
     "xlsx": {
         "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "extension": ".xlsx"
+        "extension": ".xlsx",
     },
-    "csv": {
-        "mime_type": "text/csv",
-        "extension": ".csv"
-    }
+    "csv": {"mime_type": "text/csv", "extension": ".csv"},
 }
 
 # Configuration des algorithmes de détection
 DETECTION_ALGORITHMS = {
-    "chromaprint": {
-        "threshold": 0.8,
-        "sample_rate": 44100,
-        "duration": 15
-    },
-    "acoustid": {
-        "threshold": 0.7,
-        "sample_rate": 44100,
-        "duration": 30
-    },
-    "audd": {
-        "threshold": 0.6,
-        "sample_rate": 44100,
-        "duration": 20
-    }
+    "chromaprint": {"threshold": 0.8, "sample_rate": 44100, "duration": 15},
+    "acoustid": {"threshold": 0.7, "sample_rate": 44100, "duration": 30},
+    "audd": {"threshold": 0.6, "sample_rate": 44100, "duration": 20},
 }
 
-settings = get_settings() 
+settings = get_settings()

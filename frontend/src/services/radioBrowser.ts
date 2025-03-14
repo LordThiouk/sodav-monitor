@@ -88,7 +88,7 @@ export const getRandomStations = async (limit: number = 100): Promise<RadioStati
         limit: limit.toString(),
         hidebroken: 'true',
     });
-    
+
     const stations = await fetchFromApi<ExternalRadioStation[]>(
         `/stations/random?${params}`
     );
@@ -143,7 +143,7 @@ export const getStations = async (filters?: {
         } else if (filters?.tag) {
             return await searchStationsByTag(filters.tag);
         }
-        
+
         // Default to getting top stations if no filters are provided
         return await getTopStations(100);
     } catch (error) {
@@ -158,7 +158,7 @@ export const startDetection = async (stationId: number): Promise<{ track?: { tit
         // This would typically make a call to your backend API
         // For now, we'll simulate a response
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         return {
             track: {
                 title: "Sample Track",
@@ -169,4 +169,4 @@ export const startDetection = async (stationId: number): Promise<{ track?: { tit
         console.error('Error starting detection:', error);
         throw error;
     }
-}; 
+};

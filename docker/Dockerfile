@@ -100,4 +100,4 @@ HEALTHCHECK --interval=30s --timeout=60s --start-period=120s --retries=3 \
 
 # Start the application
 WORKDIR /app
-CMD ["./start.sh"] 
+CMD ["./start.sh"]

@@ -8,4 +8,4 @@ This package contains tests for the report generation components:
 
 These tests verify that the report generation system correctly creates reports,
 manages subscriptions, and delivers reports to users.
-""" 
+"""
