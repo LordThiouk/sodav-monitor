@@ -1,0 +1,152 @@
+{
+  "play_logs": [
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "event_type": "track_end",
+      "track_name": "Dip Doundou Guiss - Sama Dome (Official video).mp3",
+      "timestamp": "2025-03-14T14:39:29.852369",
+      "duration": 0.0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "event_type": "track_start",
+      "track_name": "Dip Doundou Guiss - Sama Dome (Official video).mp3",
+      "timestamp": "2025-03-14T14:39:29.852369",
+      "duration": 0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "event_type": "detection",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "timestamp": "2025-03-14T14:39:51.874138",
+      "duration": 15.0,
+      "details": {
+        "method": "simulation",
+        "confidence": 0.95,
+        "fingerprint": "simulated_fingerprin..."
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "event_type": "detection",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "timestamp": "2025-03-14T14:40:18.891937",
+      "duration": 15.0,
+      "details": {
+        "method": "simulation",
+        "confidence": 0.95,
+        "fingerprint": "simulated_fingerprin..."
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "event_type": "detection",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "timestamp": "2025-03-14T14:40:45.920131",
+      "duration": 15.0,
+      "details": {
+        "method": "simulation",
+        "confidence": 0.95,
+        "fingerprint": "simulated_fingerprin..."
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "event_type": "interruption_start",
+      "track_name": "N/A",
+      "timestamp": "2025-03-14T14:40:45.923133",
+      "duration": 0,
+      "details": {
+        "duration_seconds": 5
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "event_type": "track_end",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "timestamp": "2025-03-14T14:40:51.313487",
+      "duration": 0.0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "event_type": "track_start",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "timestamp": "2025-03-14T14:40:51.313487",
+      "duration": 0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "event_type": "interruption_end",
+      "track_name": "N/A",
+      "timestamp": "2025-03-14T14:40:51.318095",
+      "duration": 5,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "event_type": "detection",
+      "track_name": "DIP DOUNDOU GUISS - CALIFAT.mp3",
+      "timestamp": "2025-03-14T14:41:18.353373",
+      "duration": 15.0,
+      "details": {
+        "method": "simulation",
+        "confidence": 0.95,
+        "fingerprint": "simulated_fingerprin..."
+      }
+    }
+  ],
+  "detection_logs": [
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "detection_method": "simulation",
+      "confidence": 0.95,
+      "detected_at": "2025-03-14T14:39:51.874138",
+      "play_duration": 15.0,
+      "fingerprint": "simulated_fingerprint",
+      "metadata": {
+        "detection_index": 1
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "detection_method": "simulation",
+      "confidence": 0.95,
+      "detected_at": "2025-03-14T14:40:18.891937",
+      "play_duration": 15.0,
+      "fingerprint": "simulated_fingerprint",
+      "metadata": {
+        "detection_index": 2
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "detection_method": "simulation",
+      "confidence": 0.95,
+      "detected_at": "2025-03-14T14:40:45.920131",
+      "play_duration": 15.0,
+      "fingerprint": "simulated_fingerprint",
+      "metadata": {
+        "detection_index": 3
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal Test",
+      "track_name": "DIP DOUNDOU GUISS - CALIFAT.mp3",
+      "detection_method": "simulation",
+      "confidence": 0.95,
+      "detected_at": "2025-03-14T14:41:18.353373",
+      "play_duration": 15.0,
+      "fingerprint": "simulated_fingerprint",
+      "metadata": {
+        "after_interruption": true
+      }
+    }
+  ]
+}

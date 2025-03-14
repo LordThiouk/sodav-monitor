@@ -11,6 +11,73 @@ SODAV Monitor utilise une approche hiérarchique pour la détection musicale :
 3. **Détection AcoustID** : Si la détection par métadonnées échoue, tente une détection par empreinte digitale via AcoustID.
 4. **Détection AudD** : Si AcoustID échoue, utilise l'API AudD comme solution de dernier recours.
 
+## Intégration des API externes
+
+### AcoustID
+
+L'API AcoustID est utilisée pour identifier les morceaux à partir de leurs empreintes digitales acoustiques.
+
+#### Génération d'empreintes digitales
+
+Le système utilise l'outil `fpcalc` pour générer des empreintes digitales compatibles avec AcoustID :
+
+1. Les données audio sont temporairement écrites dans un fichier
+2. `fpcalc` est exécuté sur ce fichier pour générer l'empreinte et la durée
+3. Le fichier temporaire est supprimé après utilisation
+
+#### Appel à l'API
+
+L'appel à l'API AcoustID nécessite les paramètres suivants :
+
+- `client` : Clé API AcoustID
+- `meta` : Type de métadonnées à retourner (recordings, releasegroups, etc.)
+- `fingerprint` : Empreinte digitale générée par fpcalc
+- `duration` : Durée du morceau en secondes
+
+**Remarque importante** : Le paramètre `duration` doit être un entier sous forme de chaîne de caractères. Pour éviter les erreurs 400, le système :
+
+1. Vérifie que la durée est valide (non nulle, positive)
+2. Utilise une valeur par défaut (30 secondes) si la durée est invalide
+3. Convertit la durée en entier puis en chaîne de caractères : `str(int(float(duration)))`
+4. Journalise les paramètres exacts envoyés à l'API pour faciliter le débogage
+
+#### Traitement de la réponse
+
+La réponse de l'API AcoustID est analysée pour extraire :
+
+- Le titre du morceau
+- L'artiste
+- L'album
+- L'ISRC
+- La durée
+- L'ID MusicBrainz
+- Le score de confiance
+
+### AudD
+
+L'API AudD est utilisée comme solution de secours lorsque AcoustID ne trouve pas de correspondance.
+
+#### Appel à l'API
+
+L'appel à l'API AudD nécessite :
+
+- `api_token` : Clé API AudD
+- `return` : Type de métadonnées à retourner (spotify, musicbrainz, etc.)
+- `file` : Données audio brutes
+
+#### Traitement de la réponse
+
+La réponse de l'API AudD est analysée pour extraire :
+
+- Le titre du morceau
+- L'artiste
+- L'album
+- L'ISRC
+- Le label
+- La date de sortie
+- La durée
+- Le score de confiance
+
 ## Améliorations récentes
 
 ### Capture d'informations supplémentaires

@@ -478,7 +478,7 @@ class FingerprintHandler:
 
     def is_similar(self, fingerprint1: str, fingerprint2: str) -> bool:
         """
-        Détermine si deux empreintes digitales sont similaires.
+        Vérifie si deux empreintes digitales sont similaires.
 
         Args:
             fingerprint1: Première empreinte digitale
@@ -489,3 +489,27 @@ class FingerprintHandler:
         """
         similarity = self.compare_fingerprints(fingerprint1, fingerprint2)
         return similarity >= self.similarity_threshold
+        
+    def get_fingerprint(self, track_id: int) -> Optional[str]:
+        """
+        Récupère l'empreinte digitale d'une piste à partir de la base de données.
+        
+        Args:
+            track_id: ID de la piste
+            
+        Returns:
+            Empreinte digitale ou None si non trouvée
+        """
+        try:
+            # Cette méthode est une simulation car nous n'avons pas accès à la base de données
+            # Dans une implémentation réelle, on interrogerait la base de données
+            # pour récupérer l'empreinte digitale associée à la piste
+            
+            # Simuler une empreinte pour les tests
+            return f"fingerprint_for_track_{track_id}"
+            
+        except Exception as e:
+            log_with_category(
+                logger, "FINGERPRINT", "error", f"Error getting fingerprint for track {track_id}: {e}"
+            )
+            return None

@@ -1,0 +1,328 @@
+{
+  "play_logs": [
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "event_type": "track_end",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "timestamp": "2025-03-14T16:00:38.496521",
+      "duration": 0.0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "event_type": "track_start",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "timestamp": "2025-03-14T16:00:38.496521",
+      "duration": 0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal 2",
+      "event_type": "track_end",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "timestamp": "2025-03-14T16:00:40.683101",
+      "duration": 0.0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal 2",
+      "event_type": "track_start",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "timestamp": "2025-03-14T16:00:40.683101",
+      "duration": 0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio Dakar",
+      "event_type": "track_end",
+      "track_name": "DIP DOUNDOU GUISS - CALIFAT.mp3",
+      "timestamp": "2025-03-14T16:00:42.932406",
+      "duration": 0.0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio Dakar",
+      "event_type": "track_start",
+      "track_name": "DIP DOUNDOU GUISS - CALIFAT.mp3",
+      "timestamp": "2025-03-14T16:00:42.932406",
+      "duration": 0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "event_type": "detection",
+      "track_name": "Califat",
+      "timestamp": "2025-03-14T16:01:04.340923",
+      "duration": 234.58,
+      "details": {
+        "method": "audd",
+        "confidence": 0.8,
+        "fingerprint": "AQAAiGMUKWqHLxJyaDrS..."
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal 2",
+      "event_type": "detection",
+      "track_name": "Califat",
+      "timestamp": "2025-03-14T16:01:05.550065",
+      "duration": 234.58,
+      "details": {
+        "method": "audd",
+        "confidence": 0.8,
+        "fingerprint": "AQAAiGMUKWqHLxJyaDrS..."
+      }
+    },
+    {
+      "station_name": "Radio Dakar",
+      "event_type": "detection",
+      "track_name": "Califat",
+      "timestamp": "2025-03-14T16:01:06.646260",
+      "duration": 234.58,
+      "details": {
+        "method": "audd",
+        "confidence": 0.8,
+        "fingerprint": "AQAAiGMUKWqHLxJyaDrS..."
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "event_type": "detection",
+      "track_name": "Califat",
+      "timestamp": "2025-03-14T16:01:30.451474",
+      "duration": 234.58,
+      "details": {
+        "method": "audd",
+        "confidence": 0.8,
+        "fingerprint": "AQAAiGMUKWqHLxJyaDrS..."
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal 2",
+      "event_type": "detection",
+      "track_name": "Califat",
+      "timestamp": "2025-03-14T16:01:31.574538",
+      "duration": 234.58,
+      "details": {
+        "method": "audd",
+        "confidence": 0.8,
+        "fingerprint": "AQAAiGMUKWqHLxJyaDrS..."
+      }
+    },
+    {
+      "station_name": "Radio Dakar",
+      "event_type": "detection",
+      "track_name": "Califat",
+      "timestamp": "2025-03-14T16:01:32.742873",
+      "duration": 234.58,
+      "details": {
+        "method": "audd",
+        "confidence": 0.8,
+        "fingerprint": "AQAAiGMUKWqHLxJyaDrS..."
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "event_type": "interruption_start",
+      "track_name": "N/A",
+      "timestamp": "2025-03-14T16:01:32.743894",
+      "duration": 0,
+      "details": {
+        "duration_seconds": 5
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "event_type": "track_end",
+      "track_name": "DIP DOUNDOU GUISS - CALIFAT.mp3",
+      "timestamp": "2025-03-14T16:01:38.209115",
+      "duration": 0.0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "event_type": "track_start",
+      "track_name": "DIP DOUNDOU GUISS - CALIFAT.mp3",
+      "timestamp": "2025-03-14T16:01:38.209115",
+      "duration": 0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "event_type": "interruption_end",
+      "track_name": "N/A",
+      "timestamp": "2025-03-14T16:01:38.209115",
+      "duration": 5,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "event_type": "detection",
+      "track_name": "Califat",
+      "timestamp": "2025-03-14T16:02:04.280493",
+      "duration": 234.58,
+      "details": {
+        "method": "audd",
+        "confidence": 0.8,
+        "fingerprint": "AQAAiGMUKWqHLxJyaDrS..."
+      }
+    },
+    {
+      "station_name": "Radio Dakar",
+      "event_type": "track_end",
+      "track_name": "DIP DOUNDOU GUISS - CALIFAT.mp3",
+      "timestamp": "2025-03-14T16:02:04.435704",
+      "duration": 0.0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio Dakar",
+      "event_type": "track_start",
+      "track_name": "DIP DOUNDOU GUISS - CALIFAT.mp3",
+      "timestamp": "2025-03-14T16:02:04.435704",
+      "duration": 0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio Dakar",
+      "event_type": "detection",
+      "track_name": "Califat",
+      "timestamp": "2025-03-14T16:02:25.494090",
+      "duration": 234.58,
+      "details": {
+        "method": "audd",
+        "confidence": 0.8,
+        "fingerprint": "AQAAiGMUKWqHLxJyaDrS..."
+      }
+    }
+  ],
+  "detection_logs": [
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "track_name": "Califat",
+      "detection_method": "audd",
+      "confidence": 0.8,
+      "detected_at": "2025-03-14T16:01:04.340923",
+      "play_duration": 234.58,
+      "fingerprint": "AQAAiGMUKWqHLxJyaDrS5Ra8B_3xHBy3FP3go6uQMdVx6A9-hFXh4wcrHsWPHyEPZz_0I5109EZZWKuOHt_xAj3SHEV_iDaO-HRh4tFjnEjD4-hzlBpEiodU8egRPheco8p2ofQLu9mC_LigHzmO6UoSE7-CiRHCDD90RkbjB7U-XCHCKOiD88F3XCdyaEeY53genMPRfKi3FC-OWwhfiOTAEz9ux3AN5hTyYzzeoG2CCz0-GfUSNMgvJL0S_BFRHa7o4EqIE09Q7cYV5F0WKN2RHvyPK0fpg9rhD0eqIzlM3BbKPcHeG0dIbTm0HLmkCxcm_vClI2xsBQLhDJBWIEUAEMVBIwASVEgjBEAGAaCQUkwQg4BgwoJiAFFEEACYIoEgK6BwQDIBBDKEISCZEYgBkQBJDBChNLCWEKaUgMIwhSjjyomBABNCECQAUgKQgQAhAggA",
+      "metadata": {
+        "artist": "Dip Doundou Guiss",
+        "album": "Califat",
+        "year": "2022",
+        "detection_time": 1.3740997314453125,
+        "detection_index": 1
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal 2",
+      "track_name": "Califat",
+      "detection_method": "audd",
+      "confidence": 0.8,
+      "detected_at": "2025-03-14T16:01:05.550065",
+      "play_duration": 234.58,
+      "fingerprint": "AQAAiGMUKWqHLxJyaDrS5Ra8B_3xHBy3FP3go6uQMdVx6A9-hFXh4wcrHsWPHyEPZz_0I5109EZZWKuOHt_xAj3SHEV_iDaO-HRh4tFjnEjD4-hzlBpEiodU8egRPheco8p2ofQLu9mC_LigHzmO6UoSE7-CiRHCDD90RkbjB7U-XCHCKOiD88F3XCdyaEeY53genMPRfKi3FC-OWwhfiOTAEz9ux3AN5hTyYzzeoG2CCz0-GfUSNMgvJL0S_BFRHa7o4EqIE09Q7cYV5F0WKN2RHvyPK0fpg9rhD0eqIzlM3BbKPcHeG0dIbTm0HLmkCxcm_vClI2xsBQLhDJBWIEUAEMVBIwASVEgjBEAGAaCQUkwQg4BgwoJiAFFEEACYIoEgK6BwQDIBBDKEISCZEYgBkQBJDBChNLCWEKaUgMIwhSjjyomBABNCECQAUgKQgQAhAggA",
+      "metadata": {
+        "artist": "Dip Doundou Guiss",
+        "album": "Califat",
+        "year": "2022",
+        "detection_time": 1.2080235481262207,
+        "detection_index": 1
+      }
+    },
+    {
+      "station_name": "Radio Dakar",
+      "track_name": "Califat",
+      "detection_method": "audd",
+      "confidence": 0.8,
+      "detected_at": "2025-03-14T16:01:06.646260",
+      "play_duration": 234.58,
+      "fingerprint": "AQAAiGMUKWqHLxJyaDrS5Ra8B_3xHBy3FP3go6uQMdVx6A9-hFXh4wcrHsWPHyEPZz_0I5109EZZWKuOHt_xAj3SHEV_iDaO-HRh4tFjnEjD4-hzlBpEiodU8egRPheco8p2ofQLu9mC_LigHzmO6UoSE7-CiRHCDD90RkbjB7U-XCHCKOiD88F3XCdyaEeY53genMPRfKi3FC-OWwhfiOTAEz9ux3AN5hTyYzzeoG2CCz0-GfUSNMgvJL0S_BFRHa7o4EqIE09Q7cYV5F0WKN2RHvyPK0fpg9rhD0eqIzlM3BbKPcHeG0dIbTm0HLmkCxcm_vClI2xsBQLhDJBWIEUAEMVBIwASVEgjBEAGAaCQUkwQg4BgwoJiAFFEEACYIoEgK6BwQDIBBDKEISCZEYgBkQBJDBChNLCWEKaUgMIwhSjjyomBABNCECQAUgKQgQAhAggA",
+      "metadata": {
+        "artist": "Dip Doundou Guiss",
+        "album": "Califat",
+        "year": "2022",
+        "detection_time": 1.0922789573669434,
+        "detection_index": 1
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "track_name": "Califat",
+      "detection_method": "audd",
+      "confidence": 0.8,
+      "detected_at": "2025-03-14T16:01:30.451474",
+      "play_duration": 234.58,
+      "fingerprint": "AQAAiGMUKWqHLxJyaDrS5Ra8B_3xHBy3FP3go6uQMdVx6A9-hFXh4wcrHsWPHyEPZz_0I5109EZZWKuOHt_xAj3SHEV_iDaO-HRh4tFjnEjD4-hzlBpEiodU8egRPheco8p2ofQLu9mC_LigHzmO6UoSE7-CiRHCDD90RkbjB7U-XCHCKOiD88F3XCdyaEeY53genMPRfKi3FC-OWwhfiOTAEz9ux3AN5hTyYzzeoG2CCz0-GfUSNMgvJL0S_BFRHa7o4EqIE09Q7cYV5F0WKN2RHvyPK0fpg9rhD0eqIzlM3BbKPcHeG0dIbTm0HLmkCxcm_vClI2xsBQLhDJBWIEUAEMVBIwASVEgjBEAGAaCQUkwQg4BgwoJiAFFEEACYIoEgK6BwQDIBBDKEISCZEYgBkQBJDBChNLCWEKaUgMIwhSjjyomBABNCECQAUgKQgQAhAggA",
+      "metadata": {
+        "artist": "Dip Doundou Guiss",
+        "album": "Califat",
+        "year": "2022",
+        "detection_time": 1.1043791770935059,
+        "detection_index": 2
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal 2",
+      "track_name": "Califat",
+      "detection_method": "audd",
+      "confidence": 0.8,
+      "detected_at": "2025-03-14T16:01:31.574538",
+      "play_duration": 234.58,
+      "fingerprint": "AQAAiGMUKWqHLxJyaDrS5Ra8B_3xHBy3FP3go6uQMdVx6A9-hFXh4wcrHsWPHyEPZz_0I5109EZZWKuOHt_xAj3SHEV_iDaO-HRh4tFjnEjD4-hzlBpEiodU8egRPheco8p2ofQLu9mC_LigHzmO6UoSE7-CiRHCDD90RkbjB7U-XCHCKOiD88F3XCdyaEeY53genMPRfKi3FC-OWwhfiOTAEz9ux3AN5hTyYzzeoG2CCz0-GfUSNMgvJL0S_BFRHa7o4EqIE09Q7cYV5F0WKN2RHvyPK0fpg9rhD0eqIzlM3BbKPcHeG0dIbTm0HLmkCxcm_vClI2xsBQLhDJBWIEUAEMVBIwASVEgjBEAGAaCQUkwQg4BgwoJiAFFEEACYIoEgK6BwQDIBBDKEISCZEYgBkQBJDBChNLCWEKaUgMIwhSjjyomBABNCECQAUgKQgQAhAggA",
+      "metadata": {
+        "artist": "Dip Doundou Guiss",
+        "album": "Califat",
+        "year": "2022",
+        "detection_time": 1.0117614269256592,
+        "detection_index": 2
+      }
+    },
+    {
+      "station_name": "Radio Dakar",
+      "track_name": "Califat",
+      "detection_method": "audd",
+      "confidence": 0.8,
+      "detected_at": "2025-03-14T16:01:32.742873",
+      "play_duration": 234.58,
+      "fingerprint": "AQAAiGMUKWqHLxJyaDrS5Ra8B_3xHBy3FP3go6uQMdVx6A9-hFXh4wcrHsWPHyEPZz_0I5109EZZWKuOHt_xAj3SHEV_iDaO-HRh4tFjnEjD4-hzlBpEiodU8egRPheco8p2ofQLu9mC_LigHzmO6UoSE7-CiRHCDD90RkbjB7U-XCHCKOiD88F3XCdyaEeY53genMPRfKi3FC-OWwhfiOTAEz9ux3AN5hTyYzzeoG2CCz0-GfUSNMgvJL0S_BFRHa7o4EqIE09Q7cYV5F0WKN2RHvyPK0fpg9rhD0eqIzlM3BbKPcHeG0dIbTm0HLmkCxcm_vClI2xsBQLhDJBWIEUAEMVBIwASVEgjBEAGAaCQUkwQg4BgwoJiAFFEEACYIoEgK6BwQDIBBDKEISCZEYgBkQBJDBChNLCWEKaUgMIwhSjjyomBABNCECQAUgKQgQAhAggA",
+      "metadata": {
+        "artist": "Dip Doundou Guiss",
+        "album": "Califat",
+        "year": "2022",
+        "detection_time": 1.07206130027771,
+        "detection_index": 2
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal",
+      "track_name": "Califat",
+      "detection_method": "audd",
+      "confidence": 0.8,
+      "detected_at": "2025-03-14T16:02:04.280493",
+      "play_duration": 234.58,
+      "fingerprint": "AQAAiGMUKWqHLxJyaDrS5Ra8B_3xHBy3FP3go6uQMdVx6A9-hFXh4wcrHsWPHyEPZz_0I5109EZZWKuOHt_xAj3SHEV_iDaO-HRh4tFjnEjD4-hzlBpEiodU8egRPheco8p2ofQLu9mC_LigHzmO6UoSE7-CiRHCDD90RkbjB7U-XCHCKOiD88F3XCdyaEeY53genMPRfKi3FC-OWwhfiOTAEz9ux3AN5hTyYzzeoG2CCz0-GfUSNMgvJL0S_BFRHa7o4EqIE09Q7cYV5F0WKN2RHvyPK0fpg9rhD0eqIzlM3BbKPcHeG0dIbTm0HLmkCxcm_vClI2xsBQLhDJBWIEUAEMVBIwASVEgjBEAGAaCQUkwQg4BgwoJiAFFEEACYIoEgK6BwQDIBBDKEISCZEYgBkQBJDBChNLCWEKaUgMIwhSjjyomBABNCECQAUgKQgQAhAggA",
+      "metadata": {
+        "artist": "Dip Doundou Guiss",
+        "album": "Califat",
+        "year": "2022",
+        "detection_time": 1.061305046081543,
+        "detection_index": 1
+      }
+    },
+    {
+      "station_name": "Radio Dakar",
+      "track_name": "Califat",
+      "detection_method": "audd",
+      "confidence": 0.8,
+      "detected_at": "2025-03-14T16:02:25.494090",
+      "play_duration": 234.58,
+      "fingerprint": "AQAAiGMUKWqHLxJyaDrS5Ra8B_3xHBy3FP3go6uQMdVx6A9-hFXh4wcrHsWPHyEPZz_0I5109EZZWKuOHt_xAj3SHEV_iDaO-HRh4tFjnEjD4-hzlBpEiodU8egRPheco8p2ofQLu9mC_LigHzmO6UoSE7-CiRHCDD90RkbjB7U-XCHCKOiD88F3XCdyaEeY53genMPRfKi3FC-OWwhfiOTAEz9ux3AN5hTyYzzeoG2CCz0-GfUSNMgvJL0S_BFRHa7o4EqIE09Q7cYV5F0WKN2RHvyPK0fpg9rhD0eqIzlM3BbKPcHeG0dIbTm0HLmkCxcm_vClI2xsBQLhDJBWIEUAEMVBIwASVEgjBEAGAaCQUkwQg4BgwoJiAFFEEACYIoEgK6BwQDIBBDKEISCZEYgBkQBJDBChNLCWEKaUgMIwhSjjyomBABNCECQAUgKQgQAhAggA",
+      "metadata": {
+        "artist": "Dip Doundou Guiss",
+        "album": "Califat",
+        "year": "2022",
+        "detection_time": 1.0475585460662842,
+        "detection_index": 1
+      }
+    }
+  ]
+}

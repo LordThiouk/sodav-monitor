@@ -1,0 +1,55 @@
+{
+  "play_logs": [
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal API Test",
+      "event_type": "track_end",
+      "track_name": "Dip Doundou Guiss - Sama Dome (Official video).mp3",
+      "timestamp": "2025-03-14T14:55:36.696797",
+      "duration": 0.0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal API Test",
+      "event_type": "track_start",
+      "track_name": "Dip Doundou Guiss - Sama Dome (Official video).mp3",
+      "timestamp": "2025-03-14T14:55:36.696797",
+      "duration": 0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal API Test",
+      "event_type": "interruption_start",
+      "track_name": "N/A",
+      "timestamp": "2025-03-14T14:56:31.891607",
+      "duration": 0,
+      "details": {
+        "duration_seconds": 5
+      }
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal API Test",
+      "event_type": "track_end",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "timestamp": "2025-03-14T14:56:37.087137",
+      "duration": 0.0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal API Test",
+      "event_type": "track_start",
+      "track_name": "DIP DOUNDOU GUISS - KMND FEAT. LEFA (Clip officiel).mp3",
+      "timestamp": "2025-03-14T14:56:37.087137",
+      "duration": 0,
+      "details": {}
+    },
+    {
+      "station_name": "Radio S\u00e9n\u00e9gal API Test",
+      "event_type": "interruption_end",
+      "track_name": "N/A",
+      "timestamp": "2025-03-14T14:56:37.089138",
+      "duration": 5,
+      "details": {}
+    }
+  ],
+  "detection_logs": []
+}
