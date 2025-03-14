@@ -23,7 +23,7 @@ from backend.detection.audio_processor.track_manager import TrackManager
 from backend.detection.detect_music import MusicDetector
 
 # Local imports - using consistent backend prefix
-from .logs.log_manager import LogManager
+from backend.logs.log_manager import LogManager
 from backend.models.database import get_db, init_db
 from backend.models.models import RadioStation, StationStatus
 from backend.routers import auth, websocket
