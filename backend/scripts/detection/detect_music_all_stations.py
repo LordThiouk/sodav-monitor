@@ -16,7 +16,8 @@ backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
 if backend_dir not in sys.path:
     sys.path.append(backend_dir)
 
-from backend.logs.log_manager import LogManager
+# Import using relative path
+from backend.logs import LogManager
 from backend.models.database import init_db
 
 # Initialize logging with specific logger name
