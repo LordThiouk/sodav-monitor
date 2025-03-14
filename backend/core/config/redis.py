@@ -1,14 +1,17 @@
 """Module de configuration Redis."""
 
-import redis
-from typing import Optional
 from functools import lru_cache
+from typing import Optional
+
+import redis
+
 from .settings import get_settings
 
 settings = get_settings()
 
 # Global Redis client
 _redis_client: Optional[redis.Redis] = None
+
 
 async def init_redis() -> redis.Redis:
     """Initialize Redis connection."""
@@ -17,12 +20,14 @@ async def init_redis() -> redis.Redis:
         _redis_client = get_redis()
     return _redis_client
 
+
 async def close_redis() -> None:
     """Close Redis connection."""
     global _redis_client
     if _redis_client is not None:
         _redis_client.close()
         _redis_client = None
+
 
 @lru_cache()
 def get_redis() -> redis.Redis:
@@ -32,8 +37,9 @@ def get_redis() -> redis.Redis:
         port=settings.REDIS_PORT,
         db=settings.REDIS_DB,
         password=settings.REDIS_PASSWORD,
-        decode_responses=True
+        decode_responses=True,
     )
+
 
 def get_test_redis() -> redis.Redis:
     """Obtenir une connexion Redis pour les tests."""
@@ -41,8 +47,9 @@ def get_test_redis() -> redis.Redis:
         host="localhost",
         port=6379,
         db=1,  # Utiliser une base de données différente pour les tests
-        decode_responses=True
+        decode_responses=True,
     )
+
 
 def check_redis_connection(redis_client: Optional[redis.Redis] = None) -> bool:
     """Vérifier la connexion Redis."""
@@ -53,6 +60,7 @@ def check_redis_connection(redis_client: Optional[redis.Redis] = None) -> bool:
     except redis.ConnectionError:
         return False
 
+
 def clear_redis_data(redis_client: Optional[redis.Redis] = None) -> None:
     """Effacer toutes les données Redis."""
     try:
@@ -62,9 +70,11 @@ def clear_redis_data(redis_client: Optional[redis.Redis] = None) -> None:
     except redis.ConnectionError:
         pass
 
+
 def get_redis_key(prefix: str, *args) -> str:
     """Generate a Redis key with prefix and arguments."""
     return f"{prefix}:{':'.join(str(arg) for arg in args)}"
+
 
 def set_redis_value(key: str, value: str, expire: Optional[int] = None) -> None:
     """Set a value in Redis with optional expiration."""
@@ -73,12 +83,14 @@ def set_redis_value(key: str, value: str, expire: Optional[int] = None) -> None:
     if expire:
         redis_client.expire(key, expire)
 
+
 def get_redis_value(key: str) -> Optional[str]:
     """Get a value from Redis."""
     redis_client = get_redis()
     return redis_client.get(key)
 
+
 def delete_redis_key(key: str) -> None:
     """Delete a key from Redis."""
     redis_client = get_redis()
-    redis_client.delete(key) 
+    redis_client.delete(key)

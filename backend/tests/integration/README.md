@@ -110,4 +110,4 @@ To add a new integration test:
 - Clean up test data after the test is run
 - Use descriptive test names
 - Add comments to explain the test steps
-- Use assertions to verify the expected behavior 
+- Use assertions to verify the expected behavior

@@ -67,7 +67,7 @@ const VolumeControl: React.FC<{
         colorScheme="green"
         variant="ghost"
       />
-      
+
       {showVolumeSlider && (
         <Box
           position="absolute"
@@ -123,7 +123,7 @@ const RadioPlayer: React.FC<RadioPlayerProps> = ({ station, onError }) => {
 
   const handlePlay = async () => {
     if (!station) return;
-    
+
     try {
       setIsLoading(true);
       if (audioRef.current) {
@@ -194,7 +194,7 @@ const RadioPlayer: React.FC<RadioPlayerProps> = ({ station, onError }) => {
           objectFit="cover"
           fallbackSrc="https://via.placeholder.com/50"
         />
-        
+
         <StationInfo station={station} />
 
         <HStack spacing={2}>
@@ -206,7 +206,7 @@ const RadioPlayer: React.FC<RadioPlayerProps> = ({ station, onError }) => {
             colorScheme="green"
             variant="ghost"
           />
-          
+
           <VolumeControl
             volume={volume}
             isMuted={isMuted}

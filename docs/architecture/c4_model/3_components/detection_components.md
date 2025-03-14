@@ -9,49 +9,49 @@ graph TD
     StreamProcessor[Processeur de Flux] -->|Envoie audio| ContentAnalyzer[Analyseur de Contenu]
     ContentAnalyzer -->|Si musique| FingerprintGenerator[Générateur d'Empreintes]
     ContentAnalyzer -->|Si parole| SpeechMetadataExtractor[Extracteur de Métadonnées Parole]
-    
+
     FingerprintGenerator -->|Génère empreinte| DetectionPipeline[Pipeline de Détection]
-    
+
     DetectionPipeline -->|Première tentative| LocalDetector[Détecteur Local]
     LocalDetector -->|Recherche| FingerprintRepository[Dépôt d'Empreintes]
-    
+
     DetectionPipeline -->|Si local échoue| AcoustIDDetector[Détecteur AcoustID]
     AcoustIDDetector -->|Utilise| AcoustIDClient[Client AcoustID]
     AcoustIDClient -->|Appelle API| AcoustIDService[Service AcoustID]
-    
+
     DetectionPipeline -->|Si AcoustID échoue| AudDDetector[Détecteur AudD]
     AudDDetector -->|Utilise| AudDClient[Client AudD]
     AudDClient -->|Appelle API| AudDService[Service AudD]
-    
+
     DetectionPipeline -->|Résultat de détection| TrackManager[Gestionnaire de Pistes]
     TrackManager -->|Vérifie ISRC| ISRCValidator[Validateur ISRC]
     TrackManager -->|Recherche par ISRC| TrackRepository[Dépôt de Pistes]
-    
+
     TrackManager -->|Si piste existe| StatisticsUpdater[Mise à Jour des Statistiques]
     TrackManager -->|Si nouvelle piste| TrackCreator[Créateur de Pistes]
-    
+
     TrackCreator -->|Crée| TrackRepository
     TrackCreator -->|Crée si nécessaire| ArtistRepository[Dépôt d'Artistes]
-    
+
     StatisticsUpdater -->|Met à jour| TrackStatsRepository[Dépôt de Statistiques de Pistes]
     StatisticsUpdater -->|Met à jour| ArtistStatsRepository[Dépôt de Statistiques d'Artistes]
     StatisticsUpdater -->|Met à jour| StationStatsRepository[Dépôt de Statistiques de Stations]
-    
+
     DetectionLogger[Logger de Détection] -->|Enregistre| LogRepository[Dépôt de Logs]
-    
+
     DetectionPipeline -->|Notifie| DetectionLogger
     LocalDetector -->|Notifie| DetectionLogger
     AcoustIDDetector -->|Notifie| DetectionLogger
     AudDDetector -->|Notifie| DetectionLogger
     TrackManager -->|Notifie| DetectionLogger
-    
+
     classDef processor fill:#f9f,stroke:#333,stroke-width:2px;
     classDef detector fill:#bbf,stroke:#333,stroke-width:1px;
     classDef manager fill:#bfb,stroke:#333,stroke-width:1px;
     classDef client fill:#fbb,stroke:#333,stroke-width:1px;
     classDef repository fill:#ddd,stroke:#333,stroke-width:1px;
     classDef external fill:#ffd,stroke:#333,stroke-width:1px;
-    
+
     class StreamProcessor,ContentAnalyzer,FingerprintGenerator,DetectionPipeline processor;
     class LocalDetector,AcoustIDDetector,AudDDetector detector;
     class TrackManager,StatisticsUpdater,TrackCreator,ISRCValidator,SpeechMetadataExtractor,DetectionLogger manager;
@@ -133,4 +133,4 @@ Le système utilise une contrainte d'unicité sur les codes ISRC pour éviter le
 - **Mise en Cache** - Les résultats de détection récents sont mis en cache pour améliorer les performances.
 - **Gestion des Erreurs** - Chaque composant gère ses propres erreurs et les propage de manière appropriée.
 - **Logging** - Tous les événements de détection sont enregistrés pour faciliter le débogage et l'analyse.
-- **Métriques de Performance** - Des métriques sont collectées pour surveiller les performances du système de détection. 
+- **Métriques de Performance** - Des métriques sont collectées pour surveiller les performances du système de détection.

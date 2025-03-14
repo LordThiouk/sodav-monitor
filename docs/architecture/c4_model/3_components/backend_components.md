@@ -12,36 +12,36 @@ graph TD
     APIGateway -->|Route les requêtes| DetectionController[Contrôleur de Détection]
     APIGateway -->|Route les requêtes| ReportController[Contrôleur de Rapports]
     APIGateway -->|Route les requêtes| AnalyticsController[Contrôleur d'Analytique]
-    
+
     AuthController -->|Utilise| AuthService[Service d'Authentification]
     AuthService -->|Gère| UserRepository[Dépôt d'Utilisateurs]
-    
+
     StationController -->|Utilise| StationService[Service de Stations]
     StationService -->|Gère| StationRepository[Dépôt de Stations]
     StationService -->|Utilise| StationHealthService[Service de Santé des Stations]
-    
+
     TrackController -->|Utilise| TrackService[Service de Pistes]
     TrackService -->|Gère| TrackRepository[Dépôt de Pistes]
     TrackService -->|Utilise| ArtistService[Service d'Artistes]
     ArtistService -->|Gère| ArtistRepository[Dépôt d'Artistes]
-    
+
     DetectionController -->|Utilise| DetectionService[Service de Détection]
     DetectionService -->|Gère| DetectionRepository[Dépôt de Détections]
     DetectionService -->|Utilise| TrackService
     DetectionService -->|Utilise| ExternalServiceHandler[Gestionnaire de Services Externes]
     ExternalServiceHandler -->|Intègre| AcoustIDAdapter[Adaptateur AcoustID]
     ExternalServiceHandler -->|Intègre| AudDAdapter[Adaptateur AudD]
-    
+
     ReportController -->|Utilise| ReportService[Service de Rapports]
     ReportService -->|Gère| ReportRepository[Dépôt de Rapports]
     ReportService -->|Utilise| ReportGenerator[Générateur de Rapports]
     ReportGenerator -->|Utilise| TemplateEngine[Moteur de Templates]
     ReportGenerator -->|Utilise| DataExporter[Exportateur de Données]
-    
+
     AnalyticsController -->|Utilise| AnalyticsService[Service d'Analytique]
     AnalyticsService -->|Gère| AnalyticsRepository[Dépôt d'Analytique]
     AnalyticsService -->|Utilise| StatisticsCalculator[Calculateur de Statistiques]
-    
+
     UserRepository -->|Accède| Database[(Base de Données)]
     StationRepository -->|Accède| Database
     TrackRepository -->|Accède| Database
@@ -49,16 +49,16 @@ graph TD
     DetectionRepository -->|Accède| Database
     ReportRepository -->|Accède| Database
     AnalyticsRepository -->|Accède| Database
-    
+
     AnalyticsService -->|Utilise| CacheService[Service de Cache]
     CacheService -->|Accède| Redis[(Cache Redis)]
-    
+
     classDef controller fill:#f9f,stroke:#333,stroke-width:2px;
     classDef service fill:#bbf,stroke:#333,stroke-width:1px;
     classDef repository fill:#bfb,stroke:#333,stroke-width:1px;
     classDef adapter fill:#fbb,stroke:#333,stroke-width:1px;
     classDef database fill:#ddd,stroke:#333,stroke-width:1px;
-    
+
     class APIGateway,AuthController,StationController,TrackController,DetectionController,ReportController,AnalyticsController controller;
     class AuthService,StationService,TrackService,ArtistService,DetectionService,ReportService,AnalyticsService,StationHealthService,ExternalServiceHandler,ReportGenerator,TemplateEngine,DataExporter,StatisticsCalculator,CacheService service;
     class UserRepository,StationRepository,TrackRepository,ArtistRepository,DetectionRepository,ReportRepository,AnalyticsRepository repository;
@@ -130,4 +130,4 @@ graph TD
 - **Injection de Dépendances** - Les dépendances sont injectées pour faciliter les tests et la maintenance.
 - **Gestion des Erreurs** - Chaque composant gère ses propres erreurs et les propage de manière appropriée.
 - **Logging** - Chaque composant utilise un système de logging pour faciliter le débogage et la surveillance.
-- **Transactions** - Les opérations qui modifient plusieurs entités sont exécutées dans des transactions pour garantir la cohérence des données. 
+- **Transactions** - Les opérations qui modifient plusieurs entités sont exécutées dans des transactions pour garantir la cohérence des données.

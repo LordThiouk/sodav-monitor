@@ -17,4 +17,4 @@ router.include_router(core_router)
 router.include_router(generation_router)
 router.include_router(subscriptions_router)
 
-__all__ = ["router"] 
+__all__ = ["router"]

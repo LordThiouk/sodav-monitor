@@ -79,4 +79,4 @@ Le script `test_fingerprint_reuse.py` effectue les opérations suivantes :
 
 ## Conclusion
 
-La réutilisation des empreintes digitales est une fonctionnalité essentielle qui améliore considérablement les performances et l'autonomie du système de détection musicale. Elle permet de réduire la dépendance aux services externes tout en maintenant une haute précision de détection. 
+La réutilisation des empreintes digitales est une fonctionnalité essentielle qui améliore considérablement les performances et l'autonomie du système de détection musicale. Elle permet de réduire la dépendance aux services externes tout en maintenant une haute précision de détection.

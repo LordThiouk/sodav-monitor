@@ -5,7 +5,7 @@ services:
     image: postgres:13
     environment:
       POSTGRES_USER: sodav_test
-      POSTGRES_PASSWORD: sodav_test_password
+      POSTGRES_PASSWORD: ${POSTGRES_TEST_PASSWORD}
       POSTGRES_DB: sodav_test
     ports:
       - "5432:5432"
@@ -37,7 +37,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://sodav_test:sodav_test_password@db/sodav_test
+      - DATABASE_URL=postgresql://sodav_test:${POSTGRES_TEST_PASSWORD}@db/sodav_test
       - REDIS_URL=redis://redis:6379/0
       - ACOUSTID_API_KEY=${ACOUSTID_API_KEY}
       - AUDD_API_KEY=${AUDD_API_KEY}
@@ -55,4 +55,4 @@ services:
 
 volumes:
   postgres_data:
-  test_results: 
+  test_results:

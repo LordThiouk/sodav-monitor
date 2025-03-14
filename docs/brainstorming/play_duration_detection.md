@@ -109,4 +109,4 @@ if elapsed > 180:  # Maximum 3 minutes de capture
 
 ## Conclusion
 
-La capture précise de la durée jusqu'à ce que le son s'arrête naturellement est un élément crucial pour la distribution équitable des droits d'auteur. Notre approche actuelle combine la détection de silence et l'analyse spectrale pour déterminer la fin d'un morceau, avec une limite de sécurité pour éviter les problèmes. Des améliorations continues sont nécessaires pour optimiser la précision et la fiabilité du système. 
+La capture précise de la durée jusqu'à ce que le son s'arrête naturellement est un élément crucial pour la distribution équitable des droits d'auteur. Notre approche actuelle combine la détection de silence et l'analyse spectrale pour déterminer la fin d'un morceau, avec une limite de sécurité pour éviter les problèmes. Des améliorations continues sont nécessaires pour optimiser la précision et la fiabilité du système.

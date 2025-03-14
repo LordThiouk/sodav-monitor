@@ -175,4 +175,4 @@ groups:
 - [Documentation Prometheus](https://prometheus.io/docs/introduction/overview/)
 - [Documentation Grafana](https://grafana.com/docs/)
 - [PromQL Cheat Sheet](https://promlabs.com/promql-cheat-sheet/)
-- [Grafana Dashboard Examples](https://grafana.com/grafana/dashboards/) 
+- [Grafana Dashboard Examples](https://grafana.com/grafana/dashboards/)

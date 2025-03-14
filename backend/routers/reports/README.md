@@ -110,4 +110,4 @@ subscription_data = {
 }
 response = await client.post("/api/reports/subscriptions", json=subscription_data, headers=auth_headers)
 subscription = response.json()
-``` 
+```

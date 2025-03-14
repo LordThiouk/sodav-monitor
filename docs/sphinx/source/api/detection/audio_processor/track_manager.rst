@@ -5,4 +5,4 @@ Module de Gestion des Pistes
    :members:
    :undoc-members:
    :show-inheritance:
-   :private-members: 
+   :private-members:

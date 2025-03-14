@@ -17,4 +17,4 @@ router.include_router(core_router)
 router.include_router(monitoring_router)
 router.include_router(status_router)
 
-__all__ = ["router"] 
+__all__ = ["router"]

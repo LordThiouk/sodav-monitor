@@ -86,4 +86,4 @@ detection_result = response.json()
 # Detect music on all active stations
 response = await client.post("/api/detections/detect-music-all", headers=auth_headers)
 all_stations_result = response.json()
-``` 
+```

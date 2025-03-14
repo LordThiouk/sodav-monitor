@@ -63,7 +63,7 @@ const StationStatsDisplay: React.FC<{ stats: StationStats }> = ({ stats }) => {
     <Box mb={6} p={4} bg={bgColor} borderWidth="1px" borderColor={borderColor} borderRadius="lg" shadow="sm">
       <VStack spacing={4} align="stretch">
         <Heading size="md">{stats.station.name} - Statistics</Heading>
-        
+
         <StatGroup>
           <Stat>
             <StatLabel>Last 24h</StatLabel>
@@ -121,14 +121,14 @@ const TrackDetectionItem: React.FC<{ detection: TrackDetectionWithStation }> = (
     if (duration === null || duration === undefined) {
       return '0:00';
     }
-    
+
     // Handle string format (could be "mm:ss" or a number as string)
     if (typeof duration === 'string') {
       // Check if it's already in mm:ss format
       if (duration.includes(':')) {
         return duration;
       }
-      
+
       // Try to parse as number
       const parsed = parseFloat(duration);
       if (isNaN(parsed)) {
@@ -136,12 +136,12 @@ const TrackDetectionItem: React.FC<{ detection: TrackDetectionWithStation }> = (
       }
       duration = parsed;
     }
-    
+
     // Now duration is definitely a number
     if (duration < 0) {
       return '0:00';
     }
-    
+
     const minutes = Math.floor(duration / 60);
     const seconds = Math.floor(duration % 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
@@ -288,11 +288,11 @@ const TrackDetectionList: React.FC<{ stationId?: number }> = ({ stationId }) => 
   return (
     <Box>
       {stationStats && <StationStatsDisplay stats={stationStats} />}
-      
+
       <Text fontSize="2xl" fontWeight="bold" mb={4}>
         Live Track Detections
       </Text>
-      
+
       <VStack spacing={4} align="stretch">
         {detections.length === 0 ? (
           <Box p={8} textAlign="center" bg={bgColor} borderRadius="lg">

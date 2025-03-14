@@ -373,7 +373,7 @@ backend/detection/audio_processor/
 
 #### 1. Consolidation des Dossiers Static
 - **Problème identifié** : Existence de deux dossiers `static` (à la racine et dans `backend/`).
-- **Solution** : 
+- **Solution** :
   - Conservation du dossier `static` à la racine pour les fichiers statiques partagés
   - Suppression du dossier redondant `backend/static`
 

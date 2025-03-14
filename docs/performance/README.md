@@ -18,4 +18,4 @@ Ce dossier contient la documentation relative aux performances du projet SODAV M
 ## Monitoring
 
 - **monitoring.md** : Documentation sur l'utilisation de Prometheus et Grafana pour le monitoring
-- **frontend_monitoring.md** : Documentation sur le monitoring intégré dans le frontend (sans Docker) 
+- **frontend_monitoring.md** : Documentation sur le monitoring intégré dans le frontend (sans Docker)

@@ -91,7 +91,7 @@ class Track(Base):
 class Fingerprint(Base):
     """Fingerprint model for storing multiple fingerprints per track."""
     __tablename__ = "fingerprints"
-    
+
     id = Column(Integer, primary_key=True)
     track_id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), index=True)
     hash = Column(String(255), index=True)
@@ -99,7 +99,7 @@ class Fingerprint(Base):
     offset = Column(Float)  # Position dans la piste en secondes
     algorithm = Column(String(50))  # 'md5', 'chromaprint', etc.
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
     # Relationship with Track
     track = relationship("Track", back_populates="fingerprints")
 ```
@@ -177,4 +177,4 @@ else:
 
 ## Conclusion
 
-La nouvelle structure de base de données pour les empreintes digitales constitue une amélioration significative du système SODAV Monitor. Elle permet une détection locale plus robuste et précise, réduisant ainsi la dépendance aux services externes et améliorant l'efficacité globale du système. 
+La nouvelle structure de base de données pour les empreintes digitales constitue une amélioration significative du système SODAV Monitor. Elle permet une détection locale plus robuste et précise, réduisant ainsi la dépendance aux services externes et améliorant l'efficacité globale du système.

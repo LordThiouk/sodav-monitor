@@ -44,4 +44,4 @@ Pour contribuer à cette documentation:
 
 - [Site officiel du C4 Model](https://c4model.com/)
 - [The C4 Model for Software Architecture](https://www.infoq.com/articles/C4-architecture-model/)
-- [Visualising Software Architecture](https://leanpub.com/visualising-software-architecture) 
+- [Visualising Software Architecture](https://leanpub.com/visualising-software-architecture)

@@ -87,7 +87,7 @@ def test_isrc_uniqueness():
     )
     db_session.add(track1)
     db_session.commit()
-    
+
     # Tenter de créer une autre piste avec le même ISRC
     track2 = Track(
         title="Another Track",
@@ -95,7 +95,7 @@ def test_isrc_uniqueness():
         isrc="FR1234567890"
     )
     db_session.add(track2)
-    
+
     # Vérifier que la deuxième création échoue
     try:
         db_session.commit()
@@ -116,4 +116,4 @@ def test_isrc_uniqueness():
 
 ## Conclusion
 
-La contrainte d'unicité ISRC fonctionne correctement et les méthodes de détection utilisent efficacement l'ISRC pour retrouver les pistes existantes. Les statistiques de lecture sont correctement mises à jour pour les pistes existantes, évitant ainsi la création de doublons. 
+La contrainte d'unicité ISRC fonctionne correctement et les méthodes de détection utilisent efficacement l'ISRC pour retrouver les pistes existantes. Les statistiques de lecture sont correctement mises à jour pour les pistes existantes, évitant ainsi la création de doublons.

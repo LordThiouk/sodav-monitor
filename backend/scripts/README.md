@@ -195,4 +195,4 @@ python -m backend.scripts.admin.create_admin_user --username admin --email admin
 
 - Tous les scripts sont conçus pour être exécutés depuis la racine du projet.
 - Les scripts de démarrage créent automatiquement les répertoires nécessaires s'ils n'existent pas.
-- Pour plus d'informations sur chaque script, consultez la documentation en haut de chaque fichier. 
+- Pour plus d'informations sur chaque script, consultez la documentation en haut de chaque fichier.

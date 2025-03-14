@@ -1,19 +1,22 @@
-import requests
-import logging
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
 import asyncio
+import logging
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 import aiohttp
-from ..models.models import RadioStation, StationStatus, Track, TrackDetection
+import requests
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
-from ..utils.logging_config import setup_logging
+
 from ..detection.audio_processor.core import AudioProcessor
+from ..models.models import RadioStation, StationStatus, Track, TrackDetection
+from ..utils.logging_config import setup_logging
+
 
 class RadioManager:
     def __init__(self, db_session: Session, audio_processor: AudioProcessor = None):
         """Initialize RadioManager with database session and audio processor.
-        
+
         Args:
             db_session (Session): SQLAlchemy database session
             audio_processor (AudioProcessor, optional): Instance of AudioProcessor for music detection
@@ -22,7 +25,7 @@ class RadioManager:
         self.api_base_url = "https://de1.api.radio-browser.info/json"
         self.logger = logging.getLogger(__name__)
         self.audio_processor = audio_processor
-        
+
         if not audio_processor:
             self.logger.warning("No AudioProcessor provided, some features will be limited")
         else:
@@ -33,9 +36,9 @@ class RadioManager:
         try:
             params = {}
             if country:
-                params['country'] = country
+                params["country"] = country
             if language:
-                params['language'] = language
+                params["language"] = language
 
             async with aiohttp.ClientSession() as session:
                 # Get stations from API
@@ -54,31 +57,33 @@ class RadioManager:
         for station_data in stations:
             try:
                 # Check if station exists
-                station = self.db_session.query(RadioStation).filter_by(
-                    name=station_data['name']
-                ).first()
+                station = (
+                    self.db_session.query(RadioStation).filter_by(name=station_data["name"]).first()
+                )
 
                 if station:
                     # Update existing station
-                    station.stream_url = station_data['url_resolved']
-                    station.country = station_data['country']
-                    station.language = station_data['language']
+                    station.stream_url = station_data["url_resolved"]
+                    station.country = station_data["country"]
+                    station.language = station_data["language"]
                     station.last_checked = datetime.now()
                     station.last_checked = datetime.utcnow()
                 else:
                     # Create new station
                     station = RadioStation(
-                        name=station_data['name'],
-                        stream_url=station_data['url_resolved'],
-                        country=station_data['country'],
-                        language=station_data['language'],
+                        name=station_data["name"],
+                        stream_url=station_data["url_resolved"],
+                        country=station_data["country"],
+                        language=station_data["language"],
                         is_active=1,
-                        last_checked=datetime.now()
+                        last_checked=datetime.now(),
                     )
                     self.db_session.add(station)
 
             except Exception as e:
-                self.logger.error(f"Error processing station {station_data.get('name', 'unknown')}: {str(e)}")
+                self.logger.error(
+                    f"Error processing station {station_data.get('name', 'unknown')}: {str(e)}"
+                )
                 continue
 
         try:
@@ -110,7 +115,11 @@ class RadioManager:
         """Detect music from a station or all active stations."""
         try:
             if station_id:
-                station = self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
+                station = (
+                    self.db_session.query(RadioStation)
+                    .filter(RadioStation.id == station_id)
+                    .first()
+                )
                 if not station:
                     raise ValueError("Station not found")
                 stations = [station]
@@ -122,16 +131,20 @@ class RadioManager:
                 try:
                     if not self.audio_processor:
                         raise ValueError("AudioProcessor not initialized")
-                        
+
                     # Get audio data from stream handler
-                    audio_data = await self.audio_processor.stream_handler.get_audio_data(station.stream_url)
+                    audio_data = await self.audio_processor.stream_handler.get_audio_data(
+                        station.stream_url
+                    )
                     result = await self.audio_processor.process_stream(audio_data, station.id)
                     if result:
-                        results.append({
-                            "station_id": station.id,
-                            "station_name": station.name,
-                            "detection": result
-                        })
+                        results.append(
+                            {
+                                "station_id": station.id,
+                                "station_name": station.name,
+                                "detection": result,
+                            }
+                        )
                 except Exception as e:
                     self.logger.error(f"Error detecting music for station {station.name}: {str(e)}")
                     continue
@@ -139,7 +152,7 @@ class RadioManager:
             return {
                 "status": "success",
                 "message": f"Analyzed {len(stations)} stations",
-                "detections": results
+                "detections": results,
             }
 
         except Exception as e:

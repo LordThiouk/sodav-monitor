@@ -10,4 +10,4 @@ This package contains tests for the music detection components:
 Subpackages:
 - audio_processor/: Tests for audio processing components
 - external/: Tests for external service integrations
-""" 
+"""

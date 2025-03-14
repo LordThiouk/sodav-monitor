@@ -218,4 +218,4 @@ These tests can be integrated into a CI/CD pipeline to ensure system quality:
 
 The E2E tests provide comprehensive validation of the SODAV Monitor system under real-world conditions. By running these tests regularly, we can ensure that the system continues to function correctly as changes are made. The tests are designed to be resilient to real-world variations in radio streams and music content, making them reliable indicators of system health.
 
-While some components like external detection services cannot be fully tested in all environments, the tests are designed to handle these limitations gracefully and still provide valuable validation of the overall system functionality. 
+While some components like external detection services cannot be fully tested in all environments, the tests are designed to handle these limitations gracefully and still provide valuable validation of the overall system functionality.

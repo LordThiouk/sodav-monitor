@@ -1,13 +1,15 @@
-from fastapi import APIRouter, WebSocket
-from typing import Dict, List
 import asyncio
 import json
-from datetime import datetime
-from starlette.websockets import WebSocketDisconnect
 import logging
+from datetime import datetime
+from typing import Dict, List
+
+from fastapi import APIRouter, WebSocket
+from starlette.websockets import WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["websocket"])
+
 
 class ConnectionManager:
     def __init__(self):
@@ -32,12 +34,14 @@ class ConnectionManager:
             except Exception as e:
                 logger.error(f"Error broadcasting message: {e}")
                 disconnected.append(connection)
-        
+
         # Clean up disconnected clients
         for connection in disconnected:
             self.disconnect(connection)
 
+
 manager = ConnectionManager()
+
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -46,7 +50,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         # Start heartbeat in background
         heartbeat_task = asyncio.create_task(send_heartbeat(websocket))
-        
+
         while True:
             try:
                 data = await websocket.receive_text()
@@ -64,13 +68,13 @@ async def websocket_endpoint(websocket: WebSocket):
             heartbeat_task.cancel()
         manager.disconnect(websocket)
 
+
 async def send_heartbeat(websocket: WebSocket):
     try:
         while True:
-            await websocket.send_json({
-                "type": "heartbeat",
-                "timestamp": datetime.utcnow().isoformat()
-            })
+            await websocket.send_json(
+                {"type": "heartbeat", "timestamp": datetime.utcnow().isoformat()}
+            )
             await asyncio.sleep(manager.heartbeat_interval)
     except WebSocketDisconnect:
         pass
@@ -79,12 +83,13 @@ async def send_heartbeat(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Heartbeat error: {e}")
 
+
 async def process_websocket_message(data: str, websocket: WebSocket):
     """Traite les messages reçus via WebSocket."""
     try:
         message = json.loads(data)
         message_type = message.get("type")
-        
+
         if message_type == "subscribe":
             # Gérer les abonnements aux événements
             pass
@@ -93,17 +98,14 @@ async def process_websocket_message(data: str, websocket: WebSocket):
             pass
         else:
             logger.warning(f"Unknown message type: {message_type}")
-            
+
     except json.JSONDecodeError:
         logger.error("Invalid JSON message received")
     except Exception as e:
         logger.error(f"Error processing message: {e}")
 
+
 async def broadcast_track_detection(track_data: Dict):
     """Diffuse une détection de piste à tous les clients connectés."""
-    message = {
-        "type": "detection",
-        "data": track_data,
-        "timestamp": datetime.utcnow().isoformat()
-    }
-    await manager.broadcast(message) 
+    message = {"type": "detection", "data": track_data, "timestamp": datetime.utcnow().isoformat()}
+    await manager.broadcast(message)

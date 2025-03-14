@@ -89,4 +89,4 @@
 
 - ✅ **Amélioration des tests d'intégration** : Les tests d'intégration ont été améliorés pour vérifier l'accumulation correcte des statistiques, notamment pour les durées de lecture. Voir [Tests d'Intégration](tests/integration_testing.md) pour plus de détails.
 
-- ✅ **Documentation mise à jour** : La documentation a été mise à jour pour refléter les changements récents et fournir des informations plus détaillées sur le système de suivi du temps de jeu. 
+- ✅ **Documentation mise à jour** : La documentation a été mise à jour pour refléter les changements récents et fournir des informations plus détaillées sur le système de suivi du temps de jeu.

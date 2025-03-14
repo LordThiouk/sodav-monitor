@@ -12,4 +12,4 @@ Sous-modules
 .. toctree::
    :maxdepth: 1
 
-   utils/validators 
+   utils/validators

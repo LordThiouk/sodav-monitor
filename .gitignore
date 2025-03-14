@@ -111,7 +111,7 @@ build/
 dist/
 coverage/
 .nyc_output/
-
+.history/
 # Frontend specific
 frontend/node_modules/
 frontend/.next/
@@ -174,4 +174,3 @@ Thumbs.db
 
 # Fichiers de build Docker
 .docker/
-

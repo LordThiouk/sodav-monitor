@@ -607,4 +607,4 @@ ws://localhost:8000/api/ws
 
 L'API SODAV Monitor implémente des limites de débit pour éviter les abus. Par défaut, la limite est de 100 requêtes par minute par adresse IP ou clé API.
 
-En cas de dépassement de la limite, l'API retournera un code d'erreur 429 avec un en-tête `Retry-After` indiquant le nombre de secondes à attendre avant de réessayer. 
+En cas de dépassement de la limite, l'API retournera un code d'erreur 429 avec un en-tête `Retry-After` indiquant le nombre de secondes à attendre avant de réessayer.

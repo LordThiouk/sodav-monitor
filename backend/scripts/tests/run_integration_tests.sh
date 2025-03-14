@@ -46,4 +46,4 @@ echo "Test Results:" >> integration_test_report.txt
 python -m pytest backend/tests/integration/ -v | grep -E "PASSED|FAILED|ERROR|SKIPPED" >> integration_test_report.txt
 
 echo "Integration tests completed. See coverage_integration/ for detailed coverage report."
-echo "Summary report saved to integration_test_report.txt" 
+echo "Summary report saved to integration_test_report.txt"

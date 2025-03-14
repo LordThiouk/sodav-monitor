@@ -71,4 +71,4 @@ docker-compose --log-level DEBUG up -d
 Write-Host "Vérification de l'état des services..." -ForegroundColor Green
 docker-compose ps
 
-Write-Host "Configuration terminée. Les logs sont disponibles dans le répertoire logs/docker/" -ForegroundColor Green 
+Write-Host "Configuration terminée. Les logs sont disponibles dans le répertoire logs/docker/" -ForegroundColor Green

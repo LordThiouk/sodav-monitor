@@ -4,4 +4,4 @@ declare module 'recharts/lib/index' {
 
 declare module 'recharts' {
   export * from '@types/recharts';
-} 
+}

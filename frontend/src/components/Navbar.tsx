@@ -35,7 +35,7 @@ export default function Navbar() {
   const isMobile = useMediaQuery("(max-width: 48em)")[0];
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
-  
+
   const authenticated = isAuthenticated();
   const user = getUser();
 
@@ -46,7 +46,7 @@ export default function Navbar() {
     { to: '/monitoring', label: 'Monitoring', icon: FaChartLine },
     { to: '/reports', label: 'Reports', icon: FaFileDownload }
   ];
-  
+
   const handleLogout = () => {
     removeToken();
     navigate('/login');
@@ -54,20 +54,20 @@ export default function Navbar() {
 
   return (
     <Box>
-      <Box 
-        as="nav" 
-        position="fixed" 
-        w="100%" 
-        bg={bgColor} 
-        borderBottom="1px" 
+      <Box
+        as="nav"
+        position="fixed"
+        w="100%"
+        bg={bgColor}
+        borderBottom="1px"
         borderColor={borderColor}
         zIndex="sticky"
       >
-        <Flex 
-          h="16" 
-          alignItems="center" 
-          justifyContent="space-between" 
-          mx="auto" 
+        <Flex
+          h="16"
+          alignItems="center"
+          justifyContent="space-between"
+          mx="auto"
           px={4}
           maxW="container.xl"
         >
@@ -141,7 +141,7 @@ export default function Navbar() {
               )}
             </>
           )}
-          
+
           {authenticated && !isMobile && (
             <Menu>
               <MenuButton

@@ -329,7 +329,7 @@ The following performance targets have been established and tested:
 1. **Music Detection Endpoint**
    - Response time: < 100ms
    - Memory usage: < 50MB
-   - Current performance: 
+   - Current performance:
      - Min: 1.2488 ms
      - Max: 97.3707 ms
      - Mean: 1.7042 ms
@@ -582,18 +582,18 @@ tests/
    - Vérifier que la base de données n'accepte pas deux pistes avec le même ISRC
    - Tester la levée d'exceptions appropriées (IntegrityError)
    - Vérifier le comportement de rollback en cas d'erreur
-   
+
    ```python
    def test_isrc_uniqueness_constraint(self):
        # Créer une première piste avec un ISRC
        track1 = Track(title="Test Track 1", artist_id=self.artist.id, isrc="FR1234567890")
        self.db_session.add(track1)
        self.db_session.commit()
-       
+
        # Tenter de créer une deuxième piste avec le même ISRC
        track2 = Track(title="Test Track 2", artist_id=self.artist.id, isrc="FR1234567890")
        self.db_session.add(track2)
-       
+
        # Vérifier que la contrainte d'unicité est appliquée
        with self.assertRaises(IntegrityError):
            self.db_session.commit()
@@ -603,7 +603,7 @@ tests/
    - Vérifier que les méthodes de détection (`find_acoustid_match`, `find_audd_match`) utilisent correctement l'ISRC pour retrouver les pistes existantes
    - Tester avec des ISRC simulés
    - Vérifier que les pistes existantes sont correctement retrouvées
-   
+
    ```python
    async def test_acoustid_match_with_isrc(self):
        # Créer une piste avec un ISRC unique
@@ -611,10 +611,10 @@ tests/
        track = Track(title="Test Track", artist_id=self.artist.id, isrc=test_isrc)
        self.db_session.add(track)
        self.db_session.commit()
-       
+
        # Simuler un résultat AcoustID avec le même ISRC
        acoustid_result = {"recordings": [{"isrc": [test_isrc]}]}
-       
+
        # Vérifier que la méthode retrouve la piste existante
        result = await self.track_manager.find_acoustid_match(audio_features, acoustid_result)
        self.assertEqual(result['track']['id'], track.id)

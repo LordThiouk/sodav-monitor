@@ -170,9 +170,9 @@ const AnalyticsOverview: React.FC = () => {
     activeChannels: analytics.activeStations || 0,
     totalPlays: analytics.totalPlays || 0,
     totalPlayTime: analytics.totalPlayTime || '00:00:00',
-    playsData: analytics.playsData?.map(d => ({ 
-      date: new Date(d.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 
-      plays: d.count || 0 
+    playsData: analytics.playsData?.map(d => ({
+      date: new Date(d.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      plays: d.count || 0
     })) || [],
     topTracks: (analytics.topTracks || []).map(track => ({
       ...track,
@@ -458,7 +458,7 @@ const AnalyticsOverview: React.FC = () => {
         </GridItem>
       </Grid>
 
-      
+
     </VStack>
   );
 };

@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 ---
 ---
 description: Règles pour les Tests Unitaires sur Cursor AI (sodav-monitor)
@@ -41,8 +41,8 @@ Le **meilleur choix dépend des objectifs des tests** :
 ---
 
 ### 🚀 **Recommandation**
-1. **Tests unitaires** → Utilisez des **mockups** pour tester les fonctions isolées.  
-2. **Tests d'intégration** → Utilisez des **stations réelles** pour tester l'ensemble du système.  
+1. **Tests unitaires** → Utilisez des **mockups** pour tester les fonctions isolées.
+2. **Tests d'intégration** → Utilisez des **stations réelles** pour tester l'ensemble du système.
 
 Vous voulez que je vous aide à configurer les deux types de tests ? 🔧
 
@@ -50,20 +50,20 @@ Vous voulez que je vous aide à configurer les deux types de tests ? 🔧
 
 ### 🔒 **2. Règles Générales**
 
-1. **Nomination des Fonctions de Test**  
+1. **Nomination des Fonctions de Test**
    Chaque fonction de test doit commencer par `test_`.
 
-2. **Isolation des Tests**  
-   - Chaque test doit être indépendant.  
+2. **Isolation des Tests**
+   - Chaque test doit être indépendant.
    - Utiliser des fixtures pour les configurations répétées.
 
-3. **Assertions**  
-   - Utiliser des assertions claires pour valider les sorties :  
-     - `assert actual == expected`  
-     - `assert isinstance(obj, ClassType)`  
+3. **Assertions**
+   - Utiliser des assertions claires pour valider les sorties :
+     - `assert actual == expected`
+     - `assert isinstance(obj, ClassType)`
 
-4. **Mocking**  
-   - Utiliser `unittest.mock` pour simuler des appels API externes (ex. Audd, MusicBrainz).  
+4. **Mocking**
+   - Utiliser `unittest.mock` pour simuler des appels API externes (ex. Audd, MusicBrainz).
    - Simuler les connexions aux bases de données avec des fixtures.
 
 ---

@@ -46,4 +46,4 @@ echo "Test Results:" >> all_tests_report.txt
 python -m pytest backend/tests/ -v | grep -E "PASSED|FAILED|ERROR|SKIPPED" >> all_tests_report.txt
 
 echo "All tests completed. See coverage_all/ for detailed coverage report."
-echo "Summary report saved to all_tests_report.txt" 
+echo "Summary report saved to all_tests_report.txt"

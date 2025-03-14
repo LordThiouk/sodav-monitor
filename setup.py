@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="sodav-monitor",
@@ -7,4 +7,4 @@ setup(
     install_requires=[
         # Les dépendances seront lues depuis requirements.txt
     ],
-) 
+)

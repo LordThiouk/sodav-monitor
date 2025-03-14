@@ -20,4 +20,4 @@ Ce dossier contient la documentation relative au système de détection musicale
 
 - **detection_improvements.md** : Améliorations générales du système de détection
 - **fingerprint_reuse.md** : Réutilisation des empreintes digitales pour améliorer les performances
-- **isrc_best_practices.md** : Bonnes pratiques pour l'utilisation des codes ISRC dans le système de détection 
+- **isrc_best_practices.md** : Bonnes pratiques pour l'utilisation des codes ISRC dans le système de détection

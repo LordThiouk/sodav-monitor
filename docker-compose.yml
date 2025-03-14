@@ -23,9 +23,9 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - PYTHONPATH=/app
-      - ACOUSTID_API_KEY=7HKKBoukZR
-      - AUDD_API_KEY=a718282167d84385a8c9d1ea9f45747a
-      - SECRET_KEY=a3b1c8d9e0f12a345b67890cdef1234567890abcdef1234567890abcdef12
+      - ACOUSTID_API_KEY=${ACOUSTID_API_KEY}
+      - AUDD_API_KEY=${AUDD_API_KEY}
+      - SECRET_KEY=${SECRET_KEY}
     depends_on:
       - db
       - redis
@@ -38,9 +38,9 @@ services:
         max-file: "3"
         tag: "{{.Name}}"
     command: >
-      bash -c "cd /app && 
-      pip install -r requirements.txt && 
-      cd /app/backend && 
+      bash -c "cd /app &&
+      pip install -r requirements.txt &&
+      cd /app/backend &&
       python -m uvicorn main:app --host 0.0.0.0 --port 8000"
 
   # Frontend React/TypeScript avec Chakra UI
@@ -69,7 +69,7 @@ services:
         tag: "{{.Name}}"
     working_dir: /app
     command: >
-      sh -c "npm install && 
+      sh -c "npm install &&
       npm start"
 
   # Base de données PostgreSQL
@@ -223,4 +223,4 @@ volumes:
   postgres_data:
   redis_data:
   prometheus_data:
-  grafana_data: 
+  grafana_data:

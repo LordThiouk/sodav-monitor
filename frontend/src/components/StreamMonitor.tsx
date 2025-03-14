@@ -23,9 +23,9 @@ const StreamMonitor: React.FC = () => {
   const handleWebSocketMessage = useCallback((event: MessageEvent) => {
     const data = JSON.parse(event.data);
     if (data.type === 'detection_update') {
-      setStations(prevStations => 
-        prevStations.map(station => 
-          station.id === data.station_id 
+      setStations(prevStations =>
+        prevStations.map(station =>
+          station.id === data.station_id
             ? { ...station, last_detection: data.detection }
             : station
         )
@@ -53,7 +53,7 @@ const StreamMonitor: React.FC = () => {
 
   useEffect(() => {
     const ws = new WebSocket(WS_URL);
-    
+
     ws.onmessage = handleWebSocketMessage;
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
@@ -89,7 +89,7 @@ const StreamMonitor: React.FC = () => {
                 {station.last_detection ? 'Active' : 'Inactive'}
               </Badge>
             </HStack>
-            
+
             {station.last_detection ? (
               <VStack align="start" spacing={1}>
                 <Text>

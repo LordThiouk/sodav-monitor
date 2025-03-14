@@ -63,4 +63,4 @@ Si vous rencontrez des problèmes lors de l'exécution des tests, consultez les 
 - **Erreur 413 avec AcoustID** - Vérifiez que la modification pour utiliser POST est bien appliquée
 - **fpcalc non trouvé** - Assurez-vous que l'outil est correctement installé dans `backend/bin/`
 - **Clés API invalides** - Vérifiez que les clés sont correctement configurées dans le fichier `.env`
-- **Fichiers audio non reconnus** - Essayez avec des fichiers audio plus longs ou plus connus 
+- **Fichiers audio non reconnus** - Essayez avec des fichiers audio plus longs ou plus connus

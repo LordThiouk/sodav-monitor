@@ -8,4 +8,4 @@ Cette section contient la documentation générée automatiquement à partir des
 
    detection
    models
-   utils 
+   utils

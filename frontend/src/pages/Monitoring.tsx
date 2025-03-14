@@ -80,7 +80,7 @@ const Monitoring: React.FC = () => {
     };
 
     fetchData();
-    
+
     // Rafraîchir les données toutes les 30 secondes
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
@@ -114,7 +114,7 @@ const Monitoring: React.FC = () => {
       intersect: false
     },
   };
-  
+
   // Options pour les graphiques de type Bar
   const barChartOptions: ChartOptions<'bar'> = {
     responsive: true,
@@ -290,12 +290,12 @@ const Monitoring: React.FC = () => {
 
         <Box height="300px" p={4} bg={bgColor} borderRadius="lg" boxShadow="sm">
           <Heading size="md" mb={4}>Détections par Méthode</Heading>
-          <Bar 
-            data={methodData} 
+          <Bar
+            data={methodData}
             options={{
               ...barChartOptions,
               indexAxis: 'y' as const,
-            }} 
+            }}
           />
         </Box>
       </>
@@ -351,7 +351,7 @@ const Monitoring: React.FC = () => {
                   {systemMetrics && (
                     <Box height="300px" p={4} bg={bgColor} borderRadius="lg" boxShadow="sm">
                       <Heading size="md" mb={4}>Utilisation CPU</Heading>
-                      <Line 
+                      <Line
                         data={{
                           labels: systemMetrics.timestamps,
                           datasets: [
@@ -364,16 +364,16 @@ const Monitoring: React.FC = () => {
                               tension: 0.4,
                             },
                           ],
-                        }} 
-                        options={chartOptions} 
+                        }}
+                        options={chartOptions}
                       />
                     </Box>
                   )}
-                  
+
                   {detectionMetrics && (
                     <Box height="300px" p={4} bg={bgColor} borderRadius="lg" boxShadow="sm">
                       <Heading size="md" mb={4}>Nombre de Détections</Heading>
-                      <Line 
+                      <Line
                         data={{
                           labels: detectionMetrics.timestamps,
                           datasets: [
@@ -386,8 +386,8 @@ const Monitoring: React.FC = () => {
                               tension: 0.4,
                             },
                           ],
-                        }} 
-                        options={chartOptions} 
+                        }}
+                        options={chartOptions}
                       />
                     </Box>
                   )}
@@ -401,7 +401,7 @@ const Monitoring: React.FC = () => {
                       <StatHelpText>Utilisation moyenne du CPU</StatHelpText>
                     </Stat>
                   )}
-                  
+
                   {detectionMetrics && (
                     <>
                       <Stat p={3} bg={bgColor} borderRadius="lg" boxShadow="sm">
@@ -409,7 +409,7 @@ const Monitoring: React.FC = () => {
                         <StatNumber>{detectionMetrics.total_detections}</StatNumber>
                         <StatHelpText>Période: {timeRange}</StatHelpText>
                       </Stat>
-                      
+
                       <Stat p={3} bg={bgColor} borderRadius="lg" boxShadow="sm">
                         <StatLabel>Stations Actives</StatLabel>
                         <StatNumber>{detectionMetrics.active_stations}</StatNumber>
@@ -435,4 +435,4 @@ const Monitoring: React.FC = () => {
   );
 };
 
-export default Monitoring; 
+export default Monitoring;

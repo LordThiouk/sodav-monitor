@@ -30,7 +30,7 @@ interface CustomTooltipProps {
   label?: string | number;
 }
 
-const TrackDetectionChart: React.FC<TrackDetectionChartProps> = ({ 
+const TrackDetectionChart: React.FC<TrackDetectionChartProps> = ({
   data,
   height = "400px"
 }) => {
@@ -56,10 +56,10 @@ const TrackDetectionChart: React.FC<TrackDetectionChartProps> = ({
 
   const memoizedData = useMemo(() => data, [data]);
 
-  const CustomTooltip = ({ 
-    active, 
-    payload, 
-    label 
+  const CustomTooltip = ({
+    active,
+    payload,
+    label
   }: CustomTooltipProps) => {
     if (active && payload && payload.length) {
       return (

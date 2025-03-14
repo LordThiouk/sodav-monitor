@@ -15,21 +15,21 @@ Variables d'Environnement Principales
 
    # Configuration de la base de données
    DATABASE_URL=postgresql://user:password@localhost/sodav_monitor
-   
+
    # Clés API pour les services de détection
    ACOUSTID_API_KEY=votre_cle_acoustid
    AUDD_API_KEY=votre_cle_audd
-   
+
    # Configuration de sécurité
    SECRET_KEY=votre_cle_secrete
-   
+
    # Environnement (development, testing, production)
    ENVIRONMENT=development
-   
+
    # Configuration du serveur
    HOST=0.0.0.0
    PORT=8000
-   
+
    # Configuration des logs
    LOG_LEVEL=INFO
    LOG_DIR=backend/logs
@@ -110,13 +110,13 @@ Pour optimiser les performances, vous pouvez ajuster les paramètres suivants :
 
    # Nombre de workers pour le serveur
    WORKERS=4
-   
+
    # Taille du pool de connexions à la base de données
    DB_POOL_SIZE=20
-   
+
    # Intervalle de détection (en secondes)
    DETECTION_INTERVAL=30
-   
+
    # Taille maximale des fichiers audio (en Mo)
    MAX_AUDIO_SIZE=10
 
@@ -129,9 +129,9 @@ Le frontend peut être configuré via le fichier `.env.local` dans le dossier `f
 
    # URL de l'API backend
    NEXT_PUBLIC_API_URL=http://localhost:8000
-   
+
    # Intervalle de rafraîchissement des données (en ms)
    NEXT_PUBLIC_REFRESH_INTERVAL=5000
-   
+
    # Langue par défaut
-   NEXT_PUBLIC_DEFAULT_LOCALE=fr 
+   NEXT_PUBLIC_DEFAULT_LOCALE=fr

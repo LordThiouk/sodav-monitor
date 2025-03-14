@@ -46,12 +46,12 @@ import {
   CircularProgress,
   CircularProgressLabel,
 } from '@chakra-ui/react';
-import { 
-  FaMusic, 
-  FaExclamationTriangle, 
-  FaCheckCircle, 
-  FaBroadcastTower, 
-  FaArrowRight, 
+import {
+  FaMusic,
+  FaExclamationTriangle,
+  FaCheckCircle,
+  FaBroadcastTower,
+  FaArrowRight,
   FaChartLine,
   FaFileAlt,
   FaCalendarAlt,
@@ -237,7 +237,7 @@ const LiveMonitor: React.FC = () => {
   const handleWebSocketMessage = useCallback((event: MessageEvent) => {
     try {
       const message: WebSocketMessage = JSON.parse(event.data);
-      
+
       switch (message.type) {
         case 'initial_data':
           const initialData = message.data as InitialData;
@@ -278,7 +278,7 @@ const LiveMonitor: React.FC = () => {
           // Add new detection to the list
           setLatestDetections(prev => {
             const station = stations.find(s => s.id === detection.station_id);
-            
+
             // Format play_duration consistently
             let formattedDuration = '0:00';
             if (detection.play_duration) {
@@ -307,7 +307,7 @@ const LiveMonitor: React.FC = () => {
                 }
               }
             }
-            
+
             const newDetection = {
               id: detection.id,
               stationName: station?.name || detection.station_name || 'Unknown Station',
@@ -319,10 +319,10 @@ const LiveMonitor: React.FC = () => {
               detected_at: detection.detected_at,
               play_duration: formattedDuration
             };
-            
+
             const exists = prev.some(d => d.id === newDetection.id);
             if (exists) return prev;
-            
+
             return [newDetection, ...prev].slice(0, 10);
           });
           break;
@@ -344,24 +344,24 @@ const LiveMonitor: React.FC = () => {
 
   const connectWebSocket = useCallback(() => {
     const ws = new WebSocket(WS_URL);
-    
+
     ws.onopen = () => {
       console.log('WebSocket connected');
       setError(null);
     };
-    
+
     ws.onmessage = handleWebSocketMessage;
-    
+
     ws.onerror = () => {
       setError('WebSocket connection error. Reconnecting...');
       setTimeout(connectWebSocket, 5000);
     };
-    
+
     ws.onclose = () => {
       console.log('WebSocket closed. Reconnecting...');
       setTimeout(connectWebSocket, 5000);
     };
-    
+
     return ws;
   }, [handleWebSocketMessage]);
 
@@ -486,9 +486,9 @@ const LiveMonitor: React.FC = () => {
                 <StatLabel>System Status</StatLabel>
                 <StatNumber>
                   <HStack>
-                    <Icon 
-                      as={systemStatus.activeStations > 0 ? FaCheckCircle : FaExclamationTriangle} 
-                      color={systemStatus.activeStations > 0 ? "green.500" : "yellow.500"} 
+                    <Icon
+                      as={systemStatus.activeStations > 0 ? FaCheckCircle : FaExclamationTriangle}
+                      color={systemStatus.activeStations > 0 ? "green.500" : "yellow.500"}
                     />
                     <Text>{systemStatus.activeStations > 0 ? 'Healthy' : 'Warning'}</Text>
                   </HStack>
@@ -598,8 +598,8 @@ const LiveMonitor: React.FC = () => {
                         </Tooltip>
                       </Td>
                       <Td>
-                        <CircularProgress 
-                          value={detection.confidence} 
+                        <CircularProgress
+                          value={detection.confidence}
                           color={getConfidenceColor(detection.confidence)}
                           size="40px"
                         >

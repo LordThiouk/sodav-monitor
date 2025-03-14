@@ -39,4 +39,4 @@ RUN mkdir -p test_audio_samples test_results
 COPY scripts/test_external_services.py .
 
 # Command to run tests
-CMD ["python", "-m", "pytest", "backend/tests/integration/test_end_to_end.py", "-v", "--log-cli-level=INFO"] 
+CMD ["python", "-m", "pytest", "backend/tests/integration/test_end_to_end.py", "-v", "--log-cli-level=INFO"]

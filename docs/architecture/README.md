@@ -23,4 +23,4 @@ Le [C4 Model](c4_model/) est une approche de documentation architecturale qui ut
 3. **[Composants](c4_model/3_components/)** - Décomposition de chaque conteneur en composants
 4. **[Code](c4_model/4_code/)** - Implémentation détaillée des composants clés
 
-Cette approche facilite la communication entre les parties prenantes techniques et non techniques en fournissant une vue progressive de l'architecture, du plus général au plus détaillé. 
+Cette approche facilite la communication entre les parties prenantes techniques et non techniques en fournissant une vue progressive de l'architecture, du plus général au plus détaillé.

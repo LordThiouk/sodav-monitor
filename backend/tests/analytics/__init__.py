@@ -9,4 +9,4 @@ This package contains tests for the analytics components:
 
 These tests verify that the analytics system correctly processes detection data,
 calculates statistics, and generates reports.
-""" 
+"""

@@ -114,4 +114,4 @@ Ce script affiche les détections récentes, y compris celles effectuées via Ac
 - AcoustID est utilisé comme solution secondaire dans le processus de détection hiérarchique, après la détection locale et avant AudD
 - Le service AcoustID est gratuit mais a des limitations de taux (3 requêtes par seconde maximum)
 - Les résultats dépendent de la qualité de l'empreinte générée et de la présence de la piste dans la base de données AcoustID
-- Les fichiers audio courts peuvent ne pas générer d'empreintes suffisamment distinctives pour être reconnus 
+- Les fichiers audio courts peuvent ne pas générer d'empreintes suffisamment distinctives pour être reconnus

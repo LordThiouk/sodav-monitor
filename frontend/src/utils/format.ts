@@ -13,4 +13,4 @@ export const formatDuration = (seconds: number): string => {
   }
 
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-}; 
+};

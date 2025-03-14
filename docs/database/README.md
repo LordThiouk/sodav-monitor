@@ -15,4 +15,4 @@ Ce dossier contient la documentation relative à la base de données de SODAV Mo
 ## Optimisations
 
 - **query_optimization.md** : Optimisations des requêtes SQL
-- **indexing_strategy.md** : Stratégie d'indexation pour améliorer les performances 
+- **indexing_strategy.md** : Stratégie d'indexation pour améliorer les performances

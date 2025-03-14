@@ -83,7 +83,7 @@ Key test cases include:
 async def test_local_detection_integration(mock_db_session, mock_track, mock_features):
     """
     Test the integration between TrackManager and TrackFinder for local detection.
-    
+
     This test verifies that the TrackManager correctly delegates to TrackFinder
     for local track detection and then to StatsRecorder for recording the detection.
     """
@@ -98,19 +98,19 @@ async def test_local_detection_integration(mock_db_session, mock_track, mock_fea
         "confidence": 0.9,
         "method": "local"
     })
-    
+
     # ... other mocks ...
-    
+
     # Create the TrackManager with mocked components
     track_manager = TrackManager(db_session=mock_db_session)
-    
+
     # Call the method under test
     result = await track_manager.process_track(mock_features, station_id=1)
-    
+
     # Verify the correct methods were called
     track_finder.find_local_match.assert_called_once_with(mock_features)
     stats_recorder.record_detection.assert_called_once()
-    
+
     # Verify the result
     assert result["success"] is True
     assert result["track_id"] == 1
@@ -132,11 +132,11 @@ Key test cases include:
 
 ```python
 @pytest.mark.asyncio
-async def test_isrc_detection_system(self, db_session: Session, test_station: RadioStation, 
+async def test_isrc_detection_system(self, db_session: Session, test_station: RadioStation,
                                     test_track: Track, test_features: dict):
     """
     Test the ISRC-based detection with real database interactions.
-    
+
     This test:
     1. Creates a real track with ISRC in the database
     2. Configures the TrackManager to find this track by ISRC
@@ -144,29 +144,29 @@ async def test_isrc_detection_system(self, db_session: Session, test_station: Ra
     """
     # Create a TrackManager instance
     track_manager = TrackManager(db_session)
-    
+
     # Add the ISRC to the features
     features = test_features.copy()
     features["isrc"] = test_track.isrc
-    
+
     # Mock the find_local_match to fail
-    with patch('backend.detection.audio_processor.track_manager.track_finder.TrackFinder.find_local_match', 
+    with patch('backend.detection.audio_processor.track_manager.track_finder.TrackFinder.find_local_match',
               new_callable=AsyncMock) as mock_find_local:
         mock_find_local.return_value = None
-        
+
         # Process the track
         result = await track_manager.process_track(features, station_id=test_station.id)
-        
+
         # Verify the result
         assert result["success"] is True
         assert "track_id" in result
         assert "detection_id" in result
-        
+
         # Verify the detection was recorded in the database
         detection = db_session.query(TrackDetection).filter(
             TrackDetection.id == result["detection_id"]
         ).first()
-        
+
         assert detection is not None
         assert detection.track_id == test_track.id
         assert detection.station_id == test_station.id
@@ -233,8 +233,8 @@ report = Report(
     format="json",
     status="completed",
     parameters={
-        "test": "data", 
-        "period_start": period_start.isoformat(), 
+        "test": "data",
+        "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat()
     },
     file_path="/path/to/test/report.json"
@@ -257,7 +257,7 @@ Detection system integration tests verify that the detection system works correc
 
 1. **Detection Pipeline Test**: Tests the complete detection pipeline, including creating a sample audio, processing the audio through the feature extractor, processing the features through the track manager, and verifying the detection is saved in the database.
 2. **Hierarchical Detection Test**: Tests the hierarchical detection process, including trying local detection, MusicBrainz detection, and Audd detection.
-3. **Play Duration Tracking Test**: Tests the tracking of play duration for songs on stations, ensuring that the system captures and records the exact duration of each song played on each station. 
+3. **Play Duration Tracking Test**: Tests the tracking of play duration for songs on stations, ensuring that the system captures and records the exact duration of each song played on each station.
 
    Ces tests suivent le cycle complet de détection en utilisant des données réelles de stations de radio sénégalaises. Ils vérifient que :
    - La durée exacte de lecture est capturée à partir des flux audio
@@ -342,7 +342,7 @@ Some tests are intentionally skipped due to authentication requirements. This is
 
 **Issue**: Tests that require authentication may fail with a 401 Unauthorized status code if the authentication headers are not properly set up or if the authentication mechanism is mocked incorrectly.
 
-**Solution**: 
+**Solution**:
 1. Use the `auth_headers` fixture provided in `conftest.py` for tests that require authentication:
    ```python
    def test_authenticated_endpoint(test_client: TestClient, auth_headers: Dict[str, str]):
@@ -391,7 +391,7 @@ Pydantic v2.0 introduced several breaking changes, including the deprecation of 
 class MyModel(BaseModel):
     created_at: datetime
     duration: timedelta
-    
+
     model_config = ConfigDict(
         json_encoders={
             datetime: lambda v: v.isoformat(),
@@ -403,7 +403,7 @@ class MyModel(BaseModel):
 class MyModel(BaseModel):
     created_at: datetime
     duration: timedelta
-    
+
     @model_serializer
     def serialize_model(self) -> Dict[str, Any]:
         data = self.model_dump()
@@ -420,7 +420,7 @@ pytest-asyncio has deprecated the default event loop scope configuration.
 
 **Issue**: The warning `asyncio_default_fixture_loop_scope` configuration option is deprecated and will be removed in a future version.
 
-**Solution**: 
+**Solution**:
 1. Update the event loop fixture to use the recommended approach:
    ```python
    @pytest.fixture(scope="function")
@@ -436,7 +436,7 @@ pytest-asyncio has deprecated the default event loop scope configuration.
    ```ini
    [pytest]
    asyncio_mode = auto
-   
+
    [pytest-asyncio]
    asyncio_mode = auto
    ```
@@ -450,19 +450,19 @@ Integration tests can be enhanced by using real audio data to test the detection
 ### Setting Up Real Data Tests
 
 1. **Create a Test Data Directory**
-   
+
    Create a directory for storing test audio files:
-   
+
    ```
    backend/tests/data/audio/
    ```
 
 2. **Add Sample Audio Files**
-   
+
    Add sample audio files to the test data directory. These files should be short clips (5-10 seconds) of music that can be used for testing the detection system.
-   
+
    Example file structure:
-   
+
    ```
    backend/tests/data/audio/
    ├── sample1.mp3       # Known track for local detection
@@ -472,9 +472,9 @@ Integration tests can be enhanced by using real audio data to test the detection
    ```
 
 3. **Create a Fixture for Real Audio Data**
-   
+
    Add a fixture to `conftest.py` that loads the real audio data:
-   
+
    ```python
    @pytest.fixture
    def real_audio_data():
@@ -485,9 +485,9 @@ Integration tests can be enhanced by using real audio data to test the detection
    ```
 
 4. **Use Real Data in Tests**
-   
+
    Update the tests to use the real audio data:
-   
+
    ```python
    @pytest.mark.asyncio
    async def test_real_audio_detection(self, db_session: Session, real_audio_data: bytes):
@@ -519,25 +519,25 @@ async def test_real_audio_detection(self, db_session: Session, real_audio_data: 
     )
     db_session.add(station)
     db_session.commit()
-    
+
     # Create the audio processor
     audio_processor = AudioProcessor(db_session)
-    
+
     # Process the real audio data
     features = audio_processor.extract_features(real_audio_data)
-    
+
     # Detect the track
     detection_result = await audio_processor.detect_track(features, station.id)
-    
+
     # Verify the detection
     assert detection_result is not None, "No track detected"
     assert detection_result.confidence > 0.7, "Low confidence detection"
-    
+
     # Verify the detection was saved in the database
     saved_detection = db_session.query(TrackDetection).filter(
         TrackDetection.station_id == station.id
     ).order_by(TrackDetection.detected_at.desc()).first()
-    
+
     assert saved_detection is not None, "Detection not saved in the database"
     assert saved_detection.confidence > 0.7, "Detection confidence not correct"
 ```
@@ -546,4 +546,4 @@ This approach provides more realistic testing of the detection system and helps 
 
 ## Conclusion
 
-Integration testing is an essential part of the testing strategy for the SODAV Monitor project. By verifying that different components of the system work together correctly, integration tests help ensure that the system functions as expected in real-world scenarios. 
+Integration testing is an essential part of the testing strategy for the SODAV Monitor project. By verifying that different components of the system work together correctly, integration tests help ensure that the system functions as expected in real-world scenarios.

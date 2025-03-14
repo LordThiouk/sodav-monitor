@@ -1,7 +1,9 @@
 """Test configuration for auth tests."""
 
+from unittest.mock import MagicMock, Mock
+
 import pytest
-from unittest.mock import Mock, MagicMock
+
 
 @pytest.fixture
 def mock_settings():
@@ -12,6 +14,7 @@ def mock_settings():
     settings.ACCESS_TOKEN_EXPIRE_MINUTES = 15
     return settings
 
+
 @pytest.fixture
 def mock_db_session():
     """Mock database session."""
@@ -19,4 +22,4 @@ def mock_db_session():
     session.commit = Mock()
     session.rollback = Mock()
     session.close = Mock()
-    return session 
+    return session

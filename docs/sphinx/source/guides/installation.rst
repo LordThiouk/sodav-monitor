@@ -86,4 +86,4 @@ Lancement de l'Application
    cd frontend
    npm run dev
 
-L'application sera accessible à l'adresse http://localhost:3000. 
+L'application sera accessible à l'adresse http://localhost:3000.

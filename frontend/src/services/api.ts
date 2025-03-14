@@ -2,7 +2,7 @@ import { RadioStation, Track, TrackDetection, Report, TrackAnalytics } from '../
 import axios from 'axios';
 import { WS_URL } from '../config';
 
-const API_BASE_URL = process.env.NODE_ENV === 'production' 
+const API_BASE_URL = process.env.NODE_ENV === 'production'
   ? 'https://sodav-monitor-production.up.railway.app/api'
   : 'http://localhost:8000/api';
 
@@ -208,7 +208,7 @@ export interface WebSocketCleanup {
 
 export const connectWebSocket = (onMessage: (data: WebSocketMessage) => void): WebSocketCleanup => {
   const ws = new WebSocket(WS_URL);
-  
+
   ws.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data) as WebSocketMessage;
@@ -217,7 +217,7 @@ export const connectWebSocket = (onMessage: (data: WebSocketMessage) => void): W
       console.error('Error parsing WebSocket message:', error);
     }
   };
-  
+
   return {
     cleanup: () => {
       if (ws.readyState === WebSocket.OPEN) {

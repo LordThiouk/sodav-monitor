@@ -131,4 +131,4 @@ Ce script teste le processus complet de réutilisation des empreintes :
 - Optimisation de la recherche d'empreintes pour de grandes bases de données
 - Implémentation d'un système de mise en cache des empreintes fréquemment utilisées
 - Développement d'un système de vérification de l'intégrité des empreintes
-- Amélioration de la robustesse face aux variations de qualité audio 
+- Amélioration de la robustesse face aux variations de qualité audio

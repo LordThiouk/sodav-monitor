@@ -55,7 +55,7 @@ const Login: React.FC = () => {
       const data: AuthResponse = await response.json();
       setToken(data.access_token);
       setUser(data.user);
-      
+
       toast({
         title: 'Login successful',
         description: `Welcome back, ${data.user.username}!`,
@@ -156,4 +156,4 @@ const Login: React.FC = () => {
   );
 };
 
-export default Login; 
+export default Login;

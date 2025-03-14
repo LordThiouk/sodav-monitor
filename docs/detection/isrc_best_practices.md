@@ -37,7 +37,7 @@ Dans SODAV Monitor, les codes ISRC sont stockés dans la table `tracks` :
 ```python
 class Track(Base):
     __tablename__ = "tracks"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     artist_id = Column(Integer, ForeignKey("artists.id"))
@@ -59,19 +59,19 @@ def validate_isrc(isrc):
     """Valide un code ISRC selon le format standard."""
     if not isrc:
         return False
-    
+
     # Supprimer les tirets s'ils sont présents
     isrc = isrc.replace('-', '')
-    
+
     # Vérifier la longueur
     if len(isrc) != 12:
         return False
-    
+
     # Vérifier le format
     pattern = r'^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$'
     if not re.match(pattern, isrc):
         return False
-    
+
     return True
 ```
 
@@ -86,12 +86,12 @@ def extract_isrc_from_acoustid(acoustid_result):
     """Extrait le code ISRC d'un résultat AcoustID."""
     if not acoustid_result or 'recordings' not in acoustid_result:
         return None
-    
+
     for recording in acoustid_result['recordings']:
         if 'isrc' in recording and recording['isrc']:
             # AcoustID peut retourner plusieurs ISRC, prendre le premier
             return recording['isrc'][0]
-    
+
     return None
 ```
 
@@ -102,17 +102,17 @@ def extract_isrc_from_audd(audd_result):
     """Extrait le code ISRC d'un résultat AudD."""
     if not audd_result or 'result' not in audd_result:
         return None
-    
+
     result = audd_result['result']
-    
+
     # Vérifier directement dans le résultat
     if 'isrc' in result and result['isrc']:
         return result['isrc']
-    
+
     # Vérifier dans les données Apple Music
     if 'apple_music' in result and 'isrc' in result['apple_music']:
         return result['apple_music']['isrc']
-    
+
     return None
 ```
 
@@ -126,20 +126,20 @@ async def find_track_by_metadata(self, metadata, station_id=None):
     # Vérifier d'abord par ISRC si disponible
     if 'isrc' in metadata and metadata['isrc']:
         isrc = metadata['isrc']
-        
+
         # Valider l'ISRC
         if validate_isrc(isrc):
             # Rechercher une piste existante avec cet ISRC
             existing_track = self.db_session.query(Track).filter(Track.isrc == isrc).first()
-            
+
             if existing_track:
                 self.logger.info(f"Found existing track with ISRC {isrc}: {existing_track.title}")
-                
+
                 # Mettre à jour les statistiques si station_id est fourni
                 if station_id:
                     play_duration = metadata.get('duration', 0)
                     self._record_play_time(station_id, existing_track.id, play_duration)
-                
+
                 # Retourner avec confiance maximale pour les correspondances ISRC
                 return {
                     'track': self._track_to_dict(existing_track),
@@ -147,7 +147,7 @@ async def find_track_by_metadata(self, metadata, station_id=None):
                     'source': 'database',
                     'detection_method': 'isrc_match'
                 }
-    
+
     # Si pas d'ISRC ou pas de correspondance, continuer avec d'autres méthodes
     # ...
 ```
@@ -170,10 +170,10 @@ def _record_play_time(self, station_id, track_id, play_duration):
             detection_method="isrc_match"
         )
         self.db_session.add(detection)
-        
+
         # Mettre à jour les statistiques de la station
         self._update_station_track_stats(station_id, track_id, timedelta(seconds=play_duration))
-        
+
         self.db_session.commit()
         self.logger.info(f"Recorded play time for track ID {track_id} on station ID {station_id}: {play_duration} seconds")
     except Exception as e:
@@ -242,7 +242,7 @@ def test_isrc_uniqueness_constraint(self):
         album="Another Album"
     )
     self.db_session.add(track2)
-    
+
     # Vérifier que la contrainte d'unicité est appliquée
     with self.assertRaises(IntegrityError):
         self.db_session.commit()
@@ -267,7 +267,7 @@ def test_find_track_by_isrc(self):
 
     # Rechercher la piste par ISRC
     found_track = self.db_session.query(Track).filter(Track.isrc == test_isrc).first()
-    
+
     # Vérifier que la piste est trouvée
     self.assertIsNotNone(found_track)
     self.assertEqual(found_track.title, "Test Track")
@@ -293,29 +293,29 @@ def test_update_play_statistics(self):
 
     # Créer une station pour les statistiques
     station_id = 1
-    
+
     # Utiliser la méthode _record_play_time pour enregistrer une détection et mettre à jour les statistiques
     self.track_manager._record_play_time(station_id, track.id, 60)  # 60 secondes
-    
+
     # Vérifier que les statistiques sont créées
     stats = self.db_session.query(StationTrackStats).filter(
         StationTrackStats.track_id == track.id,
         StationTrackStats.station_id == station_id
     ).first()
-    
+
     self.assertIsNotNone(stats)
     self.assertEqual(stats.play_count, 1)
     self.assertEqual(stats.total_play_time.total_seconds(), 60)
-    
+
     # Enregistrer une deuxième détection
     self.track_manager._record_play_time(station_id, track.id, 120)  # 120 secondes
-    
+
     # Vérifier que les statistiques sont mises à jour
     stats = self.db_session.query(StationTrackStats).filter(
         StationTrackStats.track_id == track.id,
         StationTrackStats.station_id == station_id
     ).first()
-    
+
     self.assertIsNotNone(stats)
     self.assertEqual(stats.play_count, 2)
     self.assertEqual(stats.total_play_time.total_seconds(), 180)  # 60 + 120 = 180 secondes
@@ -323,4 +323,4 @@ def test_update_play_statistics(self):
 
 ## Conclusion
 
-L'utilisation efficace des codes ISRC est essentielle pour maintenir l'intégrité des données dans le système SODAV Monitor. En suivant ces bonnes pratiques, vous pouvez garantir que chaque enregistrement musical n'est représenté qu'une seule fois dans la base de données, ce qui permet d'obtenir des statistiques de lecture précises et des rapports fiables. 
+L'utilisation efficace des codes ISRC est essentielle pour maintenir l'intégrité des données dans le système SODAV Monitor. En suivant ces bonnes pratiques, vous pouvez garantir que chaque enregistrement musical n'est représenté qu'une seule fois dans la base de données, ce qui permet d'obtenir des statistiques de lecture précises et des rapports fiables.

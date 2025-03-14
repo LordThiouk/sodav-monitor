@@ -39,93 +39,93 @@ const App: React.FC = () => {
               <Route path="/register" element={<Register />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
-              <Route 
-                path="/" 
+              <Route
+                path="/"
                 element={
                   <PrivateRoute>
                     <LiveMonitor />
                   </PrivateRoute>
-                } 
+                }
               />
-              <Route 
-                path="/channels" 
+              <Route
+                path="/channels"
                 element={
                   <PrivateRoute>
                     <Channels />
                   </PrivateRoute>
-                } 
+                }
               />
-              <Route 
-                path="/channels/:id/detections" 
+              <Route
+                path="/channels/:id/detections"
                 element={
                   <PrivateRoute>
                     <ChannelDetections />
                   </PrivateRoute>
-                } 
+                }
               />
-              <Route 
-                path="/analytics/*" 
+              <Route
+                path="/analytics/*"
                 element={
                   <PrivateRoute>
                     <Analytics />
                   </PrivateRoute>
-                } 
+                }
               />
-              <Route 
-                path="/reports" 
+              <Route
+                path="/reports"
                 element={
                   <PrivateRoute>
                     <Reports />
                   </PrivateRoute>
-                } 
+                }
               />
-              <Route 
-                path="/monitoring" 
+              <Route
+                path="/monitoring"
                 element={
                   <PrivateRoute>
                     <Monitoring />
                   </PrivateRoute>
-                } 
+                }
               />
-              <Route 
-                path="/analytics" 
+              <Route
+                path="/analytics"
                 element={
                   <PrivateRoute>
                     <AnalyticsOverview />
                   </PrivateRoute>
-                } 
+                }
               />
-              <Route 
-                path="/analytics/artists" 
+              <Route
+                path="/analytics/artists"
                 element={
                   <PrivateRoute>
                     <AnalyticsArtists />
                   </PrivateRoute>
-                } 
+                }
               />
-              <Route 
-                path="/analytics/tracks" 
+              <Route
+                path="/analytics/tracks"
                 element={
                   <PrivateRoute>
                     <AnalyticsTracks />
                   </PrivateRoute>
-                } 
+                }
               />
-              <Route 
-                path="/analytics/labels" 
+              <Route
+                path="/analytics/labels"
                 element={
                   <PrivateRoute>
                     <AnalyticsLabels />
                   </PrivateRoute>
-                } 
+                }
               />
-              <Route 
-                path="/analytics/channels" 
+              <Route
+                path="/analytics/channels"
                 element={
                   <PrivateRoute>
                     <AnalyticsChannels />
                   </PrivateRoute>
-                } 
+                }
               />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

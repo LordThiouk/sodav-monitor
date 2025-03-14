@@ -12,4 +12,4 @@ Sous-modules
 .. toctree::
    :maxdepth: 1
 
-   detection/audio_processor 
+   detection/audio_processor

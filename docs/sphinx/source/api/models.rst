@@ -13,4 +13,4 @@ Sous-modules
    :maxdepth: 1
 
    models/models
-   models/database 
+   models/database

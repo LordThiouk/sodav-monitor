@@ -13,4 +13,4 @@ Sous-modules
    :maxdepth: 1
 
    audio_processor/track_manager
-   audio_processor/external_services 
+   audio_processor/external_services

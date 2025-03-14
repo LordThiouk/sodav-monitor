@@ -169,4 +169,4 @@ tail -f backend/logs/categories/detection.log
 
 # Vérifier les détections récentes dans la base de données
 python backend/scripts/database/check_detections.py
-``` 
+```
