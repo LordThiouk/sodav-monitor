@@ -1,0 +1,18 @@
+=== RAPPORT DE SYNTHÈSE DES DÉTECTIONS ===
+
+--- Statistiques Générales ---
+Nombre total d'événements de lecture: 2
+Nombre total de détections: 4
+Taux de détection: 200.00%
+Confiance moyenne: 0.95
+Durée totale de lecture: 60.00 secondes
+
+--- Méthodes de Détection ---
+simulation: 4 détection(s)
+
+--- Détections par Station ---
+Radio Sénégal Test: 4 détection(s)
+
+--- Top 5 des Pistes les Plus Détectées ---
+DIP DOUNDOU GUISS - CALIFAT.mp3: 3 détection(s)
+Dip Doundou Guiss - Sama Dome (Official video).mp3: 1 détection(s)

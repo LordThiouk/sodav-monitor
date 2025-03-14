@@ -105,13 +105,30 @@ class ExternalDetectionService:
                 )
                 return None
 
+            # Vérifier que la durée est valide
+            if duration is None or duration <= 0:
+                log_with_category(
+                    logger,
+                    "EXTERNAL_DETECTION",
+                    "warning",
+                    "Invalid duration for AcoustID request, using default value",
+                )
+                duration = 30  # Utiliser une valeur par défaut
+
             # Préparer les paramètres de la requête
             params = {
                 "client": self.acoustid_api_key,
                 "meta": "recordings recordings+releasegroups+compress",
                 "fingerprint": fingerprint,
-                "duration": int(duration),
+                "duration": str(int(float(duration))),  # Assurer que la durée est un entier en chaîne de caractères
             }
+
+            log_with_category(
+                logger,
+                "EXTERNAL_DETECTION",
+                "debug",
+                f"AcoustID request parameters: duration={params['duration']}, fingerprint={fingerprint[:50]}...",
+            )
 
             # Envoyer la requête à l'API AcoustID
             response = requests.get(self.acoustid_api_url, params=params)
@@ -831,10 +848,17 @@ class ExternalDetectionService:
                 "client": self.acoustid_api_key,
                 "meta": "recordings recordings+releasegroups+compress",
                 "fingerprint": fingerprint,
-                "duration": int(duration),
+                "duration": str(int(float(duration))),  # Assurer que la durée est un entier en chaîne de caractères
                 "timestamp": timestamp,
                 "signature": signature,
             }
+
+            log_with_category(
+                logger,
+                "EXTERNAL_DETECTION",
+                "debug",
+                f"AcoustID request parameters: duration={params['duration']}, fingerprint={fingerprint[:50]}...",
+            )
 
             # Utiliser aiohttp pour une requête asynchrone
             async with aiohttp.ClientSession() as session:

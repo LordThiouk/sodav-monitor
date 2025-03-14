@@ -54,7 +54,33 @@ Ce document détaille les améliorations apportées au système de détection mu
 - La fonction peut maintenant être appelée soit avec des paramètres individuels, soit avec un dictionnaire de caractéristiques.
 - Le système peut maintenant créer ou récupérer correctement les artistes et les pistes dans la base de données.
 
-### 4. Correction de la sauvegarde des ISRC
+### 4. Correction du paramètre "duration" dans les appels à l'API AcoustID
+
+**Problème identifié :**
+- Erreur lors des requêtes à l'API AcoustID : `400 - {"error": {"code": 2, "message": "missing required parameter \"duration\""}, "status": "error"}`
+- Cette erreur se produisait malgré le fait que le paramètre "duration" était inclus dans la requête, mais il y avait des problèmes avec son format et sa gestion.
+- Dans `real_api_detection_test.py`, le paramètre était envoyé comme `str(duration)`, mais l'API AcoustID attend un entier sous forme de chaîne de caractères.
+- Dans `external_detection.py`, le paramètre était envoyé comme `int(duration)`, ce qui pouvait causer des problèmes si la durée était un nombre à virgule flottante.
+- Aucune vérification n'était effectuée pour s'assurer que la durée était valide (non nulle, positive) avant d'envoyer la requête.
+- Aucune valeur par défaut n'était définie en cas de problème avec la durée.
+- Les paramètres exacts envoyés à l'API n'étaient pas journalisés, ce qui rendait difficile le diagnostic du problème.
+
+**Solution implémentée :**
+- Ajout d'une vérification pour s'assurer que la durée est valide (non nulle, positive) avant d'envoyer la requête.
+- Utilisation d'une valeur par défaut (30 secondes) si la durée est invalide.
+- Conversion de la durée en entier puis en chaîne de caractères : `str(int(float(duration)))` pour assurer le format correct.
+- Ajout de journalisation détaillée pour voir les paramètres exacts envoyés à l'API.
+
+**Fichiers modifiés :**
+- `backend/tests/utils/real_api_detection_test.py`
+- `backend/detection/audio_processor/track_manager/external_detection.py`
+
+**Résultat :**
+- Les requêtes à l'API AcoustID sont maintenant correctement formatées et ne génèrent plus d'erreur 400.
+- Le système passe correctement à la méthode de détection suivante (Audd.io) lorsqu'AcoustID ne trouve pas de correspondance.
+- La robustesse globale du système de détection est améliorée, avec une meilleure gestion des erreurs et une journalisation plus détaillée.
+
+### 5. Correction de la sauvegarde des ISRC
 
 **Problème identifié :**
 - Les codes ISRC (International Standard Recording Code) n'étaient pas correctement sauvegardés dans la base de données, bien qu'ils soient présents dans les métadonnées retournées par l'API AudD.
@@ -77,7 +103,7 @@ Ce document détaille les améliorations apportées au système de détection mu
 - Les ISRC sont maintenant correctement sauvegardés dans la base de données lors de la détection des pistes.
 - Le script `test_complete_detection.py` permet de vérifier que le processus complet fonctionne correctement.
 
-### 5. Problèmes identifiés dans le stockage des données
+### 6. Problèmes identifiés dans le stockage des données
 
 **Problème identifié :**
 - Le script de test `test_multiple_stations.py` ne simule pas le cycle complet de détection et d'enregistrement.
@@ -92,7 +118,7 @@ Ce document détaille les améliorations apportées au système de détection mu
 - Les détections et statistiques sont maintenant correctement enregistrées dans la base de données.
 - Les ISRC et les empreintes digitales sont correctement sauvegardés.
 
-### 6. Amélioration de la détection locale avec empreintes digitales
+### 7. Amélioration de la détection locale avec empreintes digitales
 
 **Problème identifié :**
 - La détection locale basée sur les empreintes digitales n'est pas suffisamment robuste et efficace.
@@ -123,7 +149,7 @@ Ce document détaille les améliorations apportées au système de détection mu
 - Le système peut détecter et corriger les incohérences dans les empreintes.
 - La détection locale est plus fiable et robuste.
 
-### 7. Mise à jour de la structure de la base de données pour les empreintes multiples
+### 8. Mise à jour de la structure de la base de données pour les empreintes multiples
 
 **Problème identifié :**
 - La structure actuelle de la base de données ne permet de stocker qu'une seule empreinte par piste, ce qui limite la robustesse de la détection locale.

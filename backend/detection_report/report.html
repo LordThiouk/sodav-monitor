@@ -1,0 +1,238 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Rapport de Détection Musicale</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                line-height: 1.6;
+                margin: 0;
+                padding: 20px;
+                color: #333;
+            }
+            h1, h2, h3 {
+                color: #2c3e50;
+            }
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+            }
+            .metrics-card {
+                background-color: #f9f9f9;
+                border-radius: 5px;
+                padding: 15px;
+                margin-bottom: 20px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .metrics-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+                gap: 15px;
+                margin-bottom: 20px;
+            }
+            .metric-item {
+                background-color: #fff;
+                border-radius: 5px;
+                padding: 15px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            .metric-value {
+                font-size: 24px;
+                font-weight: bold;
+                color: #3498db;
+            }
+            .metric-label {
+                font-size: 14px;
+                color: #7f8c8d;
+            }
+            .chart-container {
+                background-color: #fff;
+                border-radius: 5px;
+                padding: 15px;
+                margin-bottom: 20px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .chart-img {
+                width: 100%;
+                height: auto;
+                max-width: 100%;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+            }
+            th, td {
+                padding: 12px 15px;
+                text-align: left;
+                border-bottom: 1px solid #ddd;
+            }
+            th {
+                background-color: #f2f2f2;
+            }
+            tr:hover {
+                background-color: #f5f5f5;
+            }
+            .footer {
+                margin-top: 30px;
+                text-align: center;
+                font-size: 14px;
+                color: #7f8c8d;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Rapport de Détection Musicale</h1>
+            <p>Généré le 14/03/2025 à 15:15:04</p>
+            
+            <h2>Statistiques Générales</h2>
+            <div class="metrics-grid">
+                <div class="metric-item">
+                    <div class="metric-value">5</div>
+                    <div class="metric-label">Événements de lecture</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value">8</div>
+                    <div class="metric-label">Détections</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value">160.00%</div>
+                    <div class="metric-label">Taux de détection</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value">0.80</div>
+                    <div class="metric-label">Confiance moyenne</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value">1876.64s</div>
+                    <div class="metric-label">Durée totale de lecture</div>
+                </div>
+            </div>
+            
+            <h2>Chronologie des Événements</h2>
+            <div class="chart-container">
+                <img src="timeline.png" alt="Chronologie des événements" class="chart-img">
+            </div>
+            
+            <h2>Méthodes de Détection</h2>
+            <div class="chart-container">
+                <img src="methods.png" alt="Méthodes de détection" class="chart-img">
+            </div>
+            
+            <h2>Détections par Station</h2>
+            <div class="chart-container">
+                <img src="stations.png" alt="Détections par station" class="chart-img">
+            </div>
+            
+            <h2>Distribution des Niveaux de Confiance</h2>
+            <div class="chart-container">
+                <img src="confidence.png" alt="Distribution des niveaux de confiance" class="chart-img">
+            </div>
+            
+            <h2>Top des Pistes les Plus Détectées</h2>
+            <div class="chart-container">
+                <img src="top_tracks.png" alt="Top des pistes les plus détectées" class="chart-img">
+            </div>
+            
+            <h2>Détails des Détections</h2>
+            <div class="metrics-card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Station</th>
+                            <th>Piste</th>
+                            <th>Méthode</th>
+                            <th>Confiance</th>
+                            <th>Durée (s)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    
+                        <tr>
+                            <td></td>
+                            <td>Radio Sénégal</td>
+                            <td>Califat</td>
+                            <td>audd</td>
+                            <td>0.80</td>
+                            <td>234.58</td>
+                        </tr>
+            
+                        <tr>
+                            <td></td>
+                            <td>Radio Sénégal 2</td>
+                            <td>Califat</td>
+                            <td>audd</td>
+                            <td>0.80</td>
+                            <td>234.58</td>
+                        </tr>
+            
+                        <tr>
+                            <td></td>
+                            <td>Radio Dakar</td>
+                            <td>Califat</td>
+                            <td>audd</td>
+                            <td>0.80</td>
+                            <td>234.58</td>
+                        </tr>
+            
+                        <tr>
+                            <td></td>
+                            <td>Radio Sénégal</td>
+                            <td>Califat</td>
+                            <td>audd</td>
+                            <td>0.80</td>
+                            <td>234.58</td>
+                        </tr>
+            
+                        <tr>
+                            <td></td>
+                            <td>Radio Sénégal 2</td>
+                            <td>Califat</td>
+                            <td>audd</td>
+                            <td>0.80</td>
+                            <td>234.58</td>
+                        </tr>
+            
+                        <tr>
+                            <td></td>
+                            <td>Radio Dakar</td>
+                            <td>Califat</td>
+                            <td>audd</td>
+                            <td>0.80</td>
+                            <td>234.58</td>
+                        </tr>
+            
+                        <tr>
+                            <td></td>
+                            <td>Radio Sénégal</td>
+                            <td>Califat</td>
+                            <td>audd</td>
+                            <td>0.80</td>
+                            <td>234.58</td>
+                        </tr>
+            
+                        <tr>
+                            <td></td>
+                            <td>Radio Dakar</td>
+                            <td>Califat</td>
+                            <td>audd</td>
+                            <td>0.80</td>
+                            <td>234.58</td>
+                        </tr>
+            
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="footer">
+                <p>Rapport généré par le script visualize_detection_results.py</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    

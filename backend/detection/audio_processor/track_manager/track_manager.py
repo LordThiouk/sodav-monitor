@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from sqlalchemy.orm import Session
 
+from backend.detection.audio_processor.play_duration_tracker import PlayDurationTracker
 from backend.detection.audio_processor.track_manager.external_detection import (
     ExternalDetectionService,
 )
@@ -52,7 +53,27 @@ class TrackManager:
         self.stats_recorder = StatsRecorder(db_session)
         self.external_service = ExternalDetectionService(db_session)
         self.fingerprint_handler = FingerprintHandler()
-
+        
+        # Initialisation du tracker de durée de lecture
+        self.play_duration_tracker = PlayDurationTracker(db_session)
+        
+        # Planifier le nettoyage périodique des pistes interrompues
+        self._schedule_cleanup()
+        
+    def _schedule_cleanup(self):
+        """
+        Planifie le nettoyage périodique des pistes interrompues.
+        """
+        import threading
+        
+        def cleanup_task():
+            self.play_duration_tracker.cleanup_interrupted_tracks()
+            # Planifier la prochaine exécution dans 30 secondes
+            threading.Timer(30.0, cleanup_task).start()
+        
+        # Démarrer le premier nettoyage après 30 secondes
+        threading.Timer(30.0, cleanup_task).start()
+        
     async def process_track(
         self, features: Dict[str, Any], station_id: Optional[int] = None
     ) -> Dict[str, Any]:
@@ -76,6 +97,7 @@ class TrackManager:
 
             # Extraire la durée des caractéristiques
             duration = features.get("duration", features.get("play_duration", 0))
+            fingerprint = features.get("fingerprint", "")
 
             # 1. Rechercher une correspondance locale
             result = await self.track_finder.find_local_match(features)
@@ -88,6 +110,27 @@ class TrackManager:
                 )
                 # Ajouter la durée au résultat
                 result["duration"] = duration
+                
+                # Démarrer le suivi de la durée de lecture
+                track_id = result['track']['id']
+                start_time = self.play_duration_tracker.start_tracking(
+                    station_id, track_id, fingerprint
+                )
+                
+                # Créer la détection avec le tracker
+                detection = self.play_duration_tracker.create_detection(
+                    station_id=station_id,
+                    track_id=track_id,
+                    confidence=result.get('confidence', 0.8),
+                    fingerprint=fingerprint,
+                    detection_method=result.get('method', 'local')
+                )
+                
+                if detection:
+                    result['detection_id'] = detection.id
+                    result['success'] = True
+                    return result
+                
                 return self.stats_recorder.record_detection(result, station_id)
 
             # 2. Si aucune correspondance locale n'est trouvée, vérifier si un ISRC est disponible
@@ -103,6 +146,27 @@ class TrackManager:
                     )
                     # Ajouter la durée au résultat
                     isrc_result["duration"] = duration
+                    
+                    # Démarrer le suivi de la durée de lecture
+                    track_id = isrc_result['track']['id']
+                    start_time = self.play_duration_tracker.start_tracking(
+                        station_id, track_id, fingerprint
+                    )
+                    
+                    # Créer la détection avec le tracker
+                    detection = self.play_duration_tracker.create_detection(
+                        station_id=station_id,
+                        track_id=track_id,
+                        confidence=isrc_result.get('confidence', 0.8),
+                        fingerprint=fingerprint,
+                        detection_method=isrc_result.get('method', 'isrc')
+                    )
+                    
+                    if detection:
+                        isrc_result['detection_id'] = detection.id
+                        isrc_result['success'] = True
+                        return isrc_result
+                    
                     return self.stats_recorder.record_detection(isrc_result, station_id)
 
             # 3. Si toujours aucune correspondance, essayer les services externes
@@ -138,9 +202,37 @@ class TrackManager:
                     return {"error": "Failed to create track"}
 
                 # Enregistrer l'empreinte digitale si disponible
-                fingerprint = features.get("fingerprint")
                 if fingerprint:
                     await self.fingerprint_handler.store_fingerprint(track.id, fingerprint)
+
+                # Démarrer le suivi de la durée de lecture
+                start_time = self.play_duration_tracker.start_tracking(
+                    station_id, track.id, fingerprint
+                )
+                
+                # Créer la détection avec le tracker
+                detection = self.play_duration_tracker.create_detection(
+                    station_id=station_id,
+                    track_id=track.id,
+                    confidence=external_result.get('confidence', 0.8),
+                    fingerprint=fingerprint,
+                    detection_method=external_result.get('method', 'external')
+                )
+                
+                if detection:
+                    result = {
+                        "track": {
+                            "id": track.id,
+                            "title": track.title,
+                            "artist": track_info.get("artist", "Unknown Artist"),
+                        },
+                        "confidence": external_result.get("confidence", 0.8),
+                        "method": external_result.get("method", "external"),
+                        "duration": duration,
+                        "detection_id": detection.id,
+                        "success": True
+                    }
+                    return result
 
                 # Préparer le résultat pour l'enregistrement des statistiques
                 detection_result = {
@@ -158,11 +250,44 @@ class TrackManager:
 
             # 4. Si aucune correspondance n'est trouvée, retourner une erreur
             log_with_category(logger, "TRACK_MANAGER", "warning", "No match found for track")
-            return {"error": "No match found for track"}
+            return {"error": "No match found for track", "success": False}
 
         except Exception as e:
             log_with_category(logger, "TRACK_MANAGER", "error", f"Error processing track: {e}")
-            return {"error": str(e)}
+            return {"error": str(e), "success": False}
+            
+    def update_track_detection(self, station_id: int, track_id: int) -> None:
+        """
+        Met à jour le suivi de la durée de lecture pour une piste sur une station.
+        
+        Args:
+            station_id: ID de la station radio
+            track_id: ID de la piste
+        """
+        self.play_duration_tracker.update_tracking(station_id, track_id)
+        
+    def stop_track_detection(self, station_id: int, track_id: int, is_silence: bool = False) -> Optional[timedelta]:
+        """
+        Arrête le suivi de la durée de lecture pour une piste sur une station.
+        
+        Args:
+            station_id: ID de la station radio
+            track_id: ID de la piste
+            is_silence: Indique si l'arrêt est dû à un silence
+            
+        Returns:
+            Durée totale de lecture ou None si la piste n'était pas suivie
+        """
+        return self.play_duration_tracker.stop_tracking(station_id, track_id, is_silence)
+        
+    def get_active_tracks(self) -> List[Dict]:
+        """
+        Retourne la liste des pistes actuellement suivies.
+        
+        Returns:
+            Liste des pistes actives avec leurs informations de suivi
+        """
+        return self.play_duration_tracker.get_active_tracks()
 
     async def process_station_data(self, station_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -258,7 +383,7 @@ class TrackManager:
         """
         Enregistre le temps de lecture d'une piste sur une station.
 
-        Cette méthode est une façade pour la méthode correspondante dans StatsRecorder.
+        Cette méthode utilise maintenant le PlayDurationTracker pour un suivi plus précis.
 
         Args:
             station_id: ID de la station radio
@@ -268,7 +393,58 @@ class TrackManager:
         Returns:
             True si l'enregistrement a réussi, False sinon
         """
-        return self.stats_recorder.record_play_time(station_id, track_id, play_duration)
+        try:
+            # Vérifier que la station existe
+            station = (
+                self.db_session.query(RadioStation).filter(RadioStation.id == station_id).first()
+            )
+            if not station:
+                log_with_category(
+                    logger, "TRACK_MANAGER", "warning", f"Station with ID {station_id} not found"
+                )
+                return False
+
+            # Vérifier que la piste existe
+            track = self.db_session.query(Track).filter(Track.id == track_id).first()
+            if not track:
+                log_with_category(
+                    logger, "TRACK_MANAGER", "warning", f"Track with ID {track_id} not found"
+                )
+                return False
+                
+            # Récupérer l'empreinte digitale de la piste si disponible
+            fingerprint = self.fingerprint_handler.get_fingerprint(track_id) or "unknown"
+            
+            # Démarrer le suivi de la durée de lecture
+            self.play_duration_tracker.start_tracking(station_id, track_id, fingerprint)
+            
+            # Créer la détection avec le tracker
+            detection = self.play_duration_tracker.create_detection(
+                station_id=station_id,
+                track_id=track_id,
+                confidence=0.8,  # Valeur par défaut
+                fingerprint=fingerprint,
+                detection_method="manual"  # Méthode manuelle
+            )
+            
+            if detection:
+                log_with_category(
+                    logger,
+                    "TRACK_MANAGER",
+                    "info",
+                    f"Recorded play time for track ID {track_id} on station ID {station_id}: {play_duration} seconds"
+                )
+                return True
+                
+            # Fallback à l'ancienne méthode si la nouvelle échoue
+            return self.stats_recorder.record_play_time(station_id, track_id, play_duration)
+            
+        except Exception as e:
+            log_with_category(
+                logger, "TRACK_MANAGER", "error", f"Error recording play time: {e}"
+            )
+            # Fallback à l'ancienne méthode
+            return self.stats_recorder.record_play_time(station_id, track_id, play_duration)
 
     async def find_track_by_isrc(self, isrc: str) -> Optional[Dict[str, Any]]:
         """
