@@ -84,7 +84,14 @@ jobs:
       - name: Fix log_manager import
         run: |
           mkdir -p backend/logs/backend/logs
-          cp backend/logs/log_manager.py backend/logs/backend/logs/
+          if [ -f backend/logs/log_manager.py ]; then
+            cp backend/logs/log_manager.py backend/logs/backend/logs/
+          elif [ -f backend/logs/backend/logs/log_manager.py ]; then
+            echo "log_manager.py already exists in the target location"
+          else
+            echo "Error: log_manager.py not found in expected locations"
+            exit 1
+          fi
           touch backend/logs/backend/logs/__init__.py
           touch backend/logs/backend/__init__.py
 
