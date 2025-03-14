@@ -1,191 +1,126 @@
 # End-to-End (E2E) Testing for SODAV Monitor
 
-This document describes the end-to-end testing approach for the SODAV Monitor system, including how to run the tests and what they verify.
+Ce document décrit l'approche de test end-to-end pour le système SODAV Monitor, y compris comment exécuter les tests et ce qu'ils vérifient.
 
-## Overview
+## Vue d'ensemble
 
-End-to-end tests verify that the entire system works correctly under real-world conditions. These tests cover the complete workflow from audio capture to report generation, ensuring that all components work together seamlessly.
+Les tests end-to-end vérifient que l'ensemble du système fonctionne correctement dans des conditions réelles. Ces tests couvrent le flux de travail complet, de la capture audio à la génération de rapports, en s'assurant que tous les composants fonctionnent ensemble de manière transparente.
 
-## Test Coverage
+## Règles de test E2E
 
-The E2E tests cover the following aspects of the system:
+Nos tests E2E suivent un ensemble de règles strictes pour garantir une couverture complète :
 
-1. **Detection Workflow**: Tests the complete detection process from audio capture to database storage
-2. **Play Duration Accuracy**: Verifies that play duration is correctly calculated and stored
-3. **Station Streaming**: Tests station metadata and stream stability
-4. **Report Generation**: Verifies that reports contain accurate data
-5. **Performance and Scalability**: Tests system performance under load
-6. **Database Consistency**: Ensures data integrity and proper relationships
-7. **End-to-End Workflow**: Tests the complete workflow from audio capture to report generation
+### 1. Principes généraux
+- Tester le système entier (frontend, backend, base de données, API, intégrations externes)
+- Utiliser des scénarios du monde réel
+- Automatiser les tests autant que possible
+- Surveiller les performances
+- Assurer la cohérence des données
 
-## Prerequisites
+### 2. Workflow de détection
+- Vérifier si c'est de la parole ou de la musique
+- Effectuer d'abord une détection locale
+- Utiliser l'API MusicBrainz si nécessaire
+- Utiliser l'API Audd.io en dernier recours
+- Enregistrer les détails de détection
 
-To run the E2E tests, you need:
+### 3. Précision de la durée de lecture
+- Enregistrer l'horodatage de début
+- Enregistrer l'horodatage de fin
+- Calculer la durée exacte de lecture
+- Valider la durée de lecture selon les règles
 
-1. Python 3.8 or higher
-2. PostgreSQL database (or SQLite for local testing)
-3. Redis server (for caching)
-4. Internet connection (to access radio streams)
-5. Required Python packages (see requirements.txt)
+### 4. Validation des stations et des flux
+- Tester les flux radio en direct
+- Vérifier les métadonnées des stations
+- Tester les mécanismes de récupération
 
-## Running the Tests
+### 5. Génération de rapports
+- Vérifier le contenu des rapports
+- Tester les rapports d'abonnement
+- Vérifier la précision des données
 
-### 1. Setup the Environment
+### 6. Performance et évolutivité
+- Tester la charge du système
+- Tester le traitement de grands ensembles de données
+
+### 7. Cohérence de la base de données
+- Éviter les détections en double
+- Assurer les relations de clés étrangères
+- Préserver les données historiques
+
+## Couverture des tests
+
+Les tests E2E couvrent les aspects suivants du système :
+
+1. **Workflow de détection** : Teste le processus complet de détection, de la capture audio au stockage en base de données
+2. **Précision de la durée de lecture** : Vérifie que la durée de lecture est correctement calculée et stockée
+3. **Streaming des stations** : Teste les métadonnées des stations et la stabilité des flux
+4. **Génération de rapports** : Vérifie que les rapports contiennent des données précises
+5. **Performance et évolutivité** : Teste les performances du système sous charge
+6. **Cohérence de la base de données** : Assure l'intégrité des données et les relations appropriées
+7. **Workflow de bout en bout** : Teste le flux de travail complet, de la capture audio à la génération de rapports
+
+## Prérequis
+
+Pour exécuter les tests E2E, vous avez besoin de :
+
+1. Python 3.8 ou supérieur
+2. Base de données PostgreSQL (ou SQLite pour les tests locaux)
+3. Serveur Redis (pour le cache)
+4. Connexion Internet (pour accéder aux flux radio)
+5. Packages Python requis (voir requirements.txt)
+
+## Exécution des tests
+
+### 1. Configuration de l'environnement
 
 ```bash
-# Create and activate a virtual environment
+# Créer et activer un environnement virtuel
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 .\venv\Scripts\activate   # Windows
 
-# Install dependencies
+# Installer les dépendances
 pip install -r requirements.txt
 ```
 
-### 2. Run the Tests
+### 2. Exécuter les tests
 
 ```bash
-# Run all E2E tests
+# Exécuter tous les tests E2E
 python -m pytest backend/tests/integration/test_end_to_end.py -v
 
-# Run a specific test
+# Exécuter un test E2E spécifique
 python -m pytest backend/tests/integration/test_end_to_end.py::TestEndToEnd::test_detection_workflow -v
 
-# Run with increased verbosity
-python -m pytest backend/tests/integration/test_end_to_end.py -vv
-
-# Run with log output
-python -m pytest backend/tests/integration/test_end_to_end.py -v --log-cli-level=INFO
+# Exécuter avec sortie de logs détaillée
+python -m pytest backend/tests/integration/test_end_to_end.py -vv --log-cli-level=DEBUG
 ```
 
-### 3. Test Configuration
+### 3. Tests dans la nouvelle structure
 
-The tests use the following configuration:
+Avec la nouvelle organisation des tests, les tests E2E sont maintenant dans le dossier `integration/`. Pour les exécuter :
 
-- **Database**: In-memory SQLite database for isolation
-- **Audio Duration**: 15 seconds by default (configurable)
-- **Performance Threshold**: 3 seconds for API response time
-- **Stations**: Real Senegalese radio stations (fetched dynamically)
+```bash
+# Exécuter tous les tests d'intégration
+python -m pytest backend/tests/integration/ -v
 
-## Test Descriptions
+# Exécuter uniquement les tests E2E
+python -m pytest backend/tests/integration/test_end_to_end.py -v
+```
 
-### 1. Detection Workflow Test
+## Dépannage
 
-Tests the complete detection workflow using real-world data:
-- Captures audio from randomly selected Senegalese radio streams
-- Determines if it's speech or music
-- Follows the hierarchical detection process
-- Handles no-match scenarios gracefully
-- Tries multiple stations if one fails
-- Stores detection data in the database when matches are found
+Si les tests échouent, vérifiez les points suivants :
 
-The test is designed to be resilient, automatically trying different stations if:
-- A station is unavailable
-- Audio capture fails
-- The audio is classified as speech instead of music
-- Feature extraction fails
+1. **Connexion Internet** : Les tests E2E nécessitent une connexion Internet stable pour accéder aux flux radio.
+2. **Services externes** : Les services externes (MusicBrainz, Audd.io) peuvent être indisponibles ou limiter les requêtes.
+3. **Base de données** : Assurez-vous que la base de données est accessible et que les migrations sont à jour.
+4. **Redis** : Vérifiez que le serveur Redis est en cours d'exécution.
+5. **Logs** : Consultez les logs pour des informations détaillées sur les erreurs.
 
-This approach ensures the test can run successfully even when some stations are offline or not playing music.
-
-#### Known Limitations
-
-In most test environments, external detection services (AcoustID and AudD) will fail with "Failed to convert features to audio" errors. This is expected behavior and the tests are designed to handle this gracefully:
-
-- The test will still pass if the detection process completes successfully
-- No match being found is considered a valid test outcome
-- These limitations are logged but don't cause test failures
-- In production, with proper audio conversion setup, these services would function correctly
-
-> **Important Note**: Full testing of AcoustID and AudD detection is not possible in most CI/CD or development environments due to the specialized audio conversion requirements. The tests are designed to acknowledge this limitation and still provide valuable validation of the overall detection workflow.
-
-### Testing External Services in Production-Like Environments
-
-If you need to fully test the external detection services:
-
-1. Set up a production-like environment with all audio conversion libraries properly installed
-2. Configure the necessary API keys for AcoustID and AudD in the environment variables
-3. Use known audio samples with pre-verified fingerprints to validate the detection
-4. Consider mocking the external API responses for consistent testing
-
-### 2. Play Duration Accuracy Test
-
-Verifies that play duration is correctly tracked:
-- Registers start timestamp when track is first detected
-- Registers end timestamp when track stops playing
-- Calculates play duration accurately
-- Creates test data if no match is found to ensure test coverage
-- Ignores short detections
-
-### 3. Station Streaming Validation Test
-
-Tests station streaming and metadata:
-- Verifies station metadata is correctly stored
-- Tests stream availability and stability
-- Simulates stream disconnection and recovery
-
-### 4. Report Generation Test
-
-Verifies report generation functionality:
-- Generates detection data for multiple stations
-- Creates a report with the detection data
-- Creates test data if no detections are found to ensure test coverage
-- Verifies report data accuracy
-
-### 5. Performance and Scalability Test
-
-Tests system performance under load:
-- Runs multiple detections simultaneously
-- Verifies database can handle increased query load
-- Ensures API response times remain under threshold
-
-### 6. Database Consistency Test
-
-Ensures database integrity:
-- Verifies no duplicate detections exist
-- Creates test data if no match is found to ensure test coverage
-- Ensures foreign key relationships are enforced
-- Confirms historical data remains intact after updates
-
-### 7. End-to-End Workflow Test
-
-Tests the complete workflow:
-- Captures audio from multiple stations
-- Performs detection on each station
-- Tries different stations if one fails
-- Verifies detection data in database
-- Confirms statistics are updated
-- Generates and validates a report
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Stream Connection Errors**:
-   - Some radio streams may be temporarily unavailable
-   - Tests will skip unavailable stations and continue with available ones
-
-2. **Audio Classification**:
-   - If audio is classified as speech, detection tests will try another station
-   - This is expected behavior as the system should only detect music
-
-3. **No Match Found**:
-   - If no match is found for a track, the test will still pass if the detection process completed
-   - This is expected behavior as not all audio can be matched to known tracks
-   - In test environments, "Failed to convert features to audio" errors from AcoustID and AudD are normal
-
-4. **External Detection Services**:
-   - AcoustID and AudD detection will almost always fail in test environments with "Failed to convert features to audio" errors
-   - These errors occur because the test environment doesn't have the full audio conversion capabilities
-   - Tests are designed to handle these failures gracefully and still pass
-   - **Do not expect these services to work in CI/CD or standard development environments**
-
-5. **Performance Variations**:
-   - Performance may vary depending on network conditions
-   - Tests include tolerance for timing variations
-
-### Debugging
-
-For detailed debugging information, run tests with increased verbosity and log level:
+Pour des informations de débogage détaillées, exécutez les tests avec un niveau de log plus élevé :
 
 ```bash
 python -m pytest backend/tests/integration/test_end_to_end.py -vv --log-cli-level=DEBUG
